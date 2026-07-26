@@ -13,8 +13,12 @@
     <p class="mb-0 text-muted">Ingresos, egresos, pagos de deuda y avance de tareas en un solo tablero.</p>
   </div>
   <div class="wallet-actions">
-    <a class="btn btn-light" href="{% url 'movimiento_create' %}">Nuevo movimiento</a>
-    <a class="btn btn-primary" href="{% url 'tarea_create' %}">Nueva tarea</a>
+    <a class="btn btn-light btn-icon" href="{% url 'movimiento_create' %}" title="Nuevo movimiento" aria-label="Nuevo movimiento">
+      <i class="fas fa-exchange-alt"></i>
+    </a>
+    <a class="btn btn-primary btn-icon" href="{% url 'tarea_create' %}" title="Nueva tarea" aria-label="Nueva tarea">
+      <i class="fas fa-plus"></i>
+    </a>
   </div>
 </div>
 

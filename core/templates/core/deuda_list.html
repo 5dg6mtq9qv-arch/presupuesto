@@ -6,7 +6,9 @@
 {% block content %}
 <div class="actions">
   <div></div>
-  <a class="btn btn-primary shadow-sm" href="{% url 'deuda_create' %}">Nueva deuda</a>
+  <a class="btn btn-primary btn-icon shadow-sm" href="{% url 'deuda_create' %}" title="Nueva deuda" aria-label="Nueva deuda">
+    <i class="fas fa-plus"></i>
+  </a>
 </div>
 <section class="panel">
   <div class="table-wrap">
@@ -41,15 +43,28 @@
               </span>
             </td>
             <td>
-              <a class="btn btn-sm btn-outline-primary mb-2" href="{% url 'pago_create' deuda.pk %}">Registrar pago</a>
+              <a class="btn btn-sm btn-outline-primary btn-icon mb-2" href="{% url 'pago_create' deuda.pk %}" title="Registrar pago" aria-label="Registrar pago">
+                <i class="fas fa-dollar-sign"></i>
+              </a>
               {% for pago in deuda.pagos.all %}
                 <div class="d-flex align-items-center justify-content-between gap-2 small text-muted">
                   <span>{{ pago.fecha|date:"Y-m" }} · {{ pago.monto }}</span>
-                  <a class="link-danger" href="{% url 'pago_delete' pago.pk %}">eliminar</a>
+                  <a class="btn btn-sm btn-outline-danger btn-icon" href="{% url 'pago_delete' pago.pk %}" title="Eliminar pago" aria-label="Eliminar pago">
+                    <i class="fas fa-trash-alt"></i>
+                  </a>
                 </div>
               {% endfor %}
             </td>
-            <td><a href="{% url 'deuda_update' deuda.pk %}">Editar</a> · <a href="{% url 'deuda_delete' deuda.pk %}">Eliminar</a></td>
+            <td>
+              <span class="action-icons">
+                <a class="btn btn-sm btn-outline-primary btn-icon" href="{% url 'deuda_update' deuda.pk %}" title="Editar" aria-label="Editar">
+                  <i class="fas fa-edit"></i>
+                </a>
+                <a class="btn btn-sm btn-outline-danger btn-icon" href="{% url 'deuda_delete' deuda.pk %}" title="Eliminar" aria-label="Eliminar">
+                  <i class="fas fa-trash-alt"></i>
+                </a>
+              </span>
+            </td>
           </tr>
         {% empty %}
           <tr><td colspan="8" class="muted">Sin deudas.</td></tr>

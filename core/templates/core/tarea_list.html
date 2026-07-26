@@ -9,7 +9,9 @@
     <span class="badge rounded-pill text-bg-light border">Tablero</span>
     <span>Organización visual de tareas</span>
   </div>
-  <a class="btn btn-primary shadow-sm" href="{% url 'tarea_create' %}">Nueva tarea</a>
+  <a class="btn btn-primary btn-icon shadow-sm" href="{% url 'tarea_create' %}" title="Nueva tarea" aria-label="Nueva tarea">
+    <i class="fas fa-plus"></i>
+  </a>
 </div>
 <section class="kanban">
   {% for columna in columnas %}
@@ -45,15 +47,21 @@
               <span data-time-field="fin"{% if not tarea.hora_fin %} hidden{% endif %}>Fin: <span data-time-value="fin">{{ tarea.hora_fin|default:"" }}</span></span>
             </div>
             <div class="task-card-actions">
-              <a href="{% url 'tarea_update' tarea.pk %}">Editar</a>
-              <a href="{% url 'tarea_delete' tarea.pk %}">Eliminar</a>
+              <a href="{% url 'tarea_update' tarea.pk %}" title="Editar" aria-label="Editar">
+                <i class="fas fa-edit"></i>
+              </a>
+              <a class="text-danger" href="{% url 'tarea_delete' tarea.pk %}" title="Eliminar" aria-label="Eliminar">
+                <i class="fas fa-trash-alt"></i>
+              </a>
             </div>
           </div>
         {% empty %}
           <div class="empty-state">Sin tareas</div>
         {% endfor %}
       </div>
-      <a class="kanban-add-card" href="{% url 'tarea_create' %}">＋ Agregar otra tarea</a>
+      <a class="kanban-add-card" href="{% url 'tarea_create' %}" title="Nueva tarea" aria-label="Nueva tarea">
+        <i class="fas fa-plus"></i>
+      </a>
     </article>
   {% endfor %}
 </section>

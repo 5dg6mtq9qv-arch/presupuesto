@@ -9,8 +9,12 @@
     {% csrf_token %}
     {{ form.as_p }}
     <div class="form-actions actions">
-      <button class="btn btn-primary" type="submit">Guardar</button>
-      <a class="btn btn-outline-primary" href="{% url 'usuario_list' %}">Cancelar</a>
+      <button class="btn btn-primary btn-icon" type="submit" title="Guardar" aria-label="Guardar">
+        <i class="fas fa-save"></i>
+      </button>
+      <a class="btn btn-outline-secondary btn-icon" href="{% url 'usuario_list' %}" title="Cancelar" aria-label="Cancelar">
+        <i class="fas fa-times"></i>
+      </a>
     </div>
   </form>
 </section>

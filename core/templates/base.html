@@ -4,209 +4,149 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}TaskBudget{% endblock %}</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@5.15.4/css/all.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/css/adminlte.min.css">
   <style>
     :root {
-      --bg: #f4f7fb;
-      --surface: #ffffff;
-      --surface-soft: #f7f9fc;
-      --text: #172033;
-      --muted: #748094;
-      --line: #e1e7ef;
-      --blue: #2563eb;
-      --blue-dark: #1d4ed8;
-      --orange: #f59e0b;
-      --green: #14a66b;
-      --gray: #64748b;
-      --red: #dc2626;
-      --shadow: 0 18px 45px rgba(15, 23, 42, .07);
-      --shadow-soft: 0 8px 24px rgba(15, 23, 42, .055);
-      --radius: 18px;
+      --tb-green: #16a34a;
+      --tb-blue: #2563eb;
+      --tb-orange: #f59e0b;
+      --tb-red: #dc2626;
+      --tb-muted: #6c757d;
+      --tb-line: #dee2e6;
     }
 
-    * { box-sizing: border-box; }
-
     body {
-      margin: 0;
-      background:
-        radial-gradient(circle at 20% 0%, rgba(20, 166, 107, .08), transparent 28rem),
-        radial-gradient(circle at 100% 10%, rgba(37, 99, 235, .07), transparent 26rem),
-        var(--bg);
-      color: var(--text);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       font-size: 14px;
     }
 
-    a { color: var(--blue); text-decoration: none; }
-    a:hover { text-decoration: underline; }
-
-    .app-shell {
-      min-height: 100vh;
-      display: grid;
-      grid-template-columns: 260px 1fr;
-    }
-
-    .sidebar {
-      background: #101827;
-      color: #e5edf7;
-      padding: 24px 18px;
-      display: flex;
-      flex-direction: column;
-      gap: 26px;
-      box-shadow: 10px 0 30px rgba(15, 23, 42, .10);
-    }
-
-    .brand {
-      color: white;
-      font-size: 20px;
-      font-weight: 800;
-      letter-spacing: 0;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .brand-mark {
-      width: 38px;
-      height: 38px;
-      border-radius: 13px;
-      background: linear-gradient(135deg, #14a66b, #2563eb);
-      display: grid;
-      place-items: center;
-      font-weight: 900;
-      box-shadow: 0 10px 22px rgba(20, 166, 107, .24);
-    }
-
-    .nav-group {
-      display: grid;
-      gap: 6px;
-    }
-
-    .nav-link {
-      color: #c4cfdd;
-      border-radius: 14px;
-      padding: 11px 12px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-weight: 650;
-    }
-
-    .nav-link:hover {
-      background: rgba(255, 255, 255, .075);
-      color: white;
+    a:hover {
       text-decoration: none;
     }
 
-    .nav-link.active {
-      background: rgba(255, 255, 255, .13);
-      color: white;
-      box-shadow: inset 3px 0 0 #14a66b;
-    }
-
-    .sidebar-footer {
-      margin-top: auto;
-      color: #9ca3af;
-      font-size: 13px;
-    }
-
-    .content {
-      min-width: 0;
-      display: grid;
-      grid-template-rows: auto 1fr;
-    }
-
-    .topbar {
-      background: rgba(255, 255, 255, .82);
-      border-bottom: 1px solid var(--line);
-      padding: 18px 30px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 18px;
-      backdrop-filter: blur(14px);
-    }
-
-    .page-title h1 {
-      margin: 0;
-      font-size: 24px;
-      letter-spacing: 0;
-      font-weight: 760;
-    }
-
-    .page-title p {
-      margin: 4px 0 0;
-      color: var(--muted);
-    }
-
-    .user-menu {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .avatar {
-      width: 38px;
-      height: 38px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, #14a66b, #0f8c62);
-      color: white;
-      display: grid;
+    .brand-link .brand-image {
+      float: none;
+      margin-left: .35rem;
+      margin-right: .55rem;
+      width: 33px;
+      height: 33px;
+      max-height: 33px;
+      border-radius: 8px;
+      display: inline-grid;
       place-items: center;
+      background: linear-gradient(135deg, var(--tb-green), var(--tb-blue));
+      color: #ffffff;
       font-weight: 800;
-      text-transform: uppercase;
+      opacity: 1;
     }
 
-    .page {
-      padding: 30px;
-      overflow-x: hidden;
+    .main-sidebar {
+      box-shadow: 0 0 1rem rgba(0, 0, 0, .16);
     }
 
-    .messages {
-      display: grid;
-      gap: 8px;
-      margin-bottom: 18px;
+    .nav-sidebar .nav-link {
+      border-radius: .25rem;
+      font-weight: 600;
+    }
+
+    .content-header h1 {
+      font-size: 1.45rem;
+      font-weight: 700;
+    }
+
+    .content-header p {
+      margin: .2rem 0 0;
+      color: var(--tb-muted);
+    }
+
+    .content-wrapper {
+      background: #f4f6f9;
     }
 
     .panel {
-      background: var(--surface);
-      border: 1px solid var(--line);
-      border-radius: 22px;
-      box-shadow: var(--shadow);
-      padding: 22px;
-      margin-bottom: 20px;
+      background: #ffffff;
+      border: 0;
+      border-radius: .25rem;
+      box-shadow: 0 0 1px rgba(0, 0, 0, .125), 0 1px 3px rgba(0, 0, 0, .2);
+      padding: 1.25rem;
+      margin-bottom: 1rem;
     }
 
-    .panel h2, .panel h3 {
-      margin: 0 0 12px;
-      font-size: 17px;
+    .panel h2,
+    .panel h3 {
+      margin: 0 0 .75rem;
+      font-size: 1.05rem;
+      font-weight: 700;
+    }
+
+    .panel-heading {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: .75rem;
+      margin-bottom: .75rem;
+    }
+
+    .panel-heading h2 {
+      margin: 0;
+    }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: .75rem;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+
+    .btn-icon {
+      width: 2.25rem;
+      height: 2.25rem;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+    }
+
+    .btn-icon.btn-sm {
+      width: 1.95rem;
+      height: 1.95rem;
+      padding: 0;
+    }
+
+    .action-icons {
+      display: inline-flex;
+      align-items: center;
+      gap: .35rem;
+      white-space: nowrap;
     }
 
     .grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 16px;
+      gap: 1rem;
     }
 
     .metric {
-      border-left: 4px solid var(--blue);
-      box-shadow: var(--shadow-soft);
+      border-left: 4px solid var(--tb-blue);
     }
 
-    .metric.orange { border-left-color: var(--orange); }
-    .metric.green { border-left-color: var(--green); }
-    .metric.gray { border-left-color: var(--gray); }
+    .metric.orange { border-left-color: var(--tb-orange); }
+    .metric.green { border-left-color: var(--tb-green); }
+    .metric.gray { border-left-color: #6c757d; }
 
     .metric-label {
-      color: var(--muted);
+      color: var(--tb-muted);
       font-weight: 700;
       text-transform: uppercase;
-      font-size: 12px;
+      font-size: .75rem;
     }
 
     .metric-value {
-      margin-top: 8px;
-      font-size: 30px;
+      margin-top: .45rem;
+      font-size: 1.85rem;
       font-weight: 800;
       font-variant-numeric: tabular-nums;
     }
@@ -215,27 +155,24 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      gap: 16px;
-      border-radius: 22px;
-      padding: 24px;
-      margin-bottom: 20px;
-      color: #0f172a;
-      background:
-        radial-gradient(circle at 12% 20%, rgba(255,255,255,.82), transparent 18rem),
-        linear-gradient(135deg, #dff8ec 0%, #dcecff 55%, #ffffff 100%);
-      border: 1px solid rgba(255, 255, 255, .8);
-      box-shadow: var(--shadow);
+      gap: 1rem;
+      border-radius: .25rem;
+      padding: 1.25rem;
+      margin-bottom: 1rem;
+      background: #ffffff;
+      border-top: 3px solid var(--tb-blue);
+      box-shadow: 0 0 1px rgba(0, 0, 0, .125), 0 1px 3px rgba(0, 0, 0, .2);
     }
 
     .wallet-hero h2 {
       margin: 0;
-      font-size: 28px;
-      font-weight: 850;
+      font-size: 1.65rem;
+      font-weight: 800;
     }
 
     .wallet-actions {
       display: flex;
-      gap: 10px;
+      gap: .5rem;
       flex-wrap: wrap;
       justify-content: flex-end;
     }
@@ -243,24 +180,12 @@
     .dashboard-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 18px;
+      gap: 1rem;
       align-items: stretch;
     }
 
     .chart-panel-wide {
       grid-column: span 2;
-    }
-
-    .panel-heading {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 12px;
-      margin-bottom: 12px;
-    }
-
-    .panel-heading h2 {
-      margin: 0;
     }
 
     .chart-box {
@@ -275,266 +200,294 @@
     .status-list {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 8px;
-      margin-top: 12px;
-      color: var(--muted);
-      font-size: 13px;
+      gap: .5rem;
+      margin-top: .75rem;
+      color: var(--tb-muted);
+      font-size: .8125rem;
     }
 
     .status-list span {
-      background: var(--surface-soft);
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 8px 10px;
-    }
-
-    .actions {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      flex-wrap: wrap;
-      margin-bottom: 16px;
-    }
-
-    .button, button:not(.btn) {
-      border: 1px solid var(--blue);
-      background: var(--blue);
-      color: white;
-      border-radius: 13px;
-      padding: 9px 13px;
-      min-height: 38px;
-      font: inherit;
-      font-weight: 700;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-    }
-
-    .button:hover { text-decoration: none; background: var(--blue-dark); }
-    .button.secondary, button.secondary:not(.btn) { background: white; color: var(--blue); }
-    .button.secondary:hover, button.secondary:not(.btn):hover { background: #eef2ff; }
-    .button.danger, button.danger:not(.btn) { border-color: var(--red); background: var(--red); color: white; }
-
-    .btn {
-      border-radius: 13px;
-      font-weight: 700;
-      padding: 9px 14px;
-    }
-
-    .btn-sm {
-      border-radius: 10px;
-      padding: 6px 10px;
-    }
-
-    .btn-primary {
-      background: linear-gradient(135deg, #14a66b, #2563eb);
-      border-color: transparent;
-      box-shadow: 0 10px 20px rgba(37, 99, 235, .18);
-    }
-
-    .btn-primary:hover {
-      filter: brightness(.96);
-      border-color: transparent;
-    }
-
-    .btn-outline-primary {
-      color: var(--blue);
-      border-color: rgba(37, 99, 235, .45);
-      background: rgba(255, 255, 255, .72);
-    }
-
-    .btn-outline-primary:hover {
-      background: var(--blue);
-      border-color: var(--blue);
-      color: white;
+      background: #f8f9fa;
+      border: 1px solid var(--tb-line);
+      border-radius: .25rem;
+      padding: .5rem .625rem;
     }
 
     .table-wrap {
       overflow-x: auto;
     }
 
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      background: var(--surface);
-    }
-
-    th, td {
-      border-bottom: 1px solid var(--line);
-      padding: 14px 10px;
-      text-align: left;
-      vertical-align: top;
-    }
-
-    th {
-      color: var(--muted);
-      font-size: 11px;
+    .table th {
+      color: var(--tb-muted);
+      font-size: .72rem;
       text-transform: uppercase;
-      letter-spacing: .035em;
+      letter-spacing: .025em;
+      white-space: nowrap;
+    }
+
+    .align-middle td,
+    .align-middle th {
+      vertical-align: middle;
     }
 
     .form-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 16px 16px;
+      gap: 1rem;
       max-width: 940px;
     }
 
     .form-grid p {
       margin: 0;
       display: grid;
-      gap: 6px;
+      gap: .35rem;
     }
 
-    .form-grid p:has(textarea), .form-actions {
+    .form-grid p:has(textarea),
+    .form-actions {
       grid-column: 1 / -1;
     }
 
-    .form-actions {
-      padding-top: 4px;
-    }
-
     label {
-      color: #344054;
+      color: #343a40;
       font-weight: 700;
-      font-size: 13px;
+      font-size: .8125rem;
+      margin-bottom: 0;
     }
 
-    input:not(.form-control):not(.form-select):not(.form-check-input), select:not(.form-select), textarea:not(.form-control) {
+    input:not(.form-control):not(.form-check-input),
+    select:not(.form-control):not(.custom-select),
+    textarea:not(.form-control) {
       width: 100%;
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      padding: 11px 13px;
+      border: 1px solid #ced4da;
+      border-radius: .25rem;
+      padding: .55rem .75rem;
       font: inherit;
-      background: white;
+      background: #ffffff;
     }
 
-    input[type="color"] {
-      width: 64px;
-      min-height: 42px;
-      padding: 4px;
+    input[type="color"].color-field-native {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .color-picker {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      gap: .5rem;
+    }
+
+    .color-picker-trigger {
+      width: 2.4rem;
+      height: 2.4rem;
+      padding: .25rem;
+      border: 1px solid #dee2e6;
+      border-radius: .35rem;
+      background: #ffffff;
       cursor: pointer;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, .06);
     }
 
-    .form-control, .form-select {
-      border-color: var(--line);
-      border-radius: 14px;
-      min-height: 44px;
-      padding: 10px 13px;
-      background-color: #ffffff;
-      box-shadow: inset 0 1px 0 rgba(15, 23, 42, .02);
+    .color-picker-preview {
+      display: block;
+      width: 100%;
+      height: 100%;
+      border-radius: .2rem;
+      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .18);
     }
 
-    .form-control:focus, .form-select:focus {
-      border-color: #14a66b;
-      box-shadow: 0 0 0 .2rem rgba(20, 166, 107, .14);
+    .color-picker-popover {
+      position: absolute;
+      z-index: 1050;
+      top: calc(100% + .45rem);
+      left: 0;
+      width: 18.5rem;
+      padding: .75rem;
+      border: 1px solid #cfd4da;
+      border-radius: .35rem;
+      background: #ffffff;
+      box-shadow: 0 .75rem 1.75rem rgba(0, 0, 0, .18);
     }
 
-    .form-control[readonly] {
-      background-color: #f8fafc;
-      color: #667085;
-      cursor: default;
+    .color-picker-popover[hidden] {
+      display: none;
     }
 
-    textarea { min-height: 110px; resize: vertical; }
+    .color-picker-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: .55rem;
+      color: #343a40;
+      font-size: .75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .025em;
+    }
 
-    .muted { color: var(--muted); }
-    .amount { font-variant-numeric: tabular-nums; }
-    .logout-form { margin: 0; }
+    .color-picker-value {
+      color: var(--tb-muted);
+      font-size: .72rem;
+      font-weight: 600;
+      text-transform: lowercase;
+      letter-spacing: 0;
+    }
+
+    .color-picker-section {
+      margin-bottom: .7rem;
+    }
+
+    .color-picker-section:last-child {
+      margin-bottom: 0;
+    }
+
+    .color-picker-label {
+      margin-bottom: .35rem;
+      color: var(--tb-muted);
+      font-size: .72rem;
+      font-weight: 700;
+    }
+
+    .color-base-grid {
+      display: grid;
+      grid-template-columns: repeat(10, 1fr);
+      gap: .28rem;
+    }
+
+    .color-variation-grid {
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      gap: .28rem;
+    }
+
+    .color-option,
+    .color-variation {
+      width: 100%;
+      aspect-ratio: 1;
+      border: 1px solid rgba(0, 0, 0, .15);
+      border-radius: .22rem;
+      padding: 0;
+      cursor: pointer;
+      box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .42);
+    }
+
+    .color-option:hover,
+    .color-variation:hover {
+      transform: translateY(-1px);
+    }
+
+    .color-option.is-selected,
+    .color-variation.is-selected {
+      outline: 2px solid #1f2d3d;
+      outline-offset: 2px;
+    }
+
+    .color-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: .35rem;
+      padding-top: .15rem;
+    }
+
+    textarea {
+      min-height: 110px;
+      resize: vertical;
+    }
+
+    .muted {
+      color: var(--tb-muted);
+    }
+
+    .amount {
+      font-variant-numeric: tabular-nums;
+    }
+
+    .logout-form {
+      margin: 0;
+    }
 
     .badge {
       display: inline-flex;
       align-items: center;
-      min-height: 24px;
-      padding: 3px 9px;
-      border-radius: 999px;
-      font-size: 12px;
-      font-weight: 800;
+      gap: .35rem;
+      min-height: 1.35rem;
+      font-weight: 700;
     }
 
-    .badge.green { background: #dcfce7; color: #15803d; }
-    .badge.orange { background: #ffedd5; color: #c2410c; }
-    .badge.blue { background: #e0e7ff; color: #3730a3; }
-    .badge.red { background: #fee2e2; color: #b91c1c; }
+    .text-bg-primary { color: #ffffff; background-color: #007bff; }
+    .text-bg-secondary { color: #ffffff; background-color: #6c757d; }
+    .text-bg-success { color: #ffffff; background-color: #28a745; }
+    .text-bg-danger { color: #ffffff; background-color: #dc3545; }
+    .text-bg-warning { color: #1f2d3d; background-color: #ffc107; }
+    .text-bg-info { color: #ffffff; background-color: #17a2b8; }
+    .text-bg-light { color: #1f2d3d; background-color: #f8f9fa; }
 
     .color-chip {
       display: inline-flex;
       align-items: center;
-      gap: 8px;
+      gap: .5rem;
     }
 
     .color-swatch {
-      width: 18px;
-      height: 18px;
-      border: 1px solid var(--line);
-      border-radius: 999px;
+      width: 16px;
+      height: 16px;
+      border: 1px solid var(--tb-line);
+      border-radius: 50%;
       flex: 0 0 auto;
       display: inline-block;
-      vertical-align: -4px;
+      vertical-align: -3px;
+    }
+
+    .color-chip .color-value {
+      color: var(--tb-muted);
+      font-size: .75rem;
+    }
+
+    .gap-2 {
+      gap: .5rem;
     }
 
     .kanban {
       display: grid;
       grid-template-columns: repeat(4, minmax(230px, 1fr));
-      gap: 18px;
+      gap: 1rem;
       align-items: start;
       overflow-x: auto;
-      padding: 8px 2px 18px;
-      border-radius: 0;
-      background: transparent;
-      box-shadow: none;
+      padding: .25rem 0 1rem;
     }
 
     .kanban-column {
       min-width: 230px;
-      background: var(--column-color, var(--blue));
-      border-radius: 0;
+      background: var(--column-color, var(--tb-blue));
+      border-radius: .25rem;
       overflow: hidden;
-      border: 0;
-      box-shadow: 0 10px 22px rgba(15, 23, 42, .16);
+      box-shadow: 0 .25rem .65rem rgba(0, 0, 0, .16);
     }
 
-    .kanban-column:has(.kanban-head.blue) { --column-color: #2f62bd; }
-    .kanban-column:has(.kanban-head.orange) { --column-color: #fbad3d; }
-    .kanban-column:has(.kanban-head.green) { --column-color: #12c875; }
-    .kanban-column:has(.kanban-head.red) { --column-color: #ff5733; }
+    .kanban-column:has(.kanban-head.blue) { --column-color: #007bff; }
+    .kanban-column:has(.kanban-head.orange) { --column-color: #fd7e14; }
+    .kanban-column:has(.kanban-head.green) { --column-color: #28a745; }
+    .kanban-column:has(.kanban-head.red) { --column-color: #dc3545; }
 
     .kanban-head {
-      color: white;
-      padding: 12px 12px 8px;
+      color: #ffffff;
+      padding: .75rem .75rem .5rem;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 10px;
+      gap: .625rem;
       font-weight: 800;
-      text-transform: none;
-      letter-spacing: 0;
-      background: transparent;
-      font-size: 13px;
-    }
-
-    .kanban-head::after {
-      content: none;
-    }
-
-    .kanban-count {
-      min-width: auto;
-      height: auto;
-      border-radius: 0;
-      background: transparent;
-      color: rgba(255, 255, 255, .94);
-      display: inline;
-      font-size: inherit;
-      order: initial;
+      font-size: .8125rem;
     }
 
     .kanban-body {
       display: grid;
-      gap: 9px;
-      padding: 4px 9px 8px;
+      gap: .55rem;
+      padding: .25rem .55rem .5rem;
       min-height: 92px;
       max-height: calc(100vh - 220px);
       overflow-y: auto;
@@ -548,12 +501,11 @@
 
     .task-card {
       background: #ffffff;
-      border-radius: 2px;
-      box-shadow: 0 2px 5px rgba(15, 23, 42, .18);
-      border-left: 0;
-      padding: 8px;
+      border-radius: .2rem;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, .18);
+      padding: .55rem;
       display: grid;
-      gap: 6px;
+      gap: .4rem;
       cursor: grab;
       user-select: none;
       transition: transform .16s ease, box-shadow .16s ease;
@@ -561,7 +513,7 @@
 
     .task-card:hover {
       transform: translateY(-2px);
-      box-shadow: 0 7px 14px rgba(15, 23, 42, .20);
+      box-shadow: 0 .45rem .9rem rgba(0, 0, 0, .2);
     }
 
     .task-card.dragging {
@@ -569,175 +521,405 @@
       opacity: .55;
     }
 
-    .task-card.alta { border-top: 3px solid #f97316; }
-    .task-card.media { border-top: 3px solid #7c3aed; }
-    .task-card.baja { border-top: 3px solid #16a34a; }
-
-    .task-code {
-      color: var(--blue);
-      font-weight: 800;
-      font-size: 11px;
-    }
+    .task-card.alta { border-top: 3px solid #fd7e14; }
+    .task-card.media { border-top: 3px solid #007bff; }
+    .task-card.baja { border-top: 3px solid #28a745; }
 
     .task-title {
       color: #263247;
       font-weight: 700;
       text-transform: uppercase;
-      font-size: 11px;
+      font-size: .72rem;
       line-height: 1.25;
+    }
+
+    .task-code {
+      color: #007bff;
+      font-weight: 800;
+      font-size: .7rem;
     }
 
     .task-meta {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px 12px;
-      color: var(--muted);
-      font-size: 10px;
+      gap: .35rem .7rem;
+      color: var(--tb-muted);
+      font-size: .68rem;
     }
 
     .task-labels {
       display: flex;
       flex-wrap: wrap;
-      gap: 4px;
+      gap: .25rem;
     }
 
     .task-labels .badge {
-      min-height: 18px;
-      padding: 2px 6px;
-      font-size: 10px;
-      border-radius: 2px;
+      min-height: 1.1rem;
+      padding: .15rem .35rem;
+      font-size: .65rem;
+      border-radius: .2rem;
     }
 
     .task-date-chip {
       display: inline-flex;
       align-items: center;
-      gap: 4px;
-      border-radius: 2px;
-      background: #f5f7fb;
-      color: #667085;
-      padding: 2px 5px;
+      gap: .25rem;
+      border-radius: .2rem;
+      background: #f4f6f9;
+      color: #6c757d;
+      padding: .1rem .3rem;
       font-weight: 700;
     }
 
     .task-card-actions {
       display: inline-flex;
-      gap: 8px;
-      color: #667085;
-      font-size: 10px;
-    }
-
-    .task-actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-
-    .task-actions form {
-      margin: 0;
-    }
-
-    .task-actions button {
-      min-height: 30px;
-      padding: 5px 9px;
-      font-size: 12px;
+      gap: .5rem;
+      color: #6c757d;
+      font-size: .68rem;
     }
 
     .empty-state {
-      color: var(--muted);
-      background: rgba(255,255,255,.76);
-      border: 1px dashed rgba(255,255,255,.88);
-      border-radius: 2px;
-      padding: 12px;
+      color: rgba(255, 255, 255, .92);
+      background: rgba(255, 255, 255, .14);
+      border: 1px dashed rgba(255, 255, 255, .65);
+      border-radius: .2rem;
+      padding: .75rem;
       text-align: center;
-      font-size: 11px;
+      font-size: .72rem;
     }
 
     .kanban-add-card {
       display: flex;
       align-items: center;
-      gap: 8px;
-      color: white;
-      padding: 7px 12px 11px;
+      gap: .5rem;
+      color: #ffffff;
+      padding: .45rem .75rem .7rem;
       font-weight: 600;
-      font-size: 12px;
+      font-size: .75rem;
+    }
+
+    .kanban-add-card i {
+      font-size: .8rem;
     }
 
     .kanban-add-card:hover {
-      color: white;
-      text-decoration: none;
-      background: rgba(255,255,255,.16);
+      color: #ffffff;
+      background: rgba(255, 255, 255, .16);
     }
 
-    @media (max-width: 860px) {
-      .app-shell { grid-template-columns: 1fr; }
-      .sidebar { position: static; }
-      .content { min-height: 100vh; }
-      .topbar { align-items: flex-start; flex-direction: column; }
-      .page { padding: 18px; }
-      .wallet-hero { align-items: flex-start; flex-direction: column; }
-      .dashboard-grid { grid-template-columns: 1fr; }
-      .chart-panel-wide { grid-column: auto; }
-      .form-grid { grid-template-columns: 1fr; }
-      .kanban { grid-template-columns: repeat(4, minmax(230px, 1fr)); }
+    @media (max-width: 991.98px) {
+      .wallet-hero {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .dashboard-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .chart-panel-wide {
+        grid-column: auto;
+      }
+
+      .form-grid {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
-<body>
-  <div class="app-shell">
-    <aside class="sidebar">
-      <a class="brand" href="{% url 'dashboard' %}">
-        <span class="brand-mark">TB</span>
-        <span>TaskBudget</span>
-      </a>
+<body class="hold-transition sidebar-mini layout-fixed">
+  <div class="wrapper">
+    <nav class="main-header navbar navbar-expand navbar-white navbar-light">
+      <ul class="navbar-nav">
+        <li class="nav-item">
+          <a class="nav-link" data-widget="pushmenu" href="#" role="button" aria-label="Menu">
+            <i class="fas fa-bars"></i>
+          </a>
+        </li>
+        <li class="nav-item d-none d-sm-inline-block">
+          <a href="{% url 'dashboard' %}" class="nav-link">Inicio</a>
+        </li>
+      </ul>
+
       {% if user.is_authenticated %}
-        <nav class="nav-group">
-          <a class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" href="{% url 'dashboard' %}">Dashboard</a>
-          <a class="nav-link {% if 'tarea' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'tarea_list' %}">Tareas</a>
-          <a class="nav-link {% if 'movimiento' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'movimiento_list' %}">Ingresos y gastos</a>
-          <a class="nav-link {% if 'deuda' in request.resolver_match.url_name or 'pago' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'deuda_list' %}">Deudas</a>
-          <a class="nav-link {% if 'categoria' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'categoria_list' %}">Categorias</a>
-          {% if user.is_staff %}
-            <a class="nav-link {% if 'usuario' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'usuario_list' %}">Usuarios</a>
-            <a class="nav-link" href="{% url 'admin:index' %}">Admin Django</a>
-          {% endif %}
-        </nav>
+        <ul class="navbar-nav ml-auto">
+          <li class="nav-item d-flex align-items-center mr-2 text-muted">
+            <i class="fas fa-user-circle mr-1"></i>
+            <span>{{ user.username }}</span>
+          </li>
+          <li class="nav-item">
+            <form class="logout-form" method="post" action="{% url 'logout' %}">
+              {% csrf_token %}
+              <button class="btn btn-outline-primary btn-sm btn-icon" type="submit" title="Salir" aria-label="Salir">
+                <i class="fas fa-sign-out-alt"></i>
+              </button>
+            </form>
+          </li>
+        </ul>
       {% endif %}
-      <div class="sidebar-footer">
-        Agenda diaria y finanzas personales
+    </nav>
+
+    <aside class="main-sidebar sidebar-dark-primary elevation-4">
+      <a class="brand-link" href="{% url 'dashboard' %}">
+        <span class="brand-image">TB</span>
+        <span class="brand-text font-weight-light">TaskBudget</span>
+      </a>
+
+      <div class="sidebar">
+        {% if user.is_authenticated %}
+          <nav class="mt-2">
+            <ul class="nav nav-pills nav-sidebar flex-column" data-widget="treeview" role="menu">
+              <li class="nav-item">
+                <a class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" href="{% url 'dashboard' %}">
+                  <i class="nav-icon fas fa-tachometer-alt"></i>
+                  <p>Dashboard</p>
+                </a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link {% if 'tarea' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'tarea_list' %}">
+                  <i class="nav-icon fas fa-tasks"></i>
+                  <p>Tareas</p>
+                </a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link {% if 'movimiento' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'movimiento_list' %}">
+                  <i class="nav-icon fas fa-exchange-alt"></i>
+                  <p>Ingresos y gastos</p>
+                </a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link {% if 'deuda' in request.resolver_match.url_name or 'pago' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'deuda_list' %}">
+                  <i class="nav-icon fas fa-file-invoice-dollar"></i>
+                  <p>Deudas</p>
+                </a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link {% if 'categoria' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'categoria_list' %}">
+                  <i class="nav-icon fas fa-tags"></i>
+                  <p>Categorias</p>
+                </a>
+              </li>
+              {% if user.is_staff %}
+                <li class="nav-header">ADMINISTRACION</li>
+                <li class="nav-item">
+                  <a class="nav-link {% if 'usuario' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'usuario_list' %}">
+                    <i class="nav-icon fas fa-users-cog"></i>
+                    <p>Usuarios</p>
+                  </a>
+                </li>
+                <li class="nav-item">
+                  <a class="nav-link" href="{% url 'admin:index' %}">
+                    <i class="nav-icon fas fa-cog"></i>
+                    <p>Admin Django</p>
+                  </a>
+                </li>
+              {% endif %}
+            </ul>
+          </nav>
+        {% endif %}
       </div>
     </aside>
 
-    <div class="content">
-      <header class="topbar">
-        <div class="page-title">
-          <h1>{% block page_title %}Panel{% endblock %}</h1>
-          <p>{% block page_subtitle %}Control personal por usuario{% endblock %}</p>
+    <div class="content-wrapper">
+      <section class="content-header">
+        <div class="container-fluid">
+          <div class="row mb-2">
+            <div class="col-sm-8">
+              <h1>{% block page_title %}Panel{% endblock %}</h1>
+              <p>{% block page_subtitle %}Control personal por usuario{% endblock %}</p>
+            </div>
+          </div>
         </div>
-        {% if user.is_authenticated %}
-          <div class="user-menu">
-            <span class="avatar">{{ user.username|first }}</span>
-            <strong>{{ user.username }}</strong>
-            <form class="logout-form" method="post" action="{% url 'logout' %}">
-              {% csrf_token %}
-              <button class="btn btn-outline-primary btn-sm" type="submit">Salir</button>
-            </form>
-          </div>
-        {% endif %}
-      </header>
+      </section>
 
-      <main class="page">
-        {% if messages %}
-          <div class="messages">
-            {% for message in messages %}
-              <div class="alert {% if message.tags == 'error' %}alert-danger{% else %}alert-{{ message.tags|default:'success' }}{% endif %} border-0 shadow-sm mb-0">{{ message }}</div>
-            {% endfor %}
-          </div>
-        {% endif %}
-        {% block content %}{% endblock %}
-      </main>
+      <section class="content">
+        <div class="container-fluid">
+          {% if messages %}
+            <div class="messages">
+              {% for message in messages %}
+                <div class="alert {% if message.tags == 'error' %}alert-danger{% else %}alert-{{ message.tags|default:'success' }}{% endif %} shadow-sm">{{ message }}</div>
+              {% endfor %}
+            </div>
+          {% endif %}
+          {% block content %}{% endblock %}
+        </div>
+      </section>
     </div>
+
+    <footer class="main-footer">
+      <strong>TaskBudget</strong>
+      <span class="ml-1 text-muted">Agenda diaria y finanzas personales</span>
+    </footer>
   </div>
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.4/dist/jquery.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/js/adminlte.min.js"></script>
+  <script>
+    (() => {
+      const baseColors = [
+        "#111827", "#4b5563", "#6b7280", "#2563eb", "#0284c7",
+        "#0f766e", "#15803d", "#65a30d", "#d97706", "#dc2626",
+        "#be123c", "#7c3aed", "#6d28d9", "#a16207", "#92400e",
+      ];
+
+      function normalizeColor(value) {
+        return String(value || "").trim().toLowerCase();
+      }
+
+      function hexToRgb(hex) {
+        const value = normalizeColor(hex).replace("#", "");
+        if (value.length !== 6) return { r: 79, g: 70, b: 229 };
+        return {
+          r: Number.parseInt(value.slice(0, 2), 16),
+          g: Number.parseInt(value.slice(2, 4), 16),
+          b: Number.parseInt(value.slice(4, 6), 16),
+        };
+      }
+
+      function rgbToHex({ r, g, b }) {
+        return `#${[r, g, b].map((part) => Math.round(part).toString(16).padStart(2, "0")).join("")}`;
+      }
+
+      function mix(color, target, amount) {
+        const source = hexToRgb(color);
+        const destination = hexToRgb(target);
+        return rgbToHex({
+          r: source.r + (destination.r - source.r) * amount,
+          g: source.g + (destination.g - source.g) * amount,
+          b: source.b + (destination.b - source.b) * amount,
+        });
+      }
+
+      function variationsFor(color) {
+        return [
+          mix(color, "#ffffff", .78),
+          mix(color, "#ffffff", .58),
+          mix(color, "#ffffff", .38),
+          mix(color, "#ffffff", .18),
+          color,
+          mix(color, "#000000", .16),
+          mix(color, "#000000", .32),
+          mix(color, "#000000", .48),
+        ];
+      }
+
+      function buildColorPalette(input) {
+        if (input.dataset.paletteReady === "true") return;
+        input.dataset.paletteReady = "true";
+        input.classList.add("color-field-native");
+
+        let selected = normalizeColor(input.value || "#4f46e5");
+        let activeBase = baseColors.includes(selected) ? selected : baseColors[3];
+
+        const picker = document.createElement("div");
+        picker.className = "color-picker";
+        picker.innerHTML = `
+          <button class="color-picker-trigger" type="button" title="Elige un color" aria-label="Elige un color" aria-expanded="false">
+            <span class="color-picker-preview"></span>
+          </button>
+          <div class="color-picker-popover" hidden>
+            <div class="color-picker-title">
+              <span>Color</span>
+              <span class="color-picker-value"></span>
+            </div>
+            <div class="color-picker-section">
+              <div class="color-picker-label">Paleta</div>
+              <div class="color-base-grid" role="listbox" aria-label="Paleta de colores"></div>
+            </div>
+            <div class="color-picker-section">
+              <div class="color-picker-label">Variaciones</div>
+              <div class="color-variation-grid" role="listbox" aria-label="Variaciones de color"></div>
+            </div>
+            <div class="color-actions">
+              <button class="btn btn-sm btn-outline-secondary btn-icon" type="button" data-color-close title="Cerrar" aria-label="Cerrar">
+                <i class="fas fa-times"></i>
+              </button>
+            </div>
+          </div>
+        `;
+
+        const trigger = picker.querySelector(".color-picker-trigger");
+        const preview = picker.querySelector(".color-picker-preview");
+        const popover = picker.querySelector(".color-picker-popover");
+        const valueNode = picker.querySelector(".color-picker-value");
+        const baseGrid = picker.querySelector(".color-base-grid");
+        const variationGrid = picker.querySelector(".color-variation-grid");
+
+        function setColor(color) {
+          selected = normalizeColor(color);
+          input.value = selected;
+          preview.style.backgroundColor = selected;
+          valueNode.textContent = selected;
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          input.dispatchEvent(new Event("change", { bubbles: true }));
+          render();
+        }
+
+        function renderVariations() {
+          variationGrid.innerHTML = "";
+          variationsFor(activeBase).forEach((color) => {
+            const option = document.createElement("button");
+            option.type = "button";
+            option.className = `color-variation${normalizeColor(color) === selected ? " is-selected" : ""}`;
+            option.style.backgroundColor = color;
+            option.title = color;
+            option.setAttribute("aria-label", color);
+            option.addEventListener("click", () => setColor(color));
+            variationGrid.appendChild(option);
+          });
+        }
+
+        function render() {
+          preview.style.backgroundColor = selected;
+          valueNode.textContent = selected;
+          baseGrid.querySelectorAll(".color-option").forEach((node) => {
+            node.classList.toggle("is-selected", normalizeColor(node.dataset.color) === activeBase);
+          });
+          renderVariations();
+        }
+
+        baseColors.forEach((color) => {
+          const option = document.createElement("button");
+          option.type = "button";
+          option.className = "color-option";
+          option.dataset.color = color;
+          option.style.backgroundColor = color;
+          option.title = color;
+          option.setAttribute("aria-label", color);
+          option.addEventListener("click", () => {
+            activeBase = color;
+            setColor(color);
+          });
+          baseGrid.appendChild(option);
+        });
+
+        trigger.addEventListener("click", () => {
+          const isOpen = !popover.hidden;
+          document.querySelectorAll(".color-picker-popover").forEach((node) => node.hidden = true);
+          popover.hidden = isOpen;
+          trigger.setAttribute("aria-expanded", String(!isOpen));
+        });
+
+        picker.querySelector("[data-color-close]").addEventListener("click", () => {
+          popover.hidden = true;
+          trigger.setAttribute("aria-expanded", "false");
+        });
+
+        document.addEventListener("click", (event) => {
+          if (!picker.contains(event.target)) {
+            popover.hidden = true;
+            trigger.setAttribute("aria-expanded", "false");
+          }
+        });
+
+        input.insertAdjacentElement("afterend", picker);
+        render();
+      }
+
+      document.querySelectorAll('input[type="color"]').forEach(buildColorPalette);
+    })();
+  </script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

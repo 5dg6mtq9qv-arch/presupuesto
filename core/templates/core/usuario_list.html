@@ -6,7 +6,9 @@
 {% block content %}
 <div class="actions">
   <div></div>
-  <a class="btn btn-primary shadow-sm" href="{% url 'usuario_create' %}">Nuevo usuario</a>
+  <a class="btn btn-primary btn-icon shadow-sm" href="{% url 'usuario_create' %}" title="Nuevo usuario" aria-label="Nuevo usuario">
+    <i class="fas fa-plus"></i>
+  </a>
 </div>
 
 <section class="panel">
@@ -45,9 +47,14 @@
               {% endif %}
             </td>
             <td class="text-nowrap">
-              <a href="{% url 'usuario_update' usuario.pk %}">Editar</a>
-              ·
-              <a href="{% url 'usuario_password' usuario.pk %}">Cambiar contraseña</a>
+              <span class="action-icons">
+                <a class="btn btn-sm btn-outline-primary btn-icon" href="{% url 'usuario_update' usuario.pk %}" title="Editar" aria-label="Editar">
+                  <i class="fas fa-edit"></i>
+                </a>
+                <a class="btn btn-sm btn-outline-secondary btn-icon" href="{% url 'usuario_password' usuario.pk %}" title="Cambiar contraseña" aria-label="Cambiar contraseña">
+                  <i class="fas fa-key"></i>
+                </a>
+              </span>
             </td>
           </tr>
         {% empty %}

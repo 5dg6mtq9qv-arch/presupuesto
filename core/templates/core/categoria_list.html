@@ -10,7 +10,9 @@
     {% csrf_token %}
     {{ form.as_p }}
     <div class="form-actions">
-      <button class="btn btn-primary" type="submit">Crear categoria</button>
+      <button class="btn btn-primary btn-icon" type="submit" title="Crear categoria" aria-label="Crear categoria">
+        <i class="fas fa-plus"></i>
+      </button>
     </div>
   </form>
 </section>
@@ -27,16 +29,21 @@
               {% if categoria.color %}
                 <span class="color-chip">
                   <span class="color-swatch" style="background-color: {{ categoria.color }};"></span>
-                  {{ categoria.color }}
+                  <span class="color-value">{{ categoria.color }}</span>
                 </span>
               {% else %}
                 <span class="muted">Sin color</span>
               {% endif %}
             </td>
             <td class="text-nowrap">
-              <a href="{% url 'categoria_update' categoria.pk %}">Editar</a>
-              ·
-              <a class="link-danger" href="{% url 'categoria_delete' categoria.pk %}">Eliminar</a>
+              <span class="action-icons">
+                <a class="btn btn-sm btn-outline-primary btn-icon" href="{% url 'categoria_update' categoria.pk %}" title="Editar" aria-label="Editar">
+                  <i class="fas fa-edit"></i>
+                </a>
+                <a class="btn btn-sm btn-outline-danger btn-icon" href="{% url 'categoria_delete' categoria.pk %}" title="Eliminar" aria-label="Eliminar">
+                  <i class="fas fa-trash-alt"></i>
+                </a>
+              </span>
             </td>
           </tr>
         {% empty %}
