@@ -10,10 +10,10 @@
     {% csrf_token %}
     <div class="actions">
       <button class="btn btn-danger btn-icon" type="submit" title="Eliminar" aria-label="Eliminar">
-        <i class="fas fa-trash-alt"></i>
+        <span class="material-symbols-outlined">delete</span>
       </button>
       <a class="btn btn-outline-secondary btn-icon" href="{% url back_url %}" title="Cancelar" aria-label="Cancelar">
-        <i class="fas fa-times"></i>
+        <span class="material-symbols-outlined">close</span>
       </a>
     </div>
   </form>

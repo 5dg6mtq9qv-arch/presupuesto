@@ -7,7 +7,7 @@
 <div class="actions">
   <div></div>
   <a class="btn btn-primary btn-icon shadow-sm" href="{% url 'movimiento_create' %}" title="Nuevo movimiento" aria-label="Nuevo movimiento">
-    <i class="fas fa-plus"></i>
+    <span class="material-symbols-outlined">add</span>
   </a>
 </div>
 <section class="panel">
@@ -40,10 +40,10 @@
             <td>
               <span class="action-icons">
                 <a class="btn btn-sm btn-outline-primary btn-icon" href="{% url 'movimiento_update' movimiento.pk %}" title="Editar" aria-label="Editar">
-                  <i class="fas fa-edit"></i>
+                  <span class="material-symbols-outlined">edit</span>
                 </a>
                 <a class="btn btn-sm btn-outline-danger btn-icon" href="{% url 'movimiento_delete' movimiento.pk %}" title="Eliminar" aria-label="Eliminar">
-                  <i class="fas fa-trash-alt"></i>
+                  <span class="material-symbols-outlined">delete</span>
                 </a>
               </span>
             </td>

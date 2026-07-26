@@ -7,7 +7,7 @@
 <div class="actions">
   <div></div>
   <a class="btn btn-primary btn-icon shadow-sm" href="{% url 'deuda_create' %}" title="Nueva deuda" aria-label="Nueva deuda">
-    <i class="fas fa-plus"></i>
+    <span class="material-symbols-outlined">add</span>
   </a>
 </div>
 <section class="panel">
@@ -44,13 +44,13 @@
             </td>
             <td>
               <a class="btn btn-sm btn-outline-primary btn-icon mb-2" href="{% url 'pago_create' deuda.pk %}" title="Registrar pago" aria-label="Registrar pago">
-                <i class="fas fa-dollar-sign"></i>
+                <span class="material-symbols-outlined">payments</span>
               </a>
               {% for pago in deuda.pagos.all %}
                 <div class="d-flex align-items-center justify-content-between gap-2 small text-muted">
                   <span>{{ pago.fecha|date:"Y-m" }} · {{ pago.monto }}</span>
                   <a class="btn btn-sm btn-outline-danger btn-icon" href="{% url 'pago_delete' pago.pk %}" title="Eliminar pago" aria-label="Eliminar pago">
-                    <i class="fas fa-trash-alt"></i>
+                    <span class="material-symbols-outlined">delete</span>
                   </a>
                 </div>
               {% endfor %}
@@ -58,10 +58,10 @@
             <td>
               <span class="action-icons">
                 <a class="btn btn-sm btn-outline-primary btn-icon" href="{% url 'deuda_update' deuda.pk %}" title="Editar" aria-label="Editar">
-                  <i class="fas fa-edit"></i>
+                  <span class="material-symbols-outlined">edit</span>
                 </a>
                 <a class="btn btn-sm btn-outline-danger btn-icon" href="{% url 'deuda_delete' deuda.pk %}" title="Eliminar" aria-label="Eliminar">
-                  <i class="fas fa-trash-alt"></i>
+                  <span class="material-symbols-outlined">delete</span>
                 </a>
               </span>
             </td>

@@ -6,7 +6,7 @@ from django.contrib.auth.forms import SetPasswordForm
 from django.contrib.auth.password_validation import validate_password
 from django.utils import timezone
 
-from .models import Categoria, Deuda, MovimientoFinanciero, PagoDeuda, Tarea
+from .models import Categoria, Deuda, MovimientoFinanciero, PagoDeuda, PerfilUsuario, Tarea
 
 User = get_user_model()
 
@@ -129,6 +129,39 @@ class UsuarioPasswordForm(BootstrapFormMixin, SetPasswordForm):
         self.apply_bootstrap_classes()
 
 
+class PerfilCuentaForm(BootstrapFormMixin, forms.ModelForm):
+    class Meta:
+        model = User
+        fields = ["username", "first_name", "last_name", "email"]
+        labels = {
+            "username": "Usuario",
+            "first_name": "Nombre",
+            "last_name": "Apellido",
+            "email": "Correo",
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.apply_bootstrap_classes()
+
+
+class PerfilUsuarioForm(BootstrapFormMixin, forms.ModelForm):
+    class Meta:
+        model = PerfilUsuario
+        fields = ["imagen", "telefono"]
+        labels = {
+            "imagen": "Imagen",
+            "telefono": "Teléfono",
+        }
+        widgets = {
+            "imagen": forms.ClearableFileInput(attrs={"accept": "image/*"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.apply_bootstrap_classes()
+
+
 class CategoriaForm(UserScopedModelForm):
     class Meta:
         model = Categoria
@@ -151,7 +184,11 @@ class TareaForm(UserScopedModelForm):
             "descripcion",
             "categoria",
             "prioridad",
+            "fecha",
         ]
+        widgets = {
+            "fecha": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
+        }
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, user=user, **kwargs)
@@ -159,6 +196,8 @@ class TareaForm(UserScopedModelForm):
             usuario=user,
             tipo=Categoria.Tipo.TAREA,
         )
+        if not self.is_bound and not self.instance.pk:
+            self.fields["fecha"].initial = timezone.localdate().isoformat()
 
 
 class MovimientoFinancieroForm(UserScopedModelForm):

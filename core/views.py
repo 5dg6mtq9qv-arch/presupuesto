@@ -9,18 +9,21 @@ from django.db import transaction
 from django.db.models import Sum
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 
 from .forms import (
     CategoriaForm,
     DeudaForm,
     MovimientoFinancieroForm,
     PagoDeudaForm,
+    PerfilCuentaForm,
+    PerfilUsuarioForm,
     TareaForm,
     UsuarioCreateForm,
     UsuarioPasswordForm,
     UsuarioUpdateForm,
 )
-from .models import Categoria, Deuda, MovimientoFinanciero, PagoDeuda, Tarea
+from .models import Categoria, Deuda, MovimientoFinanciero, PagoDeuda, PerfilUsuario, Tarea
 
 User = get_user_model()
 
@@ -36,6 +39,33 @@ def assign_user_and_save(form, user):
 def admin_required(view_func):
     return login_required(
         user_passes_test(lambda user: user.is_staff, login_url="dashboard")(view_func)
+    )
+
+
+@login_required
+def perfil_update(request):
+    perfil, _ = PerfilUsuario.objects.get_or_create(usuario=request.user)
+
+    if request.method == "POST":
+        cuenta_form = PerfilCuentaForm(request.POST, instance=request.user)
+        perfil_form = PerfilUsuarioForm(request.POST, request.FILES, instance=perfil)
+        if cuenta_form.is_valid() and perfil_form.is_valid():
+            cuenta_form.save()
+            perfil_form.save()
+            messages.success(request, "Perfil actualizado.")
+            return redirect("perfil_update")
+    else:
+        cuenta_form = PerfilCuentaForm(instance=request.user)
+        perfil_form = PerfilUsuarioForm(instance=perfil)
+
+    return render(
+        request,
+        "core/perfil_form.html",
+        {
+            "cuenta_form": cuenta_form,
+            "perfil_form": perfil_form,
+            "perfil": perfil,
+        },
     )
 
 
@@ -128,6 +158,7 @@ def dashboard(request):
     gastos = movimientos_mes.filter(
         tipo=MovimientoFinanciero.Tipo.GASTO,
     ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    margen = ingresos - gastos
     deudas_activas = Deuda.objects.filter(
         usuario=request.user,
         estado=Deuda.Estado.ACTIVA,
@@ -138,6 +169,19 @@ def dashboard(request):
         fecha__year=hoy.year,
         fecha__month=hoy.month,
     ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    posicion_neta = margen - saldo_deudas
+    uso_ingresos = Decimal("0")
+    if ingresos:
+        uso_ingresos = (gastos / ingresos * Decimal("100")).quantize(
+            Decimal("0.01"),
+            rounding=ROUND_HALF_UP,
+        )
+    estado_presupuesto = "Sin ingresos registrados"
+    if ingresos:
+        if posicion_neta >= 0:
+            estado_presupuesto = "Dentro del presupuesto"
+        else:
+            estado_presupuesto = "Revisar obligaciones"
 
     tarea_resumen = {
         estado: tareas.filter(estado=estado).count()
@@ -146,14 +190,6 @@ def dashboard(request):
             Tarea.Estado.EN_PROGRESO,
             Tarea.Estado.COMPLETADA,
             Tarea.Estado.CANCELADA,
-        ]
-    }
-    deuda_resumen = {
-        estado: Deuda.objects.filter(usuario=request.user, estado=estado).count()
-        for estado in [
-            Deuda.Estado.ACTIVA,
-            Deuda.Estado.PAGADA,
-            Deuda.Estado.CANCELADA,
         ]
     }
 
@@ -201,7 +237,7 @@ def dashboard(request):
                 "mes": mes.strftime("%m/%Y"),
                 "ingresos": float(ingresos_mes),
                 "gastos": float(gastos_mes),
-                "balance": float(ingresos_mes - gastos_mes),
+                "margen": float(ingresos_mes - gastos_mes),
             }
         )
 
@@ -219,25 +255,24 @@ def dashboard(request):
             "labels": [item["mes"] for item in flujo_mensual],
             "ingresos": [item["ingresos"] for item in flujo_mensual],
             "gastos": [item["gastos"] for item in flujo_mensual],
-            "balance": [item["balance"] for item in flujo_mensual],
+            "margen": [item["margen"] for item in flujo_mensual],
+        },
+        "balanceGeneral": {
+            "labels": ["Ingresos", "Gastos", "Deudas", "Posición neta"],
+            "values": [float(ingresos), float(gastos), float(saldo_deudas), float(posicion_neta)],
+        },
+        "obligaciones": {
+            "labels": ["Pagado este mes", "Saldo pendiente"],
+            "values": [float(pagos_mes), float(saldo_deudas)],
         },
         "gastosCategoria": {
             "labels": [item["categoria"] for item in gastos_categoria],
             "values": [item["total"] for item in gastos_categoria],
             "colors": [item["color"] for item in gastos_categoria],
         },
-        "deudas": {
-            "labels": ["Activas", "Pagadas", "Canceladas"],
-            "values": [
-                deuda_resumen[Deuda.Estado.ACTIVA],
-                deuda_resumen[Deuda.Estado.PAGADA],
-                deuda_resumen[Deuda.Estado.CANCELADA],
-            ],
-        },
     }
 
     ultimos_movimientos = MovimientoFinanciero.objects.filter(usuario=request.user)[:6]
-    ultimas_deudas = Deuda.objects.filter(usuario=request.user)[:5]
 
     return render(
         request,
@@ -247,16 +282,197 @@ def dashboard(request):
             "tareas_hoy": tareas_hoy,
             "ingresos": ingresos,
             "gastos": gastos,
-            "balance": ingresos - gastos,
-            "deudas_activas": deudas_activas[:5],
+            "margen": margen,
             "saldo_deudas": saldo_deudas,
             "pagos_mes": pagos_mes,
+            "posicion_neta": posicion_neta,
+            "uso_ingresos": uso_ingresos,
+            "estado_presupuesto": estado_presupuesto,
             "tarea_resumen": tarea_resumen,
-            "deuda_resumen": deuda_resumen,
             "gastos_categoria": gastos_categoria,
             "chart_data": chart_data,
             "ultimos_movimientos": ultimos_movimientos,
-            "ultimas_deudas": ultimas_deudas,
+        },
+    )
+
+
+@login_required
+def analisis_financiero(request):
+    hoy = timezone.localdate()
+
+    def add_months(fecha, months):
+        month_index = fecha.month - 1 + months
+        year = fecha.year + month_index // 12
+        month = month_index % 12 + 1
+        return fecha.replace(year=year, month=month, day=1)
+
+    fecha_inicio_default = add_months(hoy.replace(day=1), -5)
+    fecha_fin_default = hoy
+    fecha_inicio = parse_date(request.GET.get("desde", "")) or fecha_inicio_default
+    fecha_fin = parse_date(request.GET.get("hasta", "")) or fecha_fin_default
+    if fecha_inicio > fecha_fin:
+        fecha_inicio, fecha_fin = fecha_fin, fecha_inicio
+
+    tipo = request.GET.get("tipo", "todos")
+    categoria_id = request.GET.get("categoria", "")
+    if categoria_id and not categoria_id.isdigit():
+        categoria_id = ""
+    categorias = Categoria.objects.filter(usuario=request.user).order_by("tipo", "nombre")
+
+    movimientos = MovimientoFinanciero.objects.filter(
+        usuario=request.user,
+        fecha__range=(fecha_inicio, fecha_fin),
+    )
+    if tipo in {MovimientoFinanciero.Tipo.INGRESO, MovimientoFinanciero.Tipo.GASTO}:
+        movimientos = movimientos.filter(tipo=tipo)
+    if categoria_id:
+        movimientos = movimientos.filter(categoria_id=categoria_id)
+
+    ingresos = movimientos.filter(
+        tipo=MovimientoFinanciero.Tipo.INGRESO,
+    ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    gastos = movimientos.filter(
+        tipo=MovimientoFinanciero.Tipo.GASTO,
+    ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    margen = ingresos - gastos
+
+    deudas_activas = Deuda.objects.filter(
+        usuario=request.user,
+        estado=Deuda.Estado.ACTIVA,
+    )
+    if categoria_id:
+        deudas_activas = deudas_activas.filter(categoria_id=categoria_id)
+    saldo_deudas = deudas_activas.aggregate(total=Sum("saldo_actual"))["total"] or Decimal("0")
+    pagos_periodo = PagoDeuda.objects.filter(
+        deuda__usuario=request.user,
+        fecha__range=(fecha_inicio, fecha_fin),
+    )
+    if categoria_id:
+        pagos_periodo = pagos_periodo.filter(deuda__categoria_id=categoria_id)
+    pagos_total = pagos_periodo.aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    posicion_neta = margen - saldo_deudas
+
+    uso_ingresos = Decimal("0")
+    if ingresos:
+        uso_ingresos = (gastos / ingresos * Decimal("100")).quantize(
+            Decimal("0.01"),
+            rounding=ROUND_HALF_UP,
+        )
+
+    meses = []
+    cursor = fecha_inicio.replace(day=1)
+    limite = fecha_fin.replace(day=1)
+    while cursor <= limite:
+        meses.append(cursor)
+        cursor = add_months(cursor, 1)
+
+    flujo_mensual = []
+    for mes in meses:
+        siguiente = add_months(mes, 1)
+        movimientos_mes = movimientos.filter(fecha__gte=mes, fecha__lt=siguiente)
+        ingresos_mes = movimientos_mes.filter(
+            tipo=MovimientoFinanciero.Tipo.INGRESO,
+        ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+        gastos_mes = movimientos_mes.filter(
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+        ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+        pagos_mes = pagos_periodo.filter(fecha__gte=mes, fecha__lt=siguiente).aggregate(
+            total=Sum("monto")
+        )["total"] or Decimal("0")
+        flujo_mensual.append(
+            {
+                "mes": mes.strftime("%m/%Y"),
+                "ingresos": float(ingresos_mes),
+                "gastos": float(gastos_mes),
+                "deudas": float(pagos_mes),
+                "margen": float(ingresos_mes - gastos_mes - pagos_mes),
+            }
+        )
+
+    meses_con_datos = max(len(flujo_mensual), 1)
+    promedio_ingresos = ingresos / meses_con_datos
+    promedio_gastos = gastos / meses_con_datos
+    promedio_pagos = pagos_total / meses_con_datos
+    proyeccion = []
+    for offset in range(1, 4):
+        mes = add_months(fecha_fin.replace(day=1), offset)
+        proyeccion.append(
+            {
+                "mes": mes.strftime("%m/%Y"),
+                "ingresos": float(promedio_ingresos),
+                "gastos": float(promedio_gastos),
+                "deudas": float(promedio_pagos),
+                "margen": float(promedio_ingresos - promedio_gastos - promedio_pagos),
+            }
+        )
+
+    gastos_categoria = [
+        {
+            "categoria": item["categoria__nombre"] or "Sin categoría",
+            "color": item["categoria__color"] or "#f79009",
+            "total": float(item["total"] or 0),
+        }
+        for item in movimientos.filter(tipo=MovimientoFinanciero.Tipo.GASTO)
+        .values("categoria__nombre", "categoria__color")
+        .annotate(total=Sum("monto"))
+        .order_by("-total")[:10]
+    ]
+
+    top_categoria = gastos_categoria[0] if gastos_categoria else None
+    estado = "Sin ingresos registrados"
+    if ingresos:
+        if posicion_neta >= 0:
+            estado = "Balance saludable"
+        elif margen >= 0:
+            estado = "Margen positivo, deuda alta"
+        else:
+            estado = "Gastos sobre ingresos"
+
+    chart_data = {
+        "flujo": {
+            "labels": [item["mes"] for item in flujo_mensual],
+            "ingresos": [item["ingresos"] for item in flujo_mensual],
+            "gastos": [item["gastos"] for item in flujo_mensual],
+            "deudas": [item["deudas"] for item in flujo_mensual],
+            "margen": [item["margen"] for item in flujo_mensual],
+        },
+        "categorias": {
+            "labels": [item["categoria"] for item in gastos_categoria],
+            "values": [item["total"] for item in gastos_categoria],
+            "colors": [item["color"] for item in gastos_categoria],
+        },
+        "balance": {
+            "labels": ["Ingresos", "Gastos", "Deudas", "Posición neta"],
+            "values": [float(ingresos), float(gastos), float(saldo_deudas), float(posicion_neta)],
+        },
+        "proyeccion": {
+            "labels": [item["mes"] for item in proyeccion],
+            "ingresos": [item["ingresos"] for item in proyeccion],
+            "gastos": [item["gastos"] for item in proyeccion],
+            "deudas": [item["deudas"] for item in proyeccion],
+            "margen": [item["margen"] for item in proyeccion],
+        },
+    }
+
+    return render(
+        request,
+        "core/analisis_financiero.html",
+        {
+            "fecha_inicio": fecha_inicio,
+            "fecha_fin": fecha_fin,
+            "tipo": tipo,
+            "categoria_id": categoria_id,
+            "categorias": categorias,
+            "ingresos": ingresos,
+            "gastos": gastos,
+            "margen": margen,
+            "saldo_deudas": saldo_deudas,
+            "pagos_total": pagos_total,
+            "posicion_neta": posicion_neta,
+            "uso_ingresos": uso_ingresos,
+            "top_categoria": top_categoria,
+            "estado": estado,
+            "chart_data": chart_data,
         },
     )
 
@@ -348,7 +564,6 @@ def tarea_create(request):
         if form.is_valid():
             tarea = form.save(commit=False)
             tarea.usuario = request.user
-            tarea.fecha = timezone.localdate()
             tarea.estado = Tarea.Estado.PENDIENTE
             tarea.hora_inicio = None
             tarea.hora_fin = None

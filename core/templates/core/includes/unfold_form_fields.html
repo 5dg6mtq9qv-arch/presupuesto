@@ -1,0 +1,19 @@
+{% for field in form %}
+  {% if field.field.widget.input_type == "checkbox" %}
+    <div class="unfold-field unfold-check">
+      <div class="form-check">
+        {{ field }}
+        <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+      </div>
+      {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+      {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+    </div>
+  {% else %}
+    <div class="unfold-field">
+      <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+      {{ field }}
+      {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+      {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+    </div>
+  {% endif %}
+{% endfor %}

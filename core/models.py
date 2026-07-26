@@ -2,6 +2,30 @@ from django.db import models
 from django.conf import settings
 
 
+def user_profile_image_path(instance, filename):
+    return f"usuarios/{instance.usuario_id}/perfil/{filename}"
+
+
+class PerfilUsuario(models.Model):
+    usuario = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="perfil",
+    )
+    imagen = models.ImageField(upload_to=user_profile_image_path, blank=True)
+    telefono = models.CharField(max_length=30, blank=True)
+    creado = models.DateTimeField(auto_now_add=True)
+    actualizado = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = '"usuarios"."perfil_usuario"'
+        verbose_name = "perfil de usuario"
+        verbose_name_plural = "perfiles de usuario"
+
+    def __str__(self):
+        return f"Perfil de {self.usuario}"
+
+
 class Categoria(models.Model):
     class Tipo(models.TextChoices):
         TAREA = "tarea", "Tarea"

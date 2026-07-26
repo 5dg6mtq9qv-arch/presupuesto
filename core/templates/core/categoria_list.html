@@ -8,10 +8,10 @@
   <h2>Nueva categoria</h2>
   <form class="form-grid" method="post">
     {% csrf_token %}
-    {{ form.as_p }}
+    {% include "core/includes/unfold_form_fields.html" %}
     <div class="form-actions">
       <button class="btn btn-primary btn-icon" type="submit" title="Crear categoria" aria-label="Crear categoria">
-        <i class="fas fa-plus"></i>
+        <span class="material-symbols-outlined">add</span>
       </button>
     </div>
   </form>
@@ -38,10 +38,10 @@
             <td class="text-nowrap">
               <span class="action-icons">
                 <a class="btn btn-sm btn-outline-primary btn-icon" href="{% url 'categoria_update' categoria.pk %}" title="Editar" aria-label="Editar">
-                  <i class="fas fa-edit"></i>
+                  <span class="material-symbols-outlined">edit</span>
                 </a>
                 <a class="btn btn-sm btn-outline-danger btn-icon" href="{% url 'categoria_delete' categoria.pk %}" title="Eliminar" aria-label="Eliminar">
-                  <i class="fas fa-trash-alt"></i>
+                  <span class="material-symbols-outlined">delete</span>
                 </a>
               </span>
             </td>

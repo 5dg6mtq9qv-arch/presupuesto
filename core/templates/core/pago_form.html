@@ -7,13 +7,13 @@
 <section class="panel">
   <form class="form-grid" method="post">
     {% csrf_token %}
-    {{ form.as_p }}
+    {% include "core/includes/unfold_form_fields.html" %}
     <div class="form-actions actions">
       <button class="btn btn-primary btn-icon" type="submit" title="Guardar pago" aria-label="Guardar pago">
-        <i class="fas fa-save"></i>
+        <span class="material-symbols-outlined">save</span>
       </button>
       <a class="btn btn-outline-secondary btn-icon" href="{% url 'deuda_list' %}" title="Cancelar" aria-label="Cancelar">
-        <i class="fas fa-times"></i>
+        <span class="material-symbols-outlined">close</span>
       </a>
     </div>
   </form>

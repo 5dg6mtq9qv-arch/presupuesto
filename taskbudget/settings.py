@@ -43,6 +43,9 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 # Application definition
 
 INSTALLED_APPS = [
+    'unfold',
+    'unfold.contrib.filters',
+    'unfold.contrib.forms',
     'core',
     'django.contrib.admin',
     'django.contrib.auth',
@@ -90,7 +93,7 @@ DATABASES = {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': os.getenv('POSTGRES_DB', 'presupuesto'),
         'USER': os.getenv('POSTGRES_USER', 'postgres'),
-        'PASSWORD': os.getenv('POSTGRES_PASSWORD', 'Loquita'),
+        'PASSWORD': os.getenv('POSTGRES_PASSWORD', 'postgres'),
         'HOST': os.getenv('POSTGRES_HOST', 'localhost'),
         'PORT': os.getenv('POSTGRES_PORT', '5432'),
     }
@@ -138,7 +141,7 @@ STATIC_ROOT = Path(
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = Path(
-    os.getenv("MEDIA_ROOT", "/var/www/presupuesto/media")
+    os.getenv("MEDIA_ROOT", BASE_DIR / "media")
 )
 
 LOGIN_URL = 'login'
@@ -149,3 +152,11 @@ LOGOUT_REDIRECT_URL = 'login'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+UNFOLD = {
+    "SITE_TITLE": "TaskBudget",
+    "SITE_HEADER": "TaskBudget",
+    "SITE_SYMBOL": "account_balance_wallet",
+    "SHOW_HISTORY": True,
+    "SHOW_VIEW_ON_SITE": False,
+}
