@@ -4,28 +4,77 @@ from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.decorators import user_passes_test
+from django.core.paginator import Paginator
 from django.http import HttpResponseBadRequest, JsonResponse
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 
 from .forms import (
     CategoriaForm,
     DeudaForm,
+    FINANCIAL_CATEGORY_TYPES,
     MovimientoFinancieroForm,
     PagoDeudaForm,
     PerfilCuentaForm,
     PerfilUsuarioForm,
+    CategoriaPrincipalForm,
+    SubcategoriaForm,
     TareaForm,
     UsuarioCreateForm,
     UsuarioPasswordForm,
     UsuarioUpdateForm,
 )
-from .models import Categoria, Deuda, MovimientoFinanciero, PagoDeuda, PerfilUsuario, Tarea
+from .models import Categoria, Deuda, EliminacionRegistro, MovimientoFinanciero, PagoDeuda, PerfilUsuario, Tarea
 
 User = get_user_model()
+
+
+DEFAULT_FINANCIAL_CATEGORIES = [
+    {
+        "nombre": "Comida",
+        "color": "#ef4444",
+        "items": ["Almuerzo", "Merienda", "Cena", "Restaurante", "Supermercado", "Café"],
+    },
+    {
+        "nombre": "Compras",
+        "color": "#38bdf8",
+        "items": ["Ropa", "Tecnología", "Hogar", "Regalos"],
+    },
+    {
+        "nombre": "Vivienda",
+        "color": "#f59e0b",
+        "items": ["Arriendo", "Servicios básicos", "Mantenimiento"],
+    },
+    {
+        "nombre": "Transporte",
+        "color": "#64748b",
+        "items": ["Bus", "Taxi", "Combustible", "Peaje"],
+    },
+    {
+        "nombre": "Vehículo",
+        "color": "#a855f7",
+        "items": ["Mantenimiento", "Parqueadero", "Seguro"],
+    },
+    {
+        "nombre": "Vida y entretenimiento",
+        "color": "#22c55e",
+        "items": ["Salud", "Deporte", "Ocio", "Suscripciones"],
+    },
+    {
+        "nombre": "Comunicación, PC",
+        "color": "#6366f1",
+        "items": ["Internet", "Celular", "Software", "Equipos"],
+    },
+    {
+        "nombre": "Ingresos",
+        "color": "#10b981",
+        "items": ["Salario", "Venta", "Freelance", "Intereses"],
+    },
+]
 
 
 def assign_user_and_save(form, user):
@@ -34,6 +83,240 @@ def assign_user_and_save(form, user):
     instance.save()
     form.save_m2m()
     return instance
+
+
+def registrar_eliminacion(request, instance):
+    motivo = request.POST.get("motivo_eliminacion", "").strip()
+    EliminacionRegistro.objects.create(
+        usuario=request.user if request.user.is_authenticated else None,
+        modelo=instance._meta.label,
+        objeto_id=str(instance.pk),
+        objeto_repr=str(instance)[:255],
+        motivo_eliminacion=motivo,
+    )
+
+
+def registrar_categoria_reemplazada(user, categoria, old_repr):
+    EliminacionRegistro.objects.get_or_create(
+        usuario=user,
+        modelo=categoria._meta.label,
+        objeto_repr=old_repr[:255],
+        defaults={
+            "objeto_id": str(categoria.pk),
+            "motivo_eliminacion": "Reemplazada al editar la subcategoría.",
+        },
+    )
+
+
+def get_or_create_category_by_name(user, tipo, parent, nombre, defaults=None):
+    defaults = defaults or {}
+    category = Categoria.objects.filter(
+        usuario=user,
+        tipo=tipo,
+        parent=parent,
+        nombre__iexact=nombre,
+    ).order_by("pk").first()
+    if category:
+        update_fields = []
+        for field, value in defaults.items():
+            if not getattr(category, field):
+                setattr(category, field, value)
+                update_fields.append(field)
+        if update_fields:
+            category.save(update_fields=update_fields)
+        return category, False
+
+    return Categoria.objects.get_or_create(
+        usuario=user,
+        tipo=tipo,
+        parent=parent,
+        nombre=nombre,
+        defaults=defaults,
+    )
+
+
+def merge_category_into(source, target):
+    for child in source.subcategorias.all():
+        target_child = Categoria.objects.filter(
+            usuario=target.usuario,
+            tipo=target.tipo,
+            parent=target,
+            nombre__iexact=child.nombre,
+        ).exclude(pk=child.pk).order_by("pk").first()
+        if target_child:
+            MovimientoFinanciero.objects.filter(categoria=child).update(categoria=target_child)
+            Deuda.objects.filter(categoria=child).update(categoria=target_child)
+            child.delete()
+        else:
+            child.parent = target
+            child.save(update_fields=["parent"])
+
+    MovimientoFinanciero.objects.filter(categoria=source).update(categoria=target)
+    Deuda.objects.filter(categoria=source).update(categoria=target)
+    source.delete()
+
+
+def normalize_user_financial_categories(user):
+    replaced_or_deleted = set(
+        EliminacionRegistro.objects.filter(
+            usuario=user,
+            modelo="core.Categoria",
+        ).values_list("objeto_repr", flat=True)
+    )
+
+    roots_by_name = {}
+    for category in Categoria.objects.filter(
+        usuario=user,
+        tipo=Categoria.Tipo.FINANZAS,
+        parent__isnull=True,
+    ).order_by("pk"):
+        key = category.nombre.strip().casefold()
+        if key in roots_by_name:
+            merge_category_into(category, roots_by_name[key])
+        else:
+            roots_by_name[key] = category
+
+    for parent in Categoria.objects.filter(
+        usuario=user,
+        tipo=Categoria.Tipo.FINANZAS,
+        parent__isnull=True,
+    ).order_by("pk"):
+        children_by_name = {}
+        for child in parent.subcategorias.filter(tipo=Categoria.Tipo.FINANZAS).order_by("pk"):
+            category_path = f"{parent.nombre} > {child.nombre}"
+            if child.nombre.strip().casefold() != "general" and category_path in replaced_or_deleted:
+                general, _ = get_or_create_category_by_name(
+                    user=user,
+                    tipo=Categoria.Tipo.FINANZAS,
+                    parent=parent,
+                    nombre="General",
+                    defaults={"color": parent.color},
+                )
+                MovimientoFinanciero.objects.filter(categoria=child).update(categoria=general)
+                Deuda.objects.filter(categoria=child).update(categoria=general)
+                child.delete()
+                continue
+
+            key = child.nombre.strip().casefold()
+            if key in children_by_name:
+                MovimientoFinanciero.objects.filter(categoria=child).update(categoria=children_by_name[key])
+                Deuda.objects.filter(categoria=child).update(categoria=children_by_name[key])
+                child.delete()
+            else:
+                children_by_name[key] = child
+
+        general, _ = get_or_create_category_by_name(
+            user=user,
+            tipo=Categoria.Tipo.FINANZAS,
+            parent=parent,
+            nombre="General",
+            defaults={"color": parent.color},
+        )
+        MovimientoFinanciero.objects.filter(categoria=parent).update(categoria=general)
+        Deuda.objects.filter(categoria=parent).update(categoria=general)
+
+
+@transaction.atomic
+def ensure_default_financial_categories(user):
+    normalize_user_financial_categories(user)
+
+    old_food_category = Categoria.objects.filter(
+        usuario=user,
+        tipo=Categoria.Tipo.FINANZAS,
+        parent__isnull=True,
+        nombre__iexact="Comida y bebida",
+    ).first()
+    current_food_category = Categoria.objects.filter(
+        usuario=user,
+        tipo=Categoria.Tipo.FINANZAS,
+        parent__isnull=True,
+        nombre__iexact="Comida",
+    ).first()
+    if old_food_category and not current_food_category:
+        old_food_category.nombre = "Comida"
+        old_food_category.save(update_fields=["nombre"])
+        current_food_category = old_food_category
+    elif old_food_category and current_food_category:
+        general, _ = Categoria.objects.get_or_create(
+            usuario=user,
+            tipo=Categoria.Tipo.FINANZAS,
+            parent=current_food_category,
+            nombre="General",
+            defaults={"color": current_food_category.color},
+        )
+        MovimientoFinanciero.objects.filter(categoria=old_food_category).update(categoria=general)
+        Deuda.objects.filter(categoria=old_food_category).update(categoria=general)
+
+        for old_child in old_food_category.subcategorias.all():
+            target_child = Categoria.objects.filter(
+                usuario=user,
+                tipo=Categoria.Tipo.FINANZAS,
+                parent=current_food_category,
+                nombre__iexact=old_child.nombre,
+            ).first()
+            if target_child:
+                MovimientoFinanciero.objects.filter(categoria=old_child).update(categoria=target_child)
+                Deuda.objects.filter(categoria=old_child).update(categoria=target_child)
+                old_child.delete()
+            else:
+                old_child.parent = current_food_category
+                old_child.save(update_fields=["parent"])
+
+        old_food_category.delete()
+
+    has_financial_categories = Categoria.objects.filter(
+        usuario=user,
+        tipo=Categoria.Tipo.FINANZAS,
+        parent__isnull=True,
+    ).exists()
+    if not has_financial_categories:
+        for group in DEFAULT_FINANCIAL_CATEGORIES:
+            parent, _ = get_or_create_category_by_name(
+                user=user,
+                tipo=Categoria.Tipo.FINANZAS,
+                parent=None,
+                nombre=group["nombre"],
+                defaults={"color": group["color"]},
+            )
+
+            for item in ["General", *group["items"]]:
+                get_or_create_category_by_name(
+                    user=user,
+                    tipo=Categoria.Tipo.FINANZAS,
+                    parent=parent,
+                    nombre=item,
+                    defaults={"color": parent.color},
+                )
+
+    normalize_user_financial_categories(user)
+
+
+def categoria_grafica(categoria):
+    if not categoria:
+        return "Sin categoría", "#f79009"
+    principal = categoria.parent or categoria
+    return principal.nombre, principal.color or "#f79009"
+
+
+def gastos_por_categoria(queryset, limit):
+    acumulado = {}
+    for movimiento in queryset.select_related("categoria__parent"):
+        nombre, color = categoria_grafica(movimiento.categoria)
+        if nombre not in acumulado:
+            acumulado[nombre] = {"categoria": nombre, "color": color, "total": Decimal("0")}
+        acumulado[nombre]["total"] += movimiento.monto
+
+    return [
+        {**item, "total": float(item["total"])}
+        for item in sorted(acumulado.values(), key=lambda value: value["total"], reverse=True)[:limit]
+    ]
+
+
+def paginate_queryset(request, queryset, per_page=10):
+    page_obj = Paginator(queryset, per_page).get_page(request.GET.get("page"))
+    query = request.GET.copy()
+    query.pop("page", None)
+    return page_obj, query.urlencode()
 
 
 def admin_required(view_func):
@@ -72,7 +355,37 @@ def perfil_update(request):
 @admin_required
 def usuario_list(request):
     usuarios = User.objects.order_by("-is_active", "username")
-    return render(request, "core/usuario_list.html", {"usuarios": usuarios})
+    q = request.GET.get("q", "").strip()
+    estado = request.GET.get("estado", MovimientoFinanciero.Estado.CONFIRMADO)
+    rol = request.GET.get("rol", "")
+    if q:
+        usuarios = usuarios.filter(
+            Q(username__icontains=q)
+            | Q(first_name__icontains=q)
+            | Q(last_name__icontains=q)
+            | Q(email__icontains=q)
+        )
+    if estado == "activo":
+        usuarios = usuarios.filter(is_active=True)
+    elif estado == "inactivo":
+        usuarios = usuarios.filter(is_active=False)
+    if rol == "staff":
+        usuarios = usuarios.filter(is_staff=True, is_superuser=False)
+    elif rol == "superuser":
+        usuarios = usuarios.filter(is_superuser=True)
+    elif rol == "usuario":
+        usuarios = usuarios.filter(is_staff=False, is_superuser=False)
+    page_obj, list_querystring = paginate_queryset(request, usuarios)
+    return render(
+        request,
+        "core/usuario_list.html",
+        {
+            "usuarios": page_obj,
+            "page_obj": page_obj,
+            "list_querystring": list_querystring,
+            "filters": {"q": q, "estado": estado, "rol": rol},
+        },
+    )
 
 
 @admin_required
@@ -149,6 +462,7 @@ def dashboard(request):
     tareas = Tarea.objects.filter(usuario=request.user)
     movimientos_mes = MovimientoFinanciero.objects.filter(
         usuario=request.user,
+        estado=MovimientoFinanciero.Estado.CONFIRMADO,
         fecha__year=hoy.year,
         fecha__month=hoy.month,
     )
@@ -193,17 +507,10 @@ def dashboard(request):
         ]
     }
 
-    gastos_categoria = [
-        {
-            "categoria": item["categoria__nombre"] or "Sin categoría",
-            "color": item["categoria__color"] or "#fb8500",
-            "total": float(item["total"] or 0),
-        }
-        for item in movimientos_mes.filter(tipo=MovimientoFinanciero.Tipo.GASTO)
-        .values("categoria__nombre", "categoria__color")
-        .annotate(total=Sum("monto"))
-        .order_by("-total")[:8]
-    ]
+    gastos_categoria = gastos_por_categoria(
+        movimientos_mes.filter(tipo=MovimientoFinanciero.Tipo.GASTO),
+        8,
+    )
 
     def add_months(fecha, months):
         month_index = fecha.month - 1 + months
@@ -217,6 +524,7 @@ def dashboard(request):
         ingresos_mes = (
             MovimientoFinanciero.objects.filter(
                 usuario=request.user,
+                estado=MovimientoFinanciero.Estado.CONFIRMADO,
                 tipo=MovimientoFinanciero.Tipo.INGRESO,
                 fecha__year=mes.year,
                 fecha__month=mes.month,
@@ -226,6 +534,7 @@ def dashboard(request):
         gastos_mes = (
             MovimientoFinanciero.objects.filter(
                 usuario=request.user,
+                estado=MovimientoFinanciero.Estado.CONFIRMADO,
                 tipo=MovimientoFinanciero.Tipo.GASTO,
                 fecha__year=mes.year,
                 fecha__month=mes.month,
@@ -272,7 +581,10 @@ def dashboard(request):
         },
     }
 
-    ultimos_movimientos = MovimientoFinanciero.objects.filter(usuario=request.user)[:6]
+    ultimos_movimientos = MovimientoFinanciero.objects.filter(
+        usuario=request.user,
+        estado=MovimientoFinanciero.Estado.CONFIRMADO,
+    )[:6]
 
     return render(
         request,
@@ -317,10 +629,15 @@ def analisis_financiero(request):
     categoria_id = request.GET.get("categoria", "")
     if categoria_id and not categoria_id.isdigit():
         categoria_id = ""
-    categorias = Categoria.objects.filter(usuario=request.user).order_by("tipo", "nombre")
+    categorias = Categoria.objects.filter(usuario=request.user).select_related("parent").order_by(
+        "tipo",
+        "parent__nombre",
+        "nombre",
+    )
 
     movimientos = MovimientoFinanciero.objects.filter(
         usuario=request.user,
+        estado=MovimientoFinanciero.Estado.CONFIRMADO,
         fecha__range=(fecha_inicio, fecha_fin),
     )
     if tipo in {MovimientoFinanciero.Tipo.INGRESO, MovimientoFinanciero.Tipo.GASTO}:
@@ -406,17 +723,10 @@ def analisis_financiero(request):
             }
         )
 
-    gastos_categoria = [
-        {
-            "categoria": item["categoria__nombre"] or "Sin categoría",
-            "color": item["categoria__color"] or "#f79009",
-            "total": float(item["total"] or 0),
-        }
-        for item in movimientos.filter(tipo=MovimientoFinanciero.Tipo.GASTO)
-        .values("categoria__nombre", "categoria__color")
-        .annotate(total=Sum("monto"))
-        .order_by("-total")[:10]
-    ]
+    gastos_categoria = gastos_por_categoria(
+        movimientos.filter(tipo=MovimientoFinanciero.Tipo.GASTO),
+        10,
+    )
 
     top_categoria = gastos_categoria[0] if gastos_categoria else None
     estado = "Sin ingresos registrados"
@@ -479,55 +789,178 @@ def analisis_financiero(request):
 
 @login_required
 def categoria_list(request):
+    ensure_default_financial_categories(request.user)
+    categoria_form = CategoriaPrincipalForm(user=request.user)
+
     if request.method == "POST":
-        form = CategoriaForm(request.POST, user=request.user)
+        categoria_form = CategoriaPrincipalForm(request.POST, user=request.user)
+        if categoria_form.is_valid():
+            categoria = assign_user_and_save(categoria_form, request.user)
+            Categoria.objects.get_or_create(
+                usuario=request.user,
+                tipo=Categoria.Tipo.FINANZAS,
+                parent=categoria,
+                nombre="General",
+                defaults={"color": categoria.color},
+            )
+            messages.success(request, "Categoría creada.")
+            return redirect("categoria_list")
+
+    categorias = Categoria.objects.filter(
+        usuario=request.user,
+        parent__isnull=True,
+    ).order_by(
+        "tipo",
+        "nombre",
+    )
+    q = request.GET.get("q", "").strip()
+    if q:
+        categorias = categorias.filter(nombre__icontains=q)
+    page_obj, list_querystring = paginate_queryset(request, categorias)
+    return render(
+        request,
+        "core/categoria_list.html",
+        {
+            "categoria_form": categoria_form,
+            "categorias": page_obj,
+            "page_obj": page_obj,
+            "list_querystring": list_querystring,
+            "filters": {"q": q},
+        },
+    )
+
+
+@login_required
+def subcategoria_list(request):
+    ensure_default_financial_categories(request.user)
+    form = SubcategoriaForm(user=request.user)
+
+    if request.method == "POST":
+        form = SubcategoriaForm(request.POST, user=request.user)
         if form.is_valid():
             assign_user_and_save(form, request.user)
-            messages.success(request, "Categoria creada.")
-            return redirect("categoria_list")
-    else:
-        form = CategoriaForm(user=request.user)
+            messages.success(request, "Subcategoría creada.")
+            return redirect("subcategoria_list")
 
-    categorias = Categoria.objects.filter(usuario=request.user)
-    return render(request, "core/categoria_list.html", {"form": form, "categorias": categorias})
+    subcategorias = Categoria.objects.filter(
+        usuario=request.user,
+        parent__isnull=False,
+    ).select_related("parent").order_by("parent__nombre", "nombre")
+    q = request.GET.get("q", "").strip()
+    parent_id = request.GET.get("parent", "")
+    if q:
+        subcategorias = subcategorias.filter(Q(nombre__icontains=q) | Q(parent__nombre__icontains=q))
+    if parent_id.isdigit():
+        subcategorias = subcategorias.filter(parent_id=parent_id)
+    page_obj, list_querystring = paginate_queryset(request, subcategorias)
+    categorias_padre = Categoria.objects.filter(
+        usuario=request.user,
+        tipo=Categoria.Tipo.FINANZAS,
+        parent__isnull=True,
+    ).order_by("nombre")
+
+    return render(
+        request,
+        "core/subcategoria_list.html",
+        {
+            "form": form,
+            "subcategorias": page_obj,
+            "page_obj": page_obj,
+            "list_querystring": list_querystring,
+            "categorias_padre": categorias_padre,
+            "filters": {"q": q, "parent": parent_id},
+        },
+    )
 
 
 @login_required
 def categoria_update(request, pk):
     categoria = get_object_or_404(Categoria, pk=pk, usuario=request.user)
+    is_subcategory = bool(categoria.parent_id)
+    back_url = "subcategoria_list" if is_subcategory else "categoria_list"
+    if is_subcategory and categoria.nombre.strip().casefold() == "general":
+        messages.error(request, "No puedes editar la subcategoría General.")
+        return redirect("subcategoria_list")
     if request.method == "POST":
+        old_repr = str(categoria)
+        old_name = categoria.nombre
         form = CategoriaForm(request.POST, instance=categoria, user=request.user)
         if form.is_valid():
-            form.save()
-            messages.success(request, "Categoria actualizada.")
-            return redirect("categoria_list")
+            categoria = form.save()
+            if is_subcategory and old_name.strip().casefold() != categoria.nombre.strip().casefold():
+                registrar_categoria_reemplazada(request.user, categoria, old_repr)
+            messages.success(request, "Subcategoría actualizada." if is_subcategory else "Categoría actualizada.")
+            return redirect(back_url)
     else:
         form = CategoriaForm(instance=categoria, user=request.user)
 
     return render(
         request,
         "core/categoria_form.html",
-        {"form": form, "title": "Editar categoria"},
+        {
+            "form": form,
+            "title": "Editar subcategoría" if is_subcategory else "Editar categoría",
+            "subtitle": (
+                f"Actualiza el nombre y color dentro de {categoria.parent.nombre}."
+                if is_subcategory
+                else "Actualiza nombre y color de la categoría."
+            ),
+            "back_url": back_url,
+        },
     )
 
 
 @login_required
 def categoria_delete(request, pk):
     categoria = get_object_or_404(Categoria, pk=pk, usuario=request.user)
-    if request.method == "POST":
-        categoria.delete()
-        messages.success(request, "Categoria eliminada.")
+    back_url = "subcategoria_list" if categoria.parent_id else "categoria_list"
+    if request.method != "POST":
+        return redirect(back_url)
+    if not categoria.parent_id:
+        messages.error(request, "Las categorías principales no se pueden eliminar.")
         return redirect("categoria_list")
-    return render(
-        request,
-        "core/confirm_delete.html",
-        {"object": categoria, "back_url": "categoria_list"},
-    )
+    if categoria.parent_id and categoria.nombre.strip().casefold() == "general":
+        messages.error(request, "No puedes eliminar la subcategoría General.")
+        return redirect("subcategoria_list")
+
+    with transaction.atomic():
+        general, _ = get_or_create_category_by_name(
+            user=request.user,
+            tipo=categoria.tipo,
+            parent=categoria.parent,
+            nombre="General",
+            defaults={"color": categoria.parent.color},
+        )
+        MovimientoFinanciero.objects.filter(categoria=categoria).update(categoria=general)
+        Deuda.objects.filter(categoria=categoria).update(categoria=general)
+        registrar_eliminacion(request, categoria)
+        categoria.delete()
+
+    messages.success(request, "Subcategoría eliminada. Sus registros pasaron a General.")
+    return redirect(back_url)
 
 
 @login_required
 def tarea_list(request):
-    tareas = Tarea.objects.filter(usuario=request.user)
+    tareas = Tarea.objects.filter(usuario=request.user).select_related("categoria")
+    q = request.GET.get("q", "").strip()
+    estado_filter = request.GET.get("estado", "")
+    categoria_id = request.GET.get("categoria", "")
+    if q:
+        tareas = tareas.filter(Q(titulo__icontains=q) | Q(descripcion__icontains=q))
+    if estado_filter in {
+        Tarea.Estado.PENDIENTE,
+        Tarea.Estado.EN_PROGRESO,
+        Tarea.Estado.COMPLETADA,
+        Tarea.Estado.CANCELADA,
+    }:
+        tareas = tareas.filter(estado=estado_filter)
+    if categoria_id.isdigit():
+        tareas = tareas.filter(categoria_id=categoria_id)
+    categorias = Categoria.objects.filter(
+        usuario=request.user,
+        tipo=Categoria.Tipo.TAREA,
+    ).order_by("nombre")
     columnas = [
         {
             "key": Tarea.Estado.PENDIENTE,
@@ -554,7 +987,16 @@ def tarea_list(request):
             "items": tareas.filter(estado=Tarea.Estado.CANCELADA),
         },
     ]
-    return render(request, "core/tarea_list.html", {"columnas": columnas, "tareas": tareas})
+    return render(
+        request,
+        "core/tarea_list.html",
+        {
+            "columnas": columnas,
+            "tareas": tareas,
+            "categorias": categorias,
+            "filters": {"q": q, "estado": estado_filter, "categoria": categoria_id},
+        },
+    )
 
 
 @login_required
@@ -643,64 +1085,226 @@ def tarea_estado(request, pk, estado):
 @login_required
 def tarea_delete(request, pk):
     tarea = get_object_or_404(Tarea, pk=pk, usuario=request.user)
+    if request.method != "POST":
+        return redirect("tarea_list")
     if request.method == "POST":
+        registrar_eliminacion(request, tarea)
         tarea.delete()
         messages.success(request, "Tarea eliminada.")
         return redirect("tarea_list")
-    return render(request, "core/confirm_delete.html", {"object": tarea, "back_url": "tarea_list"})
 
 
 @login_required
 def movimiento_list(request):
-    movimientos = MovimientoFinanciero.objects.filter(usuario=request.user)
-    return render(request, "core/movimiento_list.html", {"movimientos": movimientos})
+    active_tipo = request.GET.get("tipo", MovimientoFinanciero.Tipo.INGRESO)
+    if active_tipo not in {MovimientoFinanciero.Tipo.INGRESO, MovimientoFinanciero.Tipo.GASTO}:
+        active_tipo = MovimientoFinanciero.Tipo.INGRESO
+    movimientos = MovimientoFinanciero.objects.filter(
+        usuario=request.user,
+        tipo=active_tipo,
+    ).select_related("categoria__parent")
+    q = request.GET.get("q", "").strip()
+    estado = request.GET.get("estado", "")
+    categoria_id = request.GET.get("categoria", "")
+    if q:
+        movimientos = movimientos.filter(
+            Q(concepto__icontains=q)
+            | Q(categoria__nombre__icontains=q)
+            | Q(categoria__parent__nombre__icontains=q)
+        )
+    if estado in {MovimientoFinanciero.Estado.CONFIRMADO, MovimientoFinanciero.Estado.ELIMINADO}:
+        movimientos = movimientos.filter(estado=estado)
+    if categoria_id.isdigit():
+        categoria = Categoria.objects.filter(
+            pk=categoria_id,
+            usuario=request.user,
+            tipo=Categoria.Tipo.FINANZAS,
+        ).first()
+        if categoria:
+            categoria_ids = [categoria.pk]
+            if not categoria.parent_id:
+                categoria_ids.extend(categoria.subcategorias.values_list("pk", flat=True))
+            movimientos = movimientos.filter(categoria_id__in=categoria_ids)
+        else:
+            categoria_id = ""
+    page_obj, list_querystring = paginate_queryset(request, movimientos)
+    categorias = Categoria.objects.filter(
+        usuario=request.user,
+        tipo=Categoria.Tipo.FINANZAS,
+    ).select_related("parent").order_by("parent__nombre", "nombre")
+    create_url_name = (
+        "movimiento_gasto_create"
+        if active_tipo == MovimientoFinanciero.Tipo.GASTO
+        else "movimiento_ingreso_create"
+    )
+    return render(
+        request,
+        "core/movimiento_list.html",
+        {
+            "movimientos": page_obj,
+            "page_obj": page_obj,
+            "list_querystring": list_querystring,
+            "active_tipo": active_tipo,
+            "create_url_name": create_url_name,
+            "categorias": categorias,
+            "filters": {"q": q, "estado": estado, "categoria": categoria_id},
+        },
+    )
 
 
 @login_required
 def movimiento_create(request):
+    return redirect("movimiento_ingreso_create")
+
+
+def movimiento_form_context(request, tipo, movimiento=None):
+    ensure_default_financial_categories(request.user)
+    tiene_categorias = Categoria.objects.filter(
+        usuario=request.user,
+        tipo__in=FINANCIAL_CATEGORY_TYPES,
+    ).exists()
+    title = "Nuevo ingreso" if tipo == MovimientoFinanciero.Tipo.INGRESO else "Nuevo gasto"
+    if movimiento:
+        title = "Editar ingreso" if tipo == MovimientoFinanciero.Tipo.INGRESO else "Editar gasto"
+    back_tipo = tipo
+
+    return tiene_categorias, title, back_tipo
+
+
+@login_required
+def movimiento_ingreso_create(request):
+    tipo = MovimientoFinanciero.Tipo.INGRESO
+    tiene_categorias, title, back_tipo = movimiento_form_context(request, tipo)
     if request.method == "POST":
-        form = MovimientoFinancieroForm(request.POST, user=request.user)
+        form = MovimientoFinancieroForm(request.POST, request.FILES, user=request.user, tipo=tipo)
         if form.is_valid():
             assign_user_and_save(form, request.user)
-            messages.success(request, "Movimiento creado.")
-            return redirect("movimiento_list")
+            messages.success(request, "Ingreso creado.")
+            return redirect(f"{reverse('movimiento_list')}?tipo={tipo}")
     else:
-        form = MovimientoFinancieroForm(user=request.user)
-    return render(request, "core/movimiento_form.html", {"form": form, "title": "Nuevo movimiento"})
+        form = MovimientoFinancieroForm(user=request.user, tipo=tipo)
+    return render(
+        request,
+        "core/movimiento_form.html",
+        {
+            "form": form,
+            "title": title,
+            "tipo": tipo,
+            "back_tipo": back_tipo,
+            "tiene_categorias": tiene_categorias,
+        },
+    )
+
+
+@login_required
+def movimiento_gasto_create(request):
+    tipo = MovimientoFinanciero.Tipo.GASTO
+    tiene_categorias, title, back_tipo = movimiento_form_context(request, tipo)
+    if request.method == "POST":
+        form = MovimientoFinancieroForm(request.POST, request.FILES, user=request.user, tipo=tipo)
+        if form.is_valid():
+            assign_user_and_save(form, request.user)
+            messages.success(request, "Gasto creado.")
+            return redirect(f"{reverse('movimiento_list')}?tipo={tipo}")
+    else:
+        form = MovimientoFinancieroForm(user=request.user, tipo=tipo)
+    return render(
+        request,
+        "core/movimiento_form.html",
+        {
+            "form": form,
+            "title": title,
+            "tipo": tipo,
+            "back_tipo": back_tipo,
+            "tiene_categorias": tiene_categorias,
+        },
+    )
 
 
 @login_required
 def movimiento_update(request, pk):
     movimiento = get_object_or_404(MovimientoFinanciero, pk=pk, usuario=request.user)
+    if movimiento.estado == MovimientoFinanciero.Estado.ELIMINADO:
+        messages.error(request, "No puedes editar un movimiento eliminado.")
+        return redirect(f"{reverse('movimiento_list')}?tipo={movimiento.tipo}")
+    tipo = movimiento.tipo
+    tiene_categorias, title, back_tipo = movimiento_form_context(request, tipo, movimiento=movimiento)
     if request.method == "POST":
-        form = MovimientoFinancieroForm(request.POST, instance=movimiento, user=request.user)
+        form = MovimientoFinancieroForm(
+            request.POST,
+            request.FILES,
+            instance=movimiento,
+            user=request.user,
+            tipo=tipo,
+        )
         if form.is_valid():
             form.save()
             messages.success(request, "Movimiento actualizado.")
-            return redirect("movimiento_list")
+            return redirect(f"{reverse('movimiento_list')}?tipo={tipo}")
     else:
-        form = MovimientoFinancieroForm(instance=movimiento, user=request.user)
-    return render(request, "core/movimiento_form.html", {"form": form, "title": "Editar movimiento"})
+        form = MovimientoFinancieroForm(instance=movimiento, user=request.user, tipo=tipo)
+    return render(
+        request,
+        "core/movimiento_form.html",
+        {
+            "form": form,
+            "title": title,
+            "tipo": tipo,
+            "back_tipo": back_tipo,
+            "tiene_categorias": tiene_categorias,
+        },
+    )
 
 
 @login_required
 def movimiento_delete(request, pk):
     movimiento = get_object_or_404(MovimientoFinanciero, pk=pk, usuario=request.user)
-    if request.method == "POST":
-        movimiento.delete()
-        messages.success(request, "Movimiento eliminado.")
-        return redirect("movimiento_list")
-    return render(
-        request,
-        "core/confirm_delete.html",
-        {"object": movimiento, "back_url": "movimiento_list"},
-    )
+    tipo = movimiento.tipo
+    if request.method != "POST":
+        return redirect(f"{reverse('movimiento_list')}?tipo={tipo}")
+    if movimiento.estado == MovimientoFinanciero.Estado.ELIMINADO:
+        messages.info(request, "El movimiento ya estaba eliminado.")
+        return redirect(f"{reverse('movimiento_list')}?tipo={tipo}")
+    registrar_eliminacion(request, movimiento)
+    movimiento.estado = MovimientoFinanciero.Estado.ELIMINADO
+    movimiento.save(update_fields=["estado"])
+    messages.success(request, "Movimiento eliminado.")
+    return redirect(f"{reverse('movimiento_list')}?tipo={tipo}")
 
 
 @login_required
 def deuda_list(request):
-    deudas = Deuda.objects.filter(usuario=request.user)
-    return render(request, "core/deuda_list.html", {"deudas": deudas})
+    deudas = Deuda.objects.filter(usuario=request.user).select_related("categoria__parent")
+    q = request.GET.get("q", "").strip()
+    estado = request.GET.get("estado", "")
+    categoria_id = request.GET.get("categoria", "")
+    if q:
+        deudas = deudas.filter(
+            Q(acreedor__icontains=q)
+            | Q(concepto__icontains=q)
+            | Q(categoria__nombre__icontains=q)
+            | Q(categoria__parent__nombre__icontains=q)
+        )
+    if estado in {Deuda.Estado.ACTIVA, Deuda.Estado.PAGADA, Deuda.Estado.CANCELADA}:
+        deudas = deudas.filter(estado=estado)
+    if categoria_id.isdigit():
+        deudas = deudas.filter(categoria_id=categoria_id)
+    page_obj, list_querystring = paginate_queryset(request, deudas)
+    categorias = Categoria.objects.filter(
+        usuario=request.user,
+        tipo=Categoria.Tipo.FINANZAS,
+    ).select_related("parent").order_by("parent__nombre", "nombre")
+    return render(
+        request,
+        "core/deuda_list.html",
+        {
+            "deudas": page_obj,
+            "page_obj": page_obj,
+            "list_querystring": list_querystring,
+            "categorias": categorias,
+            "filters": {"q": q, "estado": estado, "categoria": categoria_id},
+        },
+    )
 
 
 @login_required
@@ -733,11 +1337,13 @@ def deuda_update(request, pk):
 @login_required
 def deuda_delete(request, pk):
     deuda = get_object_or_404(Deuda, pk=pk, usuario=request.user)
+    if request.method != "POST":
+        return redirect("deuda_list")
     if request.method == "POST":
+        registrar_eliminacion(request, deuda)
         deuda.delete()
         messages.success(request, "Deuda eliminada.")
         return redirect("deuda_list")
-    return render(request, "core/confirm_delete.html", {"object": deuda, "back_url": "deuda_list"})
 
 
 @login_required
@@ -771,7 +1377,10 @@ def pago_create(request, deuda_id):
 def pago_delete(request, pk):
     pago = get_object_or_404(PagoDeuda, pk=pk, deuda__usuario=request.user)
     deuda = pago.deuda
+    if request.method != "POST":
+        return redirect("deuda_list")
     if request.method == "POST":
+        registrar_eliminacion(request, pago)
         deuda.saldo_actual += pago.monto
         if deuda.estado == Deuda.Estado.PAGADA and deuda.saldo_actual > 0:
             deuda.estado = Deuda.Estado.ACTIVA
@@ -779,4 +1388,3 @@ def pago_delete(request, pk):
         pago.delete()
         messages.success(request, "Pago eliminado.")
         return redirect("deuda_list")
-    return render(request, "core/confirm_delete.html", {"object": pago, "back_url": "deuda_list"})

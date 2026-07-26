@@ -29,7 +29,7 @@
       <select class="form-select" id="categoria" name="categoria">
         <option value="">Todas</option>
         {% for categoria in categorias %}
-          <option value="{{ categoria.pk }}"{% if categoria_id == categoria.pk|stringformat:"s" %} selected{% endif %}>{{ categoria.nombre }} ({{ categoria.get_tipo_display }})</option>
+          <option value="{{ categoria.pk }}"{% if categoria_id == categoria.pk|stringformat:"s" %} selected{% endif %}>{% if categoria.parent %}{{ categoria.parent.nombre }} > {% endif %}{{ categoria.nombre }} ({{ categoria.get_tipo_display }})</option>
         {% endfor %}
       </select>
     </div>

@@ -12,7 +12,7 @@ User = get_user_model()
 
 
 FINANCIAL_CATEGORY_TYPES = [
-    Categoria.Tipo.COMUN,
+    Categoria.Tipo.FINANZAS,
 ]
 
 
@@ -22,6 +22,25 @@ def add_months(fecha, months):
     month = month_index % 12 + 1
     day = min(fecha.day, calendar.monthrange(year, month)[1])
     return fecha.replace(year=year, month=month, day=day)
+
+
+def get_general_subcategory(parent):
+    general = Categoria.objects.filter(
+        usuario=parent.usuario,
+        tipo=parent.tipo,
+        parent=parent,
+        nombre__iexact="General",
+    ).order_by("pk").first()
+    if general:
+        return general
+
+    return Categoria.objects.create(
+        usuario=parent.usuario,
+        tipo=parent.tipo,
+        parent=parent,
+        nombre="General",
+        color=parent.color,
+    )
 
 
 class UserScopedModelForm(forms.ModelForm):
@@ -165,15 +184,109 @@ class PerfilUsuarioForm(BootstrapFormMixin, forms.ModelForm):
 class CategoriaForm(UserScopedModelForm):
     class Meta:
         model = Categoria
-        fields = ["nombre", "tipo", "color"]
+        fields = ["nombre", "color"]
         widgets = {
             "color": forms.ColorInput(attrs={"value": "#4f46e5", "title": "Elige un color"}),
         }
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, user=user, **kwargs)
-        if not self.is_bound and not self.instance.pk:
-            self.fields["tipo"].initial = Categoria.Tipo.COMUN
+
+    def clean(self):
+        cleaned_data = super().clean()
+        nombre = cleaned_data.get("nombre")
+        if nombre and Categoria.objects.filter(
+            usuario=self.user,
+            parent=self.instance.parent,
+            tipo=self.instance.tipo or Categoria.Tipo.FINANZAS,
+            nombre__iexact=nombre,
+        ).exclude(pk=self.instance.pk).exists():
+            self.add_error("nombre", "Ya existe.")
+
+        return cleaned_data
+
+
+class CategoriaPrincipalForm(UserScopedModelForm):
+    class Meta:
+        model = Categoria
+        fields = ["nombre", "color"]
+        widgets = {
+            "color": forms.ColorInput(attrs={"value": "#ef4444", "title": "Elige un color"}),
+        }
+
+    def clean_nombre(self):
+        nombre = self.cleaned_data["nombre"]
+        if Categoria.objects.filter(
+            usuario=self.user,
+            tipo=Categoria.Tipo.FINANZAS,
+            parent__isnull=True,
+            nombre__iexact=nombre,
+        ).exists():
+            raise forms.ValidationError("Ya existe.")
+        return nombre
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        instance.tipo = Categoria.Tipo.FINANZAS
+        instance.parent = None
+        if commit:
+            instance.save()
+            get_general_subcategory(instance)
+            self.save_m2m()
+        return instance
+
+
+class SubcategoriaForm(UserScopedModelForm):
+    class Meta:
+        model = Categoria
+        fields = ["parent", "nombre", "color"]
+        labels = {
+            "parent": "Categoría",
+            "nombre": "Subcategoría",
+        }
+        widgets = {
+            "color": forms.ColorInput(attrs={"value": "#ef4444", "title": "Elige un color"}),
+        }
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, user=user, **kwargs)
+        self.fields["parent"].queryset = Categoria.objects.filter(
+            usuario=user,
+            tipo=Categoria.Tipo.FINANZAS,
+            parent__isnull=True,
+        ).order_by("nombre")
+        self.fields["parent"].empty_label = "Selecciona una categoría"
+
+    def clean_parent(self):
+        parent = self.cleaned_data.get("parent")
+        if not parent:
+            raise forms.ValidationError("Selecciona una categoría.")
+        if parent.parent_id:
+            raise forms.ValidationError("Selecciona una categoría principal.")
+        return parent
+
+    def clean(self):
+        cleaned_data = super().clean()
+        parent = cleaned_data.get("parent")
+        nombre = cleaned_data.get("nombre")
+        if parent and nombre and Categoria.objects.filter(
+            usuario=self.user,
+            tipo=Categoria.Tipo.FINANZAS,
+            parent=parent,
+            nombre__iexact=nombre,
+        ).exists():
+            self.add_error("nombre", "Ya existe.")
+        return cleaned_data
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        instance.tipo = Categoria.Tipo.FINANZAS
+        if not instance.color and instance.parent_id:
+            instance.color = instance.parent.color
+        if commit:
+            instance.save()
+            self.save_m2m()
+        return instance
 
 
 class TareaForm(UserScopedModelForm):
@@ -203,21 +316,54 @@ class TareaForm(UserScopedModelForm):
 class MovimientoFinancieroForm(UserScopedModelForm):
     class Meta:
         model = MovimientoFinanciero
-        fields = ["tipo", "categoria", "concepto", "monto", "fecha", "nota"]
+        fields = ["categoria", "monto", "fecha", "concepto", "comprobante"]
+        labels = {
+            "concepto": "Descripción",
+            "comprobante": "Comprobante",
+        }
+        help_texts = {
+            "comprobante": "Opcional: sube una captura, foto o archivo del pago.",
+        }
         widgets = {
             "fecha": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
             "monto": forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
+            "comprobante": forms.ClearableFileInput(attrs={"accept": "image/*,.pdf"}),
         }
 
-    def __init__(self, *args, user=None, **kwargs):
+    def __init__(self, *args, user=None, tipo=None, **kwargs):
+        self.tipo = tipo
         super().__init__(*args, user=user, **kwargs)
         self.fields["categoria"].queryset = Categoria.objects.filter(
             usuario=user,
             tipo__in=FINANCIAL_CATEGORY_TYPES,
+        ).select_related("parent").order_by("parent__nombre", "nombre")
+        self.fields["categoria"].label_from_instance = lambda obj: (
+            f"{obj.parent.nombre} > {obj.nombre}" if obj.parent_id else obj.nombre
         )
-        self.fields["categoria"].empty_label = "Sin categoria"
+        self.fields["categoria"].empty_label = "Selecciona una categoria"
+        self.fields["categoria"].help_text = "Los colores de la categoria se usan en las graficas."
         if not self.is_bound and not self.instance.pk:
             self.fields["fecha"].initial = timezone.localdate().isoformat()
+
+    def clean(self):
+        cleaned_data = super().clean()
+        categoria = cleaned_data.get("categoria")
+
+        if self.tipo == MovimientoFinanciero.Tipo.GASTO and not categoria:
+            self.add_error("categoria", "Selecciona una categoria para que el gasto aparezca bien en las graficas.")
+
+        return cleaned_data
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        if instance.categoria_id and not instance.categoria.parent_id:
+            instance.categoria = get_general_subcategory(instance.categoria)
+        if self.tipo:
+            instance.tipo = self.tipo
+        if commit:
+            instance.save()
+            self.save_m2m()
+        return instance
 
 
 class DeudaForm(UserScopedModelForm):
@@ -255,6 +401,9 @@ class DeudaForm(UserScopedModelForm):
         self.fields["categoria"].queryset = Categoria.objects.filter(
             usuario=user,
             tipo__in=FINANCIAL_CATEGORY_TYPES,
+        ).select_related("parent").order_by("parent__nombre", "nombre")
+        self.fields["categoria"].label_from_instance = lambda obj: (
+            f"{obj.parent.nombre} > {obj.nombre}" if obj.parent_id else obj.nombre
         )
         self.fields["categoria"].empty_label = "Sin categoria"
         if not self.is_bound and not self.instance.pk:
@@ -272,6 +421,15 @@ class DeudaForm(UserScopedModelForm):
             cleaned_data["fecha_vencimiento"] = add_months(fecha_inicio, numero_cuotas)
 
         return cleaned_data
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        if instance.categoria_id and not instance.categoria.parent_id:
+            instance.categoria = get_general_subcategory(instance.categoria)
+        if commit:
+            instance.save()
+            self.save_m2m()
+        return instance
 
 
 class PagoDeudaForm(UserScopedModelForm):

@@ -1,18 +1,32 @@
 {% extends "base.html" %}
 
 {% block page_title %}{{ title }}{% endblock %}
-{% block page_subtitle %}Registra ingresos y gastos por categoria{% endblock %}
+{% block page_subtitle %}{% if tipo == "gasto" %}Registra un gasto con categoría, monto y comprobante opcional{% else %}Registra un ingreso con categoría, monto y comprobante opcional{% endif %}{% endblock %}
 
 {% block content %}
+{% if not tiene_categorias %}
+  <section class="panel">
+    <div class="panel-heading">
+      <div>
+        <h2>Primero crea una categoría</h2>
+        <p class="muted mb-0">Las categorías ordenan tus gastos e ingresos y sus colores se usan en las gráficas.</p>
+      </div>
+      <a class="btn btn-primary btn-icon" href="{% url 'categoria_list' %}" title="Crear categoría" aria-label="Crear categoría">
+        <span class="material-symbols-outlined">add</span>
+      </a>
+    </div>
+  </section>
+{% endif %}
+
 <section class="panel">
-  <form class="form-grid" method="post">
+  <form class="form-grid" method="post" enctype="multipart/form-data">
     {% csrf_token %}
     {% include "core/includes/unfold_form_fields.html" %}
     <div class="form-actions actions">
       <button class="btn btn-primary btn-icon" type="submit" title="Guardar" aria-label="Guardar">
         <span class="material-symbols-outlined">save</span>
       </button>
-      <a class="btn btn-outline-secondary btn-icon" href="{% url 'movimiento_list' %}" title="Cancelar" aria-label="Cancelar">
+      <a class="btn btn-outline-secondary btn-icon" href="{% url 'movimiento_list' %}?tipo={{ back_tipo }}" title="Cancelar" aria-label="Cancelar">
         <span class="material-symbols-outlined">close</span>
       </a>
     </div>

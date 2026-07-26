@@ -13,6 +13,36 @@
     <span class="material-symbols-outlined">add</span>
   </a>
 </div>
+<section class="panel">
+  <form class="filter-form" method="get">
+    <div>
+      <label for="q">Buscar</label>
+      <input class="form-control" id="q" name="q" value="{{ filters.q }}" placeholder="Título o descripción">
+    </div>
+    <div>
+      <label for="estado">Estado</label>
+      <select class="form-select" id="estado" name="estado">
+        <option value="">Todos</option>
+        <option value="pendiente"{% if filters.estado == "pendiente" %} selected{% endif %}>Pendiente</option>
+        <option value="en_progreso"{% if filters.estado == "en_progreso" %} selected{% endif %}>Trabajando</option>
+        <option value="completada"{% if filters.estado == "completada" %} selected{% endif %}>Finalizada</option>
+        <option value="cancelada"{% if filters.estado == "cancelada" %} selected{% endif %}>Cancelada</option>
+      </select>
+    </div>
+    <div>
+      <label for="categoria">Categoría</label>
+      <select class="form-select" id="categoria" name="categoria">
+        <option value="">Todas</option>
+        {% for categoria in categorias %}
+          <option value="{{ categoria.pk }}"{% if filters.categoria == categoria.pk|stringformat:"s" %} selected{% endif %}>{{ categoria.nombre }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button class="btn btn-primary btn-icon" type="submit" title="Filtrar" aria-label="Filtrar">
+      <span class="material-symbols-outlined">filter_alt</span>
+    </button>
+  </form>
+</section>
 <section class="kanban">
   {% for columna in columnas %}
     <article class="kanban-column">
@@ -50,9 +80,13 @@
               <a href="{% url 'tarea_update' tarea.pk %}" title="Editar" aria-label="Editar">
                 <span class="material-symbols-outlined">edit</span>
               </a>
-              <a class="text-danger" href="{% url 'tarea_delete' tarea.pk %}" title="Eliminar" aria-label="Eliminar">
+              <button class="link-danger icon-button-inline" type="button" title="Eliminar" aria-label="Eliminar" data-delete-trigger="delete-tarea-{{ tarea.pk }}">
                 <span class="material-symbols-outlined">delete</span>
-              </a>
+              </button>
+              <form id="delete-tarea-{{ tarea.pk }}" method="post" action="{% url 'tarea_delete' tarea.pk %}" hidden>
+                {% csrf_token %}
+                <input type="hidden" name="motivo_eliminacion" data-delete-reason>
+              </form>
             </div>
           </div>
         {% empty %}

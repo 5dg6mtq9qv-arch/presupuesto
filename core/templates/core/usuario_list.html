@@ -12,6 +12,35 @@
 </div>
 
 <section class="panel">
+  <form class="filter-form" method="get">
+    <div>
+      <label for="q">Buscar</label>
+      <input class="form-control" id="q" name="q" value="{{ filters.q }}" placeholder="Usuario, nombre o correo">
+    </div>
+    <div>
+      <label for="estado">Estado</label>
+      <select class="form-select" id="estado" name="estado">
+        <option value="">Todos</option>
+        <option value="activo"{% if filters.estado == "activo" %} selected{% endif %}>Activo</option>
+        <option value="inactivo"{% if filters.estado == "inactivo" %} selected{% endif %}>Inactivo</option>
+      </select>
+    </div>
+    <div>
+      <label for="rol">Rol</label>
+      <select class="form-select" id="rol" name="rol">
+        <option value="">Todos</option>
+        <option value="usuario"{% if filters.rol == "usuario" %} selected{% endif %}>Usuario</option>
+        <option value="staff"{% if filters.rol == "staff" %} selected{% endif %}>Admin</option>
+        <option value="superuser"{% if filters.rol == "superuser" %} selected{% endif %}>Superadmin</option>
+      </select>
+    </div>
+    <button class="btn btn-primary btn-icon" type="submit" title="Filtrar" aria-label="Filtrar">
+      <span class="material-symbols-outlined">filter_alt</span>
+    </button>
+  </form>
+</section>
+
+<section class="panel">
   <div class="table-wrap">
     <table class="table table-hover align-middle mb-0">
       <thead>
@@ -63,5 +92,6 @@
       </tbody>
     </table>
   </div>
+  {% include "core/includes/pagination.html" %}
 </section>
 {% endblock %}

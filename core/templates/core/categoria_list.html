@@ -1,29 +1,54 @@
 {% extends "base.html" %}
 
-{% block page_title %}Categorias{% endblock %}
-{% block page_subtitle %}Clasifica tareas, ingresos, gastos y deudas{% endblock %}
+{% block page_title %}Categorías{% endblock %}
+{% block page_subtitle %}Crea categorías generales para agrupar tus movimientos{% endblock %}
 
 {% block content %}
-<section class="panel">
-  <h2>Nueva categoria</h2>
+<div class="actions">
+  <div></div>
+  <button class="btn btn-primary btn-icon shadow-sm" type="button" title="Nueva categoría" aria-label="Nueva categoría" data-create-toggle="create-category-panel">
+    <span class="material-symbols-outlined">add</span>
+  </button>
+</div>
+
+<section class="panel" id="create-category-panel"{% if not categoria_form.errors %} hidden{% endif %}>
+  <h2>Nueva categoría</h2>
   <form class="form-grid" method="post">
     {% csrf_token %}
-    {% include "core/includes/unfold_form_fields.html" %}
+    {% include "core/includes/unfold_form_fields.html" with form=categoria_form %}
     <div class="form-actions">
-      <button class="btn btn-primary btn-icon" type="submit" title="Crear categoria" aria-label="Crear categoria">
+      <button class="btn btn-primary" type="submit" title="Crear categoría" aria-label="Crear categoría">
         <span class="material-symbols-outlined">add</span>
+        <span>Crear</span>
       </button>
     </div>
   </form>
 </section>
+
+<section class="panel">
+  <form class="filter-form" method="get">
+    <div>
+      <label for="q">Buscar</label>
+      <input class="form-control" id="q" name="q" value="{{ filters.q }}" placeholder="Categoría">
+    </div>
+    <button class="btn btn-primary btn-icon" type="submit" title="Filtrar" aria-label="Filtrar">
+      <span class="material-symbols-outlined">filter_alt</span>
+    </button>
+  </form>
+</section>
+
 <section class="panel">
   <div class="table-wrap">
     <table class="table table-hover align-middle mb-0">
-      <thead><tr><th>Nombre</th><th>Tipo</th><th>Color</th><th></th></tr></thead>
+      <thead><tr><th>Categoría</th><th>Tipo</th><th>Color</th><th></th></tr></thead>
       <tbody>
         {% for categoria in categorias %}
           <tr>
-            <td>{{ categoria.nombre }}</td>
+            <td>
+              <div class="category-name">
+                <strong>{{ categoria.nombre }}</strong>
+              </div>
+            </td>
             <td><span class="badge rounded-pill text-bg-primary">{{ categoria.get_tipo_display }}</span></td>
             <td>
               {% if categoria.color %}
@@ -40,17 +65,15 @@
                 <a class="btn btn-sm btn-outline-primary btn-icon" href="{% url 'categoria_update' categoria.pk %}" title="Editar" aria-label="Editar">
                   <span class="material-symbols-outlined">edit</span>
                 </a>
-                <a class="btn btn-sm btn-outline-danger btn-icon" href="{% url 'categoria_delete' categoria.pk %}" title="Eliminar" aria-label="Eliminar">
-                  <span class="material-symbols-outlined">delete</span>
-                </a>
               </span>
             </td>
           </tr>
         {% empty %}
-          <tr><td colspan="4" class="muted">Sin categorias.</td></tr>
+          <tr><td colspan="4" class="muted">Sin categorías.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
+  {% include "core/includes/pagination.html" %}
 </section>
 {% endblock %}

@@ -6,6 +6,10 @@ def user_profile_image_path(instance, filename):
     return f"usuarios/{instance.usuario_id}/perfil/{filename}"
 
 
+def movimiento_comprobante_path(instance, filename):
+    return f"usuarios/{instance.usuario_id}/comprobantes/{filename}"
+
+
 class PerfilUsuario(models.Model):
     usuario = models.OneToOneField(
         settings.AUTH_USER_MODEL,
@@ -26,12 +30,37 @@ class PerfilUsuario(models.Model):
         return f"Perfil de {self.usuario}"
 
 
+class EliminacionRegistro(models.Model):
+    usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+    modelo = models.CharField(max_length=120)
+    objeto_id = models.CharField(max_length=80)
+    objeto_repr = models.CharField(max_length=255)
+    motivo_eliminacion = models.TextField(blank=True)
+    creado = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = '"auditoria"."eliminacion_registro"'
+        ordering = ["-creado"]
+        verbose_name = "registro de eliminación"
+        verbose_name_plural = "registros de eliminación"
+
+    def __str__(self):
+        return f"{self.modelo}: {self.objeto_repr}"
+
+
 class Categoria(models.Model):
     class Tipo(models.TextChoices):
         TAREA = "tarea", "Tarea"
-        COMUN = "comun", "Común"
+        FINANZAS = "finanzas", "Finanzas"
 
     usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    parent = models.ForeignKey(
+        "self",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="subcategorias",
+    )
     nombre = models.CharField(max_length=80)
     tipo = models.CharField(max_length=20, choices=Tipo.choices)
     color = models.CharField(max_length=20, blank=True)
@@ -42,11 +71,19 @@ class Categoria(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["usuario", "nombre", "tipo"],
-                name="categoria_unica_por_usuario_tipo",
+                condition=models.Q(parent__isnull=True),
+                name="categoria_raiz_unica_por_usuario_tipo",
+            ),
+            models.UniqueConstraint(
+                fields=["usuario", "parent", "nombre", "tipo"],
+                condition=models.Q(parent__isnull=False),
+                name="subcategoria_unica_por_padre_usuario_tipo",
             )
         ]
 
     def __str__(self):
+        if self.parent_id:
+            return f"{self.parent.nombre} > {self.nombre}"
         return f"{self.nombre} ({self.get_tipo_display()})"
 
 
@@ -101,8 +138,17 @@ class MovimientoFinanciero(models.Model):
         INGRESO = "ingreso", "Ingreso"
         GASTO = "gasto", "Gasto"
 
+    class Estado(models.TextChoices):
+        CONFIRMADO = "confirmado", "Confirmado"
+        ELIMINADO = "eliminado", "Eliminado"
+
     usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     tipo = models.CharField(max_length=20, choices=Tipo.choices)
+    estado = models.CharField(
+        max_length=20,
+        choices=Estado.choices,
+        default=Estado.CONFIRMADO,
+    )
     categoria = models.ForeignKey(
         Categoria,
         on_delete=models.SET_NULL,
@@ -112,6 +158,7 @@ class MovimientoFinanciero(models.Model):
     concepto = models.CharField(max_length=160)
     monto = models.DecimalField(max_digits=12, decimal_places=2)
     fecha = models.DateField()
+    comprobante = models.FileField(upload_to=movimiento_comprobante_path, blank=True)
     nota = models.TextField(blank=True)
     creado = models.DateTimeField(auto_now_add=True)
 

@@ -1,58 +1,122 @@
 {% extends "base.html" %}
 
 {% block page_title %}Ingresos y gastos{% endblock %}
-{% block page_subtitle %}Movimientos financieros personales del usuario actual{% endblock %}
+{% block page_subtitle %}Registra cada movimiento desde su pestaña para fijar el tipo automáticamente{% endblock %}
 
 {% block content %}
 <div class="actions">
-  <div></div>
-  <a class="btn btn-primary btn-icon shadow-sm" href="{% url 'movimiento_create' %}" title="Nuevo movimiento" aria-label="Nuevo movimiento">
+  <div class="tabs">
+    <a class="tab {% if active_tipo == 'ingreso' %}active{% endif %}" href="{% url 'movimiento_list' %}?tipo=ingreso">Ingresos</a>
+    <a class="tab {% if active_tipo == 'gasto' %}active{% endif %}" href="{% url 'movimiento_list' %}?tipo=gasto">Gastos</a>
+  </div>
+  <a class="btn btn-primary btn-icon shadow-sm" href="{% url create_url_name %}" title="{% if active_tipo == 'gasto' %}Nuevo gasto{% else %}Nuevo ingreso{% endif %}" aria-label="{% if active_tipo == 'gasto' %}Nuevo gasto{% else %}Nuevo ingreso{% endif %}">
     <span class="material-symbols-outlined">add</span>
   </a>
 </div>
+
+<section class="panel">
+  <form class="filter-form" method="get">
+    <input type="hidden" name="tipo" value="{{ active_tipo }}">
+    <div>
+      <label for="q">Buscar</label>
+      <input class="form-control" id="q" name="q" value="{{ filters.q }}" placeholder="Descripción o categoría">
+    </div>
+    <div>
+      <label for="categoria">Categoría</label>
+      <select class="form-select" id="categoria" name="categoria">
+        <option value="">Todas</option>
+        {% for categoria in categorias %}
+          <option value="{{ categoria.pk }}"{% if filters.categoria == categoria.pk|stringformat:"s" %} selected{% endif %}>{% if categoria.parent %}{{ categoria.parent.nombre }} > {% endif %}{{ categoria.nombre }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="estado">Estado</label>
+      <select class="form-select" id="estado" name="estado">
+        <option value="">Todos</option>
+        <option value="confirmado"{% if filters.estado == "confirmado" %} selected{% endif %}>Confirmado</option>
+        <option value="eliminado"{% if filters.estado == "eliminado" %} selected{% endif %}>Eliminado</option>
+      </select>
+    </div>
+    <button class="btn btn-primary btn-icon" type="submit" title="Filtrar" aria-label="Filtrar">
+      <span class="material-symbols-outlined">filter_alt</span>
+    </button>
+  </form>
+</section>
+
 <section class="panel">
   <div class="table-wrap">
     <table class="table table-hover align-middle mb-0">
-      <thead><tr><th>Concepto</th><th>Tipo</th><th>Categoria</th><th>Monto</th><th>Fecha</th><th></th></tr></thead>
+      <thead>
+        <tr>
+          <th>Categoria</th>
+          <th>Descripción</th>
+          <th>Estado</th>
+          <th>Monto</th>
+          <th>Fecha</th>
+          <th>Comprobante</th>
+          <th></th>
+        </tr>
+      </thead>
       <tbody>
         {% for movimiento in movimientos %}
           <tr>
-            <td>{{ movimiento.concepto }}</td>
-            <td>
-              <span class="badge rounded-pill {% if movimiento.tipo == 'ingreso' %}text-bg-success{% else %}text-bg-warning{% endif %}">
-                {{ movimiento.get_tipo_display }}
-              </span>
-            </td>
             <td>
               {% if movimiento.categoria %}
                 <span class="badge rounded-pill text-bg-light border">
                   {% if movimiento.categoria.color %}
                     <span class="color-swatch" style="background-color: {{ movimiento.categoria.color }};"></span>
                   {% endif %}
-                  {{ movimiento.categoria.nombre }}
+                  {% if movimiento.categoria.parent %}{{ movimiento.categoria.parent.nombre }} > {% endif %}{{ movimiento.categoria.nombre }}
                 </span>
               {% else %}
                 <span class="muted">Sin categoria</span>
               {% endif %}
             </td>
+            <td>{{ movimiento.concepto }}</td>
+            <td>
+              <span class="badge rounded-pill {% if movimiento.estado == 'eliminado' %}text-bg-danger{% else %}text-bg-success{% endif %}">
+                {{ movimiento.get_estado_display }}
+              </span>
+            </td>
             <td class="amount">{{ movimiento.monto }}</td>
             <td>{{ movimiento.fecha }}</td>
             <td>
-              <span class="action-icons">
-                <a class="btn btn-sm btn-outline-primary btn-icon" href="{% url 'movimiento_update' movimiento.pk %}" title="Editar" aria-label="Editar">
-                  <span class="material-symbols-outlined">edit</span>
+              {% if movimiento.comprobante %}
+                <a class="btn btn-sm btn-outline-primary btn-icon" href="{{ movimiento.comprobante.url }}" target="_blank" rel="noopener" title="Ver comprobante" aria-label="Ver comprobante">
+                  <span class="material-symbols-outlined">attach_file</span>
                 </a>
-                <a class="btn btn-sm btn-outline-danger btn-icon" href="{% url 'movimiento_delete' movimiento.pk %}" title="Eliminar" aria-label="Eliminar">
-                  <span class="material-symbols-outlined">delete</span>
-                </a>
-              </span>
+              {% else %}
+                <span class="muted">Sin archivo</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if movimiento.estado == "confirmado" %}
+                <span class="action-icons">
+                  <a class="btn btn-sm btn-outline-primary btn-icon" href="{% url 'movimiento_update' movimiento.pk %}" title="Editar" aria-label="Editar">
+                    <span class="material-symbols-outlined">edit</span>
+                  </a>
+                  <button class="btn btn-sm btn-outline-danger btn-icon" type="button" title="Eliminar" aria-label="Eliminar" data-delete-trigger="delete-movimiento-{{ movimiento.pk }}">
+                    <span class="material-symbols-outlined">delete</span>
+                  </button>
+                  <form id="delete-movimiento-{{ movimiento.pk }}" method="post" action="{% url 'movimiento_delete' movimiento.pk %}" hidden>
+                    {% csrf_token %}
+                    <input type="hidden" name="motivo_eliminacion" data-delete-reason>
+                  </form>
+                </span>
+              {% endif %}
             </td>
           </tr>
         {% empty %}
-          <tr><td colspan="6" class="muted">Sin movimientos.</td></tr>
+          <tr>
+            <td colspan="7" class="muted">
+              {% if active_tipo == "gasto" %}Sin gastos registrados.{% else %}Sin ingresos registrados.{% endif %}
+            </td>
+          </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
+  {% include "core/includes/pagination.html" %}
 </section>
 {% endblock %}

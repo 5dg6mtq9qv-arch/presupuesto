@@ -13,7 +13,7 @@
     <p class="mb-0 text-muted">Ingresos menos gastos y obligaciones pendientes.</p>
   </div>
   <div class="wallet-actions">
-    <a class="btn btn-primary btn-icon" href="{% url 'movimiento_create' %}" title="Nuevo movimiento" aria-label="Nuevo movimiento">
+    <a class="btn btn-primary btn-icon" href="{% url 'movimiento_ingreso_create' %}" title="Nuevo ingreso" aria-label="Nuevo ingreso">
       <span class="material-symbols-outlined">add</span>
     </a>
   </div>
@@ -155,7 +155,7 @@
           <div class="list-group-item px-0 d-flex justify-content-between align-items-center">
             <div>
               <strong>{{ movimiento.concepto }}</strong>
-              <div class="small text-muted">{{ movimiento.fecha }}{% if movimiento.categoria %} · {{ movimiento.categoria.nombre }}{% endif %}</div>
+              <div class="small text-muted">{{ movimiento.fecha }}{% if movimiento.categoria %} · {% if movimiento.categoria.parent %}{{ movimiento.categoria.parent.nombre }} > {% endif %}{{ movimiento.categoria.nombre }}{% endif %}</div>
             </div>
             <span class="{% if movimiento.tipo == 'ingreso' %}text-success{% else %}text-danger{% endif %}">
               {% if movimiento.tipo == 'ingreso' %}+{% else %}-{% endif %}{{ movimiento.monto }}

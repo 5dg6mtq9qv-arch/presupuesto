@@ -6,6 +6,7 @@
   <title>{% block title %}TaskBudget{% endblock %}</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..24,400,0,0">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css">
   <style>
     :root {
       --bg: #f8fafc;
@@ -270,6 +271,70 @@
       margin-bottom: 16px;
     }
 
+    .tabs {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--surface);
+      padding: 4px;
+    }
+
+    .filter-form {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      align-items: end;
+    }
+
+    .pagination-bar {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      padding-top: 16px;
+    }
+
+    .pagination-status {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    .select2-container { width: 100% !important; }
+    .select2-container--default .select2-selection--single {
+      min-height: 42px;
+      border-color: #d1d5db;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+    }
+    .select2-container--default .select2-selection--single .select2-selection__rendered {
+      color: var(--text);
+      line-height: 40px;
+      padding-left: 12px;
+    }
+    .select2-container--default .select2-selection--single .select2-selection__arrow {
+      height: 40px;
+    }
+
+    .tab {
+      min-height: 32px;
+      display: inline-flex;
+      align-items: center;
+      border-radius: 8px;
+      color: var(--muted);
+      font-weight: 750;
+      padding: 6px 12px;
+    }
+
+    .tab:hover,
+    .tab.active {
+      background: var(--primary-soft);
+      color: var(--primary);
+    }
+
     .grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -444,6 +509,18 @@
       padding: 0;
     }
 
+    .icon-button-inline {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      font: inherit;
+      padding: 0;
+    }
+
     .btn-sm.btn-icon {
       width: 32px;
       height: 32px;
@@ -609,6 +686,22 @@
     }
     .color-value { color: var(--muted); font-size: 12px; }
 
+    .category-name,
+    .subcategory-name {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .subcategory-name {
+      padding-left: 16px;
+    }
+
+    .subcategory-name .material-symbols-outlined {
+      color: var(--muted);
+      font-size: 16px;
+    }
+
     .kanban {
       display: grid;
       grid-template-columns: repeat(4, minmax(230px, 1fr));
@@ -730,6 +823,7 @@
           <li><a class="nav-link {% if 'movimiento' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'movimiento_list' %}"><span class="material-symbols-outlined">sync_alt</span> Ingresos y gastos</a></li>
           <li><a class="nav-link {% if 'deuda' in request.resolver_match.url_name or 'pago' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'deuda_list' %}"><span class="material-symbols-outlined">receipt_long</span> Deudas</a></li>
           <li><a class="nav-link {% if 'categoria' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'categoria_list' %}"><span class="material-symbols-outlined">sell</span> Categorías</a></li>
+          <li><a class="nav-link {% if request.resolver_match.url_name == 'subcategoria_list' %}active{% endif %}" href="{% url 'subcategoria_list' %}"><span class="material-symbols-outlined">category</span> Subcategorías</a></li>
           <li><a class="nav-link {% if request.resolver_match.url_name == 'perfil_update' %}active{% endif %}" href="{% url 'perfil_update' %}"><span class="material-symbols-outlined">account_circle</span> Perfil</a></li>
         </ul>
         {% if user.is_staff %}
@@ -826,7 +920,7 @@
     (() => {
       const baseColors = [
         "#111827", "#4b5563", "#6b7280", "#2563eb", "#0284c7",
-        "#0f766e", "#15803d", "#65a30d", "#d97706", "#dc2626",
+        "#0f766e", "#15803d", "#65a30d", "#eab308", "#d97706", "#dc2626",
         "#be123c", "#7c3aed", "#6d28d9", "#a16207", "#92400e",
       ];
 
@@ -985,6 +1079,65 @@
       }
 
       document.querySelectorAll('input[type="color"]').forEach(buildColorPalette);
+    })();
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+  <script>
+    (() => {
+      if (!window.jQuery || !jQuery.fn.select2) return;
+      jQuery("select").each(function () {
+        const select = jQuery(this);
+        if (select.data("select2")) return;
+        select.select2({
+          width: "100%",
+          allowClear: false,
+        });
+      });
+    })();
+  </script>
+  <script>
+    (() => {
+      document.querySelectorAll("[data-delete-trigger]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const form = document.getElementById(button.dataset.deleteTrigger);
+          const reasonInput = form?.querySelector("[data-delete-reason]");
+          if (!form || !reasonInput || !window.Swal) return;
+
+          const result = await Swal.fire({
+            title: "¿Eliminar registro?",
+            text: button.dataset.deleteText || "Esta acción no se puede deshacer.",
+            icon: "warning",
+            input: "textarea",
+            inputLabel: "Motivo de eliminación",
+            inputPlaceholder: "Opcional",
+            inputAttributes: {
+              "aria-label": "Motivo de eliminación",
+            },
+            showCancelButton: true,
+            confirmButtonText: "Eliminar",
+            cancelButtonText: "Cancelar",
+            confirmButtonColor: "#dc2626",
+            reverseButtons: true,
+          });
+
+          if (!result.isConfirmed) return;
+          reasonInput.value = result.value || "";
+          form.submit();
+        });
+      });
+    })();
+  </script>
+  <script>
+    (() => {
+      document.querySelectorAll("[data-create-toggle]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const panel = document.getElementById(button.dataset.createToggle);
+          if (!panel) return;
+          panel.hidden = !panel.hidden;
+        });
+      });
     })();
   </script>
   {% block scripts %}{% endblock %}

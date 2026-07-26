@@ -10,6 +10,37 @@
     <span class="material-symbols-outlined">add</span>
   </a>
 </div>
+
+<section class="panel">
+  <form class="filter-form" method="get">
+    <div>
+      <label for="q">Buscar</label>
+      <input class="form-control" id="q" name="q" value="{{ filters.q }}" placeholder="Acreedor, concepto o categoría">
+    </div>
+    <div>
+      <label for="categoria">Categoría</label>
+      <select class="form-select" id="categoria" name="categoria">
+        <option value="">Todas</option>
+        {% for categoria in categorias %}
+          <option value="{{ categoria.pk }}"{% if filters.categoria == categoria.pk|stringformat:"s" %} selected{% endif %}>{% if categoria.parent %}{{ categoria.parent.nombre }} > {% endif %}{{ categoria.nombre }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="estado">Estado</label>
+      <select class="form-select" id="estado" name="estado">
+        <option value="">Todos</option>
+        <option value="activa"{% if filters.estado == "activa" %} selected{% endif %}>Activa</option>
+        <option value="pagada"{% if filters.estado == "pagada" %} selected{% endif %}>Pagada</option>
+        <option value="cancelada"{% if filters.estado == "cancelada" %} selected{% endif %}>Cancelada</option>
+      </select>
+    </div>
+    <button class="btn btn-primary btn-icon" type="submit" title="Filtrar" aria-label="Filtrar">
+      <span class="material-symbols-outlined">filter_alt</span>
+    </button>
+  </form>
+</section>
+
 <section class="panel">
   <div class="table-wrap">
     <table class="table table-hover align-middle mb-0">
@@ -24,7 +55,7 @@
                   {% if deuda.categoria.color %}
                     <span class="color-swatch" style="background-color: {{ deuda.categoria.color }};"></span>
                   {% endif %}
-                  {{ deuda.categoria.nombre }}
+                  {% if deuda.categoria.parent %}{{ deuda.categoria.parent.nombre }} > {% endif %}{{ deuda.categoria.nombre }}
                 </span>
               {% else %}
                 <span class="muted">Sin categoria</span>
@@ -49,9 +80,13 @@
               {% for pago in deuda.pagos.all %}
                 <div class="d-flex align-items-center justify-content-between gap-2 small text-muted">
                   <span>{{ pago.fecha|date:"Y-m" }} · {{ pago.monto }}</span>
-                  <a class="btn btn-sm btn-outline-danger btn-icon" href="{% url 'pago_delete' pago.pk %}" title="Eliminar pago" aria-label="Eliminar pago">
+                  <button class="btn btn-sm btn-outline-danger btn-icon" type="button" title="Eliminar pago" aria-label="Eliminar pago" data-delete-trigger="delete-pago-{{ pago.pk }}">
                     <span class="material-symbols-outlined">delete</span>
-                  </a>
+                  </button>
+                  <form id="delete-pago-{{ pago.pk }}" method="post" action="{% url 'pago_delete' pago.pk %}" hidden>
+                    {% csrf_token %}
+                    <input type="hidden" name="motivo_eliminacion" data-delete-reason>
+                  </form>
                 </div>
               {% endfor %}
             </td>
@@ -60,9 +95,13 @@
                 <a class="btn btn-sm btn-outline-primary btn-icon" href="{% url 'deuda_update' deuda.pk %}" title="Editar" aria-label="Editar">
                   <span class="material-symbols-outlined">edit</span>
                 </a>
-                <a class="btn btn-sm btn-outline-danger btn-icon" href="{% url 'deuda_delete' deuda.pk %}" title="Eliminar" aria-label="Eliminar">
+                <button class="btn btn-sm btn-outline-danger btn-icon" type="button" title="Eliminar" aria-label="Eliminar" data-delete-trigger="delete-deuda-{{ deuda.pk }}">
                   <span class="material-symbols-outlined">delete</span>
-                </a>
+                </button>
+                <form id="delete-deuda-{{ deuda.pk }}" method="post" action="{% url 'deuda_delete' deuda.pk %}" hidden>
+                  {% csrf_token %}
+                  <input type="hidden" name="motivo_eliminacion" data-delete-reason>
+                </form>
               </span>
             </td>
           </tr>
@@ -72,5 +111,6 @@
       </tbody>
     </table>
   </div>
+  {% include "core/includes/pagination.html" %}
 </section>
 {% endblock %}

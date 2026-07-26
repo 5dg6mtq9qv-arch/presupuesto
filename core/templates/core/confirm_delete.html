@@ -6,8 +6,9 @@
 {% block content %}
 <section class="panel">
   <p>Vas a eliminar: <strong>{{ object }}</strong></p>
-  <form method="post">
+  <form method="post" data-delete-form>
     {% csrf_token %}
+    <input type="hidden" name="motivo_eliminacion" data-delete-reason>
     <div class="actions">
       <button class="btn btn-danger btn-icon" type="submit" title="Eliminar" aria-label="Eliminar">
         <span class="material-symbols-outlined">delete</span>
@@ -18,4 +19,40 @@
     </div>
   </form>
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+  (() => {
+    const form = document.querySelector("[data-delete-form]");
+    const reasonInput = document.querySelector("[data-delete-reason]");
+    if (!form || !reasonInput || !window.Swal) return;
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+
+      const result = await Swal.fire({
+        title: "¿Eliminar registro?",
+        text: "Esta acción no se puede deshacer.",
+        icon: "warning",
+        input: "textarea",
+        inputLabel: "Motivo de eliminación",
+        inputPlaceholder: "Opcional",
+        inputAttributes: {
+          "aria-label": "Motivo de eliminación",
+        },
+        showCancelButton: true,
+        confirmButtonText: "Eliminar",
+        cancelButtonText: "Cancelar",
+        confirmButtonColor: "#dc2626",
+        reverseButtons: true,
+      });
+
+      if (!result.isConfirmed) return;
+      reasonInput.value = result.value || "";
+      form.submit();
+    });
+  })();
+</script>
 {% endblock %}
