@@ -33,50 +33,6 @@ from .models import Categoria, Deuda, EliminacionRegistro, MovimientoFinanciero,
 User = get_user_model()
 
 
-DEFAULT_FINANCIAL_CATEGORIES = [
-    {
-        "nombre": "Comida",
-        "color": "#ef4444",
-        "items": ["Almuerzo", "Merienda", "Cena", "Restaurante", "Supermercado", "Café"],
-    },
-    {
-        "nombre": "Compras",
-        "color": "#38bdf8",
-        "items": ["Ropa", "Tecnología", "Hogar", "Regalos"],
-    },
-    {
-        "nombre": "Vivienda",
-        "color": "#f59e0b",
-        "items": ["Arriendo", "Servicios básicos", "Mantenimiento"],
-    },
-    {
-        "nombre": "Transporte",
-        "color": "#64748b",
-        "items": ["Bus", "Taxi", "Combustible", "Peaje"],
-    },
-    {
-        "nombre": "Vehículo",
-        "color": "#a855f7",
-        "items": ["Mantenimiento", "Parqueadero", "Seguro"],
-    },
-    {
-        "nombre": "Vida y entretenimiento",
-        "color": "#22c55e",
-        "items": ["Salud", "Deporte", "Ocio", "Suscripciones"],
-    },
-    {
-        "nombre": "Comunicación, PC",
-        "color": "#6366f1",
-        "items": ["Internet", "Celular", "Software", "Equipos"],
-    },
-    {
-        "nombre": "Ingresos",
-        "color": "#10b981",
-        "items": ["Salario", "Venta", "Freelance", "Intereses"],
-    },
-]
-
-
 def assign_user_and_save(form, user):
     instance = form.save(commit=False)
     instance.usuario = user
@@ -93,18 +49,6 @@ def registrar_eliminacion(request, instance):
         objeto_id=str(instance.pk),
         objeto_repr=str(instance)[:255],
         motivo_eliminacion=motivo,
-    )
-
-
-def registrar_categoria_reemplazada(user, categoria, old_repr):
-    EliminacionRegistro.objects.get_or_create(
-        usuario=user,
-        modelo=categoria._meta.label,
-        objeto_repr=old_repr[:255],
-        defaults={
-            "objeto_id": str(categoria.pk),
-            "motivo_eliminacion": "Reemplazada al editar la subcategoría.",
-        },
     )
 
 
@@ -157,13 +101,6 @@ def merge_category_into(source, target):
 
 
 def normalize_user_financial_categories(user):
-    replaced_or_deleted = set(
-        EliminacionRegistro.objects.filter(
-            usuario=user,
-            modelo="core.Categoria",
-        ).values_list("objeto_repr", flat=True)
-    )
-
     roots_by_name = {}
     for category in Categoria.objects.filter(
         usuario=user,
@@ -183,20 +120,6 @@ def normalize_user_financial_categories(user):
     ).order_by("pk"):
         children_by_name = {}
         for child in parent.subcategorias.filter(tipo=Categoria.Tipo.FINANZAS).order_by("pk"):
-            category_path = f"{parent.nombre} > {child.nombre}"
-            if child.nombre.strip().casefold() != "general" and category_path in replaced_or_deleted:
-                general, _ = get_or_create_category_by_name(
-                    user=user,
-                    tipo=Categoria.Tipo.FINANZAS,
-                    parent=parent,
-                    nombre="General",
-                    defaults={"color": parent.color},
-                )
-                MovimientoFinanciero.objects.filter(categoria=child).update(categoria=general)
-                Deuda.objects.filter(categoria=child).update(categoria=general)
-                child.delete()
-                continue
-
             key = child.nombre.strip().casefold()
             if key in children_by_name:
                 MovimientoFinanciero.objects.filter(categoria=child).update(categoria=children_by_name[key])
@@ -217,7 +140,7 @@ def normalize_user_financial_categories(user):
 
 
 @transaction.atomic
-def ensure_default_financial_categories(user):
+def ensure_financial_categories_consistency(user):
     normalize_user_financial_categories(user)
 
     old_food_category = Categoria.objects.filter(
@@ -237,8 +160,8 @@ def ensure_default_financial_categories(user):
         old_food_category.save(update_fields=["nombre"])
         current_food_category = old_food_category
     elif old_food_category and current_food_category:
-        general, _ = Categoria.objects.get_or_create(
-            usuario=user,
+        general, _ = get_or_create_category_by_name(
+            user=user,
             tipo=Categoria.Tipo.FINANZAS,
             parent=current_food_category,
             nombre="General",
@@ -263,30 +186,6 @@ def ensure_default_financial_categories(user):
                 old_child.save(update_fields=["parent"])
 
         old_food_category.delete()
-
-    has_financial_categories = Categoria.objects.filter(
-        usuario=user,
-        tipo=Categoria.Tipo.FINANZAS,
-        parent__isnull=True,
-    ).exists()
-    if not has_financial_categories:
-        for group in DEFAULT_FINANCIAL_CATEGORIES:
-            parent, _ = get_or_create_category_by_name(
-                user=user,
-                tipo=Categoria.Tipo.FINANZAS,
-                parent=None,
-                nombre=group["nombre"],
-                defaults={"color": group["color"]},
-            )
-
-            for item in ["General", *group["items"]]:
-                get_or_create_category_by_name(
-                    user=user,
-                    tipo=Categoria.Tipo.FINANZAS,
-                    parent=parent,
-                    nombre=item,
-                    defaults={"color": parent.color},
-                )
 
     normalize_user_financial_categories(user)
 
@@ -789,15 +688,15 @@ def analisis_financiero(request):
 
 @login_required
 def categoria_list(request):
-    ensure_default_financial_categories(request.user)
+    ensure_financial_categories_consistency(request.user)
     categoria_form = CategoriaPrincipalForm(user=request.user)
 
     if request.method == "POST":
         categoria_form = CategoriaPrincipalForm(request.POST, user=request.user)
         if categoria_form.is_valid():
             categoria = assign_user_and_save(categoria_form, request.user)
-            Categoria.objects.get_or_create(
-                usuario=request.user,
+            get_or_create_category_by_name(
+                user=request.user,
                 tipo=Categoria.Tipo.FINANZAS,
                 parent=categoria,
                 nombre="General",
@@ -832,7 +731,7 @@ def categoria_list(request):
 
 @login_required
 def subcategoria_list(request):
-    ensure_default_financial_categories(request.user)
+    ensure_financial_categories_consistency(request.user)
     form = SubcategoriaForm(user=request.user)
 
     if request.method == "POST":
@@ -882,13 +781,9 @@ def categoria_update(request, pk):
         messages.error(request, "No puedes editar la subcategoría General.")
         return redirect("subcategoria_list")
     if request.method == "POST":
-        old_repr = str(categoria)
-        old_name = categoria.nombre
         form = CategoriaForm(request.POST, instance=categoria, user=request.user)
         if form.is_valid():
-            categoria = form.save()
-            if is_subcategory and old_name.strip().casefold() != categoria.nombre.strip().casefold():
-                registrar_categoria_reemplazada(request.user, categoria, old_repr)
+            form.save()
             messages.success(request, "Subcategoría actualizada." if is_subcategory else "Categoría actualizada.")
             return redirect(back_url)
     else:
@@ -1158,7 +1053,7 @@ def movimiento_create(request):
 
 
 def movimiento_form_context(request, tipo, movimiento=None):
-    ensure_default_financial_categories(request.user)
+    ensure_financial_categories_consistency(request.user)
     tiene_categorias = Categoria.objects.filter(
         usuario=request.user,
         tipo__in=FINANCIAL_CATEGORY_TYPES,
