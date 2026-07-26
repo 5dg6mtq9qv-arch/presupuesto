@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="panel">
+  <h1>Categorias</h1>
+  <form class="fields" method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Crear categoria</button>
+  </form>
+</section>
+<section class="panel">
+  <table>
+    <thead><tr><th>Nombre</th><th>Tipo</th><th>Color</th></tr></thead>
+    <tbody>
+      {% for categoria in categorias %}
+        <tr><td>{{ categoria.nombre }}</td><td>{{ categoria.get_tipo_display }}</td><td>{{ categoria.color }}</td></tr>
+      {% empty %}
+        <tr><td colspan="3" class="muted">Sin categorias.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="panel">
+  <h1>{{ title }}</h1>
+  <form class="fields" method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <div class="actions">
+      <button type="submit">Guardar</button>
+      <a class="button secondary" href="{% url 'deuda_list' %}">Cancelar</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

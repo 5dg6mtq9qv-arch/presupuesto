@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="actions">
+  <h1>Finanzas</h1>
+  <a class="button" href="{% url 'movimiento_create' %}">Nuevo movimiento</a>
+</div>
+<section class="panel">
+  <table>
+    <thead><tr><th>Concepto</th><th>Tipo</th><th>Monto</th><th>Fecha</th><th></th></tr></thead>
+    <tbody>
+      {% for movimiento in movimientos %}
+        <tr>
+          <td>{{ movimiento.concepto }}</td>
+          <td>{{ movimiento.get_tipo_display }}</td>
+          <td class="amount">{{ movimiento.monto }}</td>
+          <td>{{ movimiento.fecha }}</td>
+          <td><a href="{% url 'movimiento_update' movimiento.pk %}">Editar</a> · <a href="{% url 'movimiento_delete' movimiento.pk %}">Eliminar</a></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="5" class="muted">Sin movimientos.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

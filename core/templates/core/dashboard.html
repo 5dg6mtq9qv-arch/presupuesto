@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Hoy</h1>
+<div class="grid">
+  <section class="panel">
+    <h2>Tareas de {{ hoy }}</h2>
+    {% if tareas_hoy %}
+      <ul>
+        {% for tarea in tareas_hoy %}
+          <li>{{ tarea.titulo }} <span class="muted">{{ tarea.get_estado_display }}</span></li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">No tienes tareas para hoy.</p>
+    {% endif %}
+    <a class="button secondary" href="{% url 'tarea_create' %}">Nueva tarea</a>
+  </section>
+  <section class="panel">
+    <h2>Mes actual</h2>
+    <p>Ingresos: <strong class="amount">{{ ingresos }}</strong></p>
+    <p>Gastos: <strong class="amount">{{ gastos }}</strong></p>
+    <p>Balance: <strong class="amount">{{ balance }}</strong></p>
+    <a class="button secondary" href="{% url 'movimiento_create' %}">Nuevo movimiento</a>
+  </section>
+  <section class="panel">
+    <h2>Deudas activas</h2>
+    <p>Saldo: <strong class="amount">{{ saldo_deudas }}</strong></p>
+    {% if deudas_activas %}
+      <ul>
+        {% for deuda in deudas_activas %}
+          <li>{{ deuda.acreedor }} <span class="muted">{{ deuda.saldo_actual }}</span></li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+    <a class="button secondary" href="{% url 'deuda_create' %}">Nueva deuda</a>
+  </section>
+</div>
+{% endblock %}

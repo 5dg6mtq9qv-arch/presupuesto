@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="panel">
+  <h1>Eliminar</h1>
+  <p>Vas a eliminar: <strong>{{ object }}</strong></p>
+  <form method="post">
+    {% csrf_token %}
+    <div class="actions">
+      <button class="danger" type="submit">Eliminar</button>
+      <a class="button secondary" href="{% url back_url %}">Cancelar</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

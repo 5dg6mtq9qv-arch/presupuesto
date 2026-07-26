@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="actions">
+  <h1>Tareas</h1>
+  <a class="button" href="{% url 'tarea_create' %}">Nueva tarea</a>
+</div>
+<section class="panel">
+  <table>
+    <thead><tr><th>Tarea</th><th>Fecha</th><th>Estado</th><th>Prioridad</th><th></th></tr></thead>
+    <tbody>
+      {% for tarea in tareas %}
+        <tr>
+          <td>{{ tarea.titulo }}</td>
+          <td>{{ tarea.fecha }}{% if tarea.hora_inicio %} {{ tarea.hora_inicio }}{% endif %}</td>
+          <td>{{ tarea.get_estado_display }}</td>
+          <td>{{ tarea.get_prioridad_display }}</td>
+          <td><a href="{% url 'tarea_update' tarea.pk %}">Editar</a> · <a href="{% url 'tarea_delete' tarea.pk %}">Eliminar</a></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="5" class="muted">Sin tareas.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

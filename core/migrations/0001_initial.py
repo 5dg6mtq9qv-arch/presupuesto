@@ -14,6 +14,22 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        migrations.RunSQL(
+            sql=[
+                ("CREATE SCHEMA IF NOT EXISTS categorias;", None),
+                ("CREATE SCHEMA IF NOT EXISTS tareas;", None),
+                ("CREATE SCHEMA IF NOT EXISTS movimientos_financieros;", None),
+                ("CREATE SCHEMA IF NOT EXISTS deudas;", None),
+                ("CREATE SCHEMA IF NOT EXISTS pagos_deudas;", None),
+            ],
+            reverse_sql=[
+                ("DROP SCHEMA IF EXISTS pagos_deudas CASCADE;", None),
+                ("DROP SCHEMA IF EXISTS deudas CASCADE;", None),
+                ("DROP SCHEMA IF EXISTS movimientos_financieros CASCADE;", None),
+                ("DROP SCHEMA IF EXISTS tareas CASCADE;", None),
+                ("DROP SCHEMA IF EXISTS categorias CASCADE;", None),
+            ],
+        ),
         migrations.CreateModel(
             name='Categoria',
             fields=[
@@ -24,6 +40,7 @@ class Migration(migrations.Migration):
                 ('usuario', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to=settings.AUTH_USER_MODEL)),
             ],
             options={
+                'db_table': '"categorias"."categoria"',
                 'ordering': ['tipo', 'nombre'],
             },
         ),
@@ -43,6 +60,7 @@ class Migration(migrations.Migration):
                 ('usuario', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to=settings.AUTH_USER_MODEL)),
             ],
             options={
+                'db_table': '"deudas"."deuda"',
                 'ordering': ['estado', 'fecha_vencimiento', 'acreedor'],
             },
         ),
@@ -60,6 +78,7 @@ class Migration(migrations.Migration):
                 ('usuario', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to=settings.AUTH_USER_MODEL)),
             ],
             options={
+                'db_table': '"movimientos_financieros"."movimiento_financiero"',
                 'ordering': ['-fecha', '-creado'],
             },
         ),
@@ -74,6 +93,7 @@ class Migration(migrations.Migration):
                 ('deuda', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='pagos', to='core.deuda')),
             ],
             options={
+                'db_table': '"pagos_deudas"."pago_deuda"',
                 'ordering': ['-fecha', '-creado'],
             },
         ),
@@ -94,6 +114,7 @@ class Migration(migrations.Migration):
                 ('usuario', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to=settings.AUTH_USER_MODEL)),
             ],
             options={
+                'db_table': '"tareas"."tarea"',
                 'ordering': ['fecha', 'hora_inicio', 'titulo'],
             },
         ),

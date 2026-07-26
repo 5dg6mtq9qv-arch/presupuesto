@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="actions">
+  <h1>Deudas</h1>
+  <a class="button" href="{% url 'deuda_create' %}">Nueva deuda</a>
+</div>
+<section class="panel">
+  <table>
+    <thead><tr><th>Acreedor</th><th>Concepto</th><th>Saldo</th><th>Estado</th><th>Pagos</th><th></th></tr></thead>
+    <tbody>
+      {% for deuda in deudas %}
+        <tr>
+          <td>{{ deuda.acreedor }}</td>
+          <td>{{ deuda.concepto }}</td>
+          <td class="amount">{{ deuda.saldo_actual }}</td>
+          <td>{{ deuda.get_estado_display }}</td>
+          <td>
+            <a href="{% url 'pago_create' deuda.pk %}">Agregar pago</a>
+            {% for pago in deuda.pagos.all %}
+              <div class="muted">{{ pago.fecha }}: {{ pago.monto }} <a href="{% url 'pago_delete' pago.pk %}">x</a></div>
+            {% endfor %}
+          </td>
+          <td><a href="{% url 'deuda_update' deuda.pk %}">Editar</a> · <a href="{% url 'deuda_delete' deuda.pk %}">Eliminar</a></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="6" class="muted">Sin deudas.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

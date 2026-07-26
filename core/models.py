@@ -15,6 +15,7 @@ class Categoria(models.Model):
     color = models.CharField(max_length=20, blank=True)
 
     class Meta:
+        db_table = '"categorias"."categoria"'
         ordering = ["tipo", "nombre"]
         constraints = [
             models.UniqueConstraint(
@@ -66,6 +67,7 @@ class Tarea(models.Model):
     actualizado = models.DateTimeField(auto_now=True)
 
     class Meta:
+        db_table = '"tareas"."tarea"'
         ordering = ["fecha", "hora_inicio", "titulo"]
 
     def __str__(self):
@@ -92,6 +94,7 @@ class MovimientoFinanciero(models.Model):
     creado = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        db_table = '"movimientos_financieros"."movimiento_financiero"'
         ordering = ["-fecha", "-creado"]
 
     def __str__(self):
@@ -120,6 +123,7 @@ class Deuda(models.Model):
     creado = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        db_table = '"deudas"."deuda"'
         ordering = ["estado", "fecha_vencimiento", "acreedor"]
 
     def __str__(self):
@@ -134,6 +138,7 @@ class PagoDeuda(models.Model):
     creado = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        db_table = '"pagos_deudas"."pago_deuda"'
         ordering = ["-fecha", "-creado"]
 
     def __str__(self):
