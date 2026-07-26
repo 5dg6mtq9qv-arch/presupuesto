@@ -38,6 +38,33 @@
         <option value="eliminado"{% if filters.estado == "eliminado" %} selected{% endif %}>Eliminado</option>
       </select>
     </div>
+    <div>
+      <label for="cuenta">Cuenta</label>
+      <select class="form-select" id="cuenta" name="cuenta">
+        <option value="">Todas</option>
+        {% for cuenta in cuentas %}
+          <option value="{{ cuenta.pk }}"{% if filters.cuenta == cuenta.pk|stringformat:"s" %} selected{% endif %}>{{ cuenta.nombre }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="metodo">Método</label>
+      <select class="form-select" id="metodo" name="metodo">
+        <option value="">Todos</option>
+        {% for metodo in metodos %}
+          <option value="{{ metodo.pk }}"{% if filters.metodo == metodo.pk|stringformat:"s" %} selected{% endif %}>{{ metodo.nombre }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="etiqueta">Etiqueta</label>
+      <select class="form-select" id="etiqueta" name="etiqueta">
+        <option value="">Todas</option>
+        {% for etiqueta in etiquetas %}
+          <option value="{{ etiqueta.pk }}"{% if filters.etiqueta == etiqueta.pk|stringformat:"s" %} selected{% endif %}>{{ etiqueta.nombre }}</option>
+        {% endfor %}
+      </select>
+    </div>
     <button class="btn btn-primary btn-icon" type="submit" title="Filtrar" aria-label="Filtrar">
       <span class="material-symbols-outlined">filter_alt</span>
     </button>
@@ -53,6 +80,8 @@
           <th>Descripción</th>
           <th>Estado</th>
           <th>Monto</th>
+          <th>Cuenta</th>
+          <th>Método</th>
           <th>Fecha</th>
           <th>Comprobante</th>
           <th></th>
@@ -73,13 +102,24 @@
                 <span class="muted">Sin categoria</span>
               {% endif %}
             </td>
-            <td>{{ movimiento.concepto }}</td>
+            <td>
+              <strong>{{ movimiento.concepto }}</strong>
+              {% if movimiento.etiquetas.all %}
+                <div class="small text-muted">
+                  {% for etiqueta in movimiento.etiquetas.all %}
+                    <span class="badge rounded-pill text-bg-light border">{{ etiqueta.nombre }}</span>
+                  {% endfor %}
+                </div>
+              {% endif %}
+            </td>
             <td>
               <span class="badge rounded-pill {% if movimiento.estado == 'eliminado' %}text-bg-danger{% else %}text-bg-success{% endif %}">
                 {{ movimiento.get_estado_display }}
               </span>
             </td>
             <td class="amount">{{ movimiento.monto }}</td>
+            <td>{{ movimiento.cuenta|default:"General" }}</td>
+            <td>{{ movimiento.metodo_pago|default:"" }}</td>
             <td>{{ movimiento.fecha }}</td>
             <td>
               {% if movimiento.comprobante %}
@@ -109,7 +149,7 @@
           </tr>
         {% empty %}
           <tr>
-            <td colspan="7" class="muted">
+            <td colspan="9" class="muted">
               {% if active_tipo == "gasto" %}Sin gastos registrados.{% else %}Sin ingresos registrados.{% endif %}
             </td>
           </tr>

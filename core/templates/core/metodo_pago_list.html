@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block page_title %}{{ title }}{% endblock %}
+{% block page_subtitle %}{{ subtitle }}{% endblock %}
+
+{% block content %}
+<div class="actions">
+  <div></div>
+  <button class="btn btn-primary btn-icon shadow-sm" type="button" title="Nuevo método" aria-label="Nuevo método" data-create-toggle="create-method-panel"><span class="material-symbols-outlined">add</span></button>
+</div>
+<section class="panel" id="create-method-panel"{% if not form.errors %} hidden{% endif %}>
+  <h2>Nuevo método</h2>
+  <form class="form-grid" method="post">{% csrf_token %}{% include "core/includes/unfold_form_fields.html" %}<div class="form-actions"><button class="btn btn-primary" type="submit" title="Crear" aria-label="Crear"><span class="material-symbols-outlined">add</span><span>Crear</span></button></div></form>
+</section>
+<section class="panel">
+  <form class="filter-form" method="get"><div><label for="q">Buscar</label><input class="form-control" id="q" name="q" value="{{ filters.q }}" placeholder="Método"></div><button class="btn btn-primary btn-icon" type="submit" title="Filtrar" aria-label="Filtrar"><span class="material-symbols-outlined">filter_alt</span></button></form>
+</section>
+<section class="panel">
+  <div class="table-wrap">
+    <table class="table table-hover align-middle mb-0">
+      <thead><tr><th>Método</th><th>Tipo</th><th>Estado</th><th></th></tr></thead>
+      <tbody>
+        {% for metodo in metodos %}
+          <tr>
+            <td><strong>{{ metodo.nombre }}</strong></td>
+            <td>{{ metodo.get_tipo_display }}</td>
+            <td><span class="badge rounded-pill {% if metodo.activo %}text-bg-success{% else %}text-bg-secondary{% endif %}">{% if metodo.activo %}Activo{% else %}Inactivo{% endif %}</span></td>
+            <td class="text-nowrap"><span class="action-icons"><a class="btn btn-sm btn-outline-primary btn-icon" href="{% url 'finance_object_update' 'metodo' metodo.pk %}" title="Editar" aria-label="Editar"><span class="material-symbols-outlined">edit</span></a><button class="btn btn-sm btn-outline-danger btn-icon" type="button" title="Eliminar" aria-label="Eliminar" data-delete-trigger="delete-metodo-{{ metodo.pk }}"><span class="material-symbols-outlined">delete</span></button><form id="delete-metodo-{{ metodo.pk }}" method="post" action="{% url 'finance_object_delete' 'metodo' metodo.pk %}" hidden>{% csrf_token %}<input type="hidden" name="motivo_eliminacion" data-delete-reason></form></span></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4" class="muted">Sin métodos.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "core/includes/pagination.html" %}
+</section>
+{% endblock %}

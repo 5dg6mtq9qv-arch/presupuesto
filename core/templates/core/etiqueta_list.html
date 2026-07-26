@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block page_title %}{{ title }}{% endblock %}
+{% block page_subtitle %}{{ subtitle }}{% endblock %}
+
+{% block content %}
+<div class="actions"><div></div><button class="btn btn-primary btn-icon shadow-sm" type="button" title="Nueva etiqueta" aria-label="Nueva etiqueta" data-create-toggle="create-tag-panel"><span class="material-symbols-outlined">add</span></button></div>
+<section class="panel" id="create-tag-panel"{% if not form.errors %} hidden{% endif %}>
+  <h2>Nueva etiqueta</h2>
+  <form class="form-grid" method="post">{% csrf_token %}{% include "core/includes/unfold_form_fields.html" %}<div class="form-actions"><button class="btn btn-primary" type="submit" title="Crear" aria-label="Crear"><span class="material-symbols-outlined">add</span><span>Crear</span></button></div></form>
+</section>
+<section class="panel"><form class="filter-form" method="get"><div><label for="q">Buscar</label><input class="form-control" id="q" name="q" value="{{ filters.q }}" placeholder="Etiqueta"></div><button class="btn btn-primary btn-icon" type="submit" title="Filtrar" aria-label="Filtrar"><span class="material-symbols-outlined">filter_alt</span></button></form></section>
+<section class="panel">
+  <div class="table-wrap">
+    <table class="table table-hover align-middle mb-0">
+      <thead><tr><th>Etiqueta</th><th>Color</th><th></th></tr></thead>
+      <tbody>
+        {% for etiqueta in etiquetas %}
+          <tr>
+            <td><strong>{{ etiqueta.nombre }}</strong></td>
+            <td><span class="color-chip"><span class="color-swatch" style="background-color: {{ etiqueta.color|default:'#6366f1' }};"></span><span class="color-value">{{ etiqueta.color|default:'#6366f1' }}</span></span></td>
+            <td class="text-nowrap"><span class="action-icons"><a class="btn btn-sm btn-outline-primary btn-icon" href="{% url 'finance_object_update' 'etiqueta' etiqueta.pk %}" title="Editar" aria-label="Editar"><span class="material-symbols-outlined">edit</span></a><button class="btn btn-sm btn-outline-danger btn-icon" type="button" title="Eliminar" aria-label="Eliminar" data-delete-trigger="delete-etiqueta-{{ etiqueta.pk }}"><span class="material-symbols-outlined">delete</span></button><form id="delete-etiqueta-{{ etiqueta.pk }}" method="post" action="{% url 'finance_object_delete' 'etiqueta' etiqueta.pk %}" hidden>{% csrf_token %}<input type="hidden" name="motivo_eliminacion" data-delete-reason></form></span></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="3" class="muted">Sin etiquetas.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "core/includes/pagination.html" %}
+</section>
+{% endblock %}

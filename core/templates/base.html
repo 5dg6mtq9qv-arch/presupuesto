@@ -318,6 +318,41 @@
     .select2-container--default .select2-selection--single .select2-selection__arrow {
       height: 40px;
     }
+    select[data-compact-multiple] {
+      min-height: 42px;
+      height: 42px;
+      overflow: hidden;
+    }
+    .select2-container--default .select2-selection--multiple {
+      min-height: 42px;
+      height: 42px;
+      border-color: #d1d5db;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      overflow: hidden;
+    }
+    .select2-container--default .select2-selection--multiple .select2-selection__rendered {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-wrap: nowrap;
+      overflow: hidden;
+      padding: 0 8px;
+      min-height: 40px;
+    }
+    .select2-container--default .select2-selection--multiple .select2-selection__choice {
+      margin: 0;
+      max-width: 140px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .select2-container--default .select2-search--inline .select2-search__field {
+      margin: 0;
+      height: 28px;
+      line-height: 28px;
+    }
 
     .tab {
       min-height: 32px;
@@ -824,6 +859,11 @@
           {% endif %}
           <li><a class="nav-link {% if 'movimiento' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'movimiento_list' %}"><span class="material-symbols-outlined">sync_alt</span> Ingresos y gastos</a></li>
           <li><a class="nav-link {% if 'deuda' in request.resolver_match.url_name or 'pago' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'deuda_list' %}"><span class="material-symbols-outlined">receipt_long</span> Deudas</a></li>
+          <li><a class="nav-link {% if 'presupuesto' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'presupuesto_list' %}"><span class="material-symbols-outlined">price_check</span> Presupuestos</a></li>
+          <li><a class="nav-link {% if 'recurrente' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'recurrente_list' %}"><span class="material-symbols-outlined">event_repeat</span> Recurrentes</a></li>
+          <li><a class="nav-link {% if 'cuenta' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'cuenta_list' %}"><span class="material-symbols-outlined">account_balance_wallet</span> Cuentas</a></li>
+          <li><a class="nav-link {% if 'metodo_pago' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'metodo_pago_list' %}"><span class="material-symbols-outlined">payments</span> Métodos</a></li>
+          <li><a class="nav-link {% if 'etiqueta' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'etiqueta_list' %}"><span class="material-symbols-outlined">label</span> Etiquetas</a></li>
           <li><a class="nav-link {% if 'categoria' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'categoria_list' %}"><span class="material-symbols-outlined">sell</span> Categorías</a></li>
           <li><a class="nav-link {% if request.resolver_match.url_name == 'subcategoria_list' %}active{% endif %}" href="{% url 'subcategoria_list' %}"><span class="material-symbols-outlined">category</span> Subcategorías</a></li>
           <li><a class="nav-link {% if request.resolver_match.url_name == 'perfil_update' %}active{% endif %}" href="{% url 'perfil_update' %}"><span class="material-symbols-outlined">account_circle</span> Perfil</a></li>

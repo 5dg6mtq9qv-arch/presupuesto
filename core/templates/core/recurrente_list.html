@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block page_title %}Recurrentes{% endblock %}
+{% block page_subtitle %}Ingresos, gastos y pagos esperados para proyectar saldos{% endblock %}
+
+{% block content %}
+<div class="actions">
+  <div></div>
+  <button class="btn btn-primary btn-icon shadow-sm" type="button" title="Nuevo recurrente" aria-label="Nuevo recurrente" data-create-toggle="create-recurring-panel"><span class="material-symbols-outlined">add</span></button>
+</div>
+
+<section class="panel" id="create-recurring-panel"{% if not form.errors %} hidden{% endif %}>
+  <h2>Nuevo recurrente</h2>
+  <form class="form-grid" method="post">
+    {% csrf_token %}
+    {% include "core/includes/unfold_form_fields.html" %}
+    <div class="form-actions"><button class="btn btn-primary" type="submit" title="Crear" aria-label="Crear"><span class="material-symbols-outlined">add</span><span>Crear</span></button></div>
+  </form>
+</section>
+
+<section class="panel">
+  <form class="filter-form" method="get">
+    <div><label for="q">Buscar</label><input class="form-control" id="q" name="q" value="{{ filters.q }}" placeholder="Concepto o categoría"></div>
+    <button class="btn btn-primary btn-icon" type="submit" title="Filtrar" aria-label="Filtrar"><span class="material-symbols-outlined">filter_alt</span></button>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table class="table table-hover align-middle mb-0">
+      <thead><tr><th>Tipo</th><th>Concepto</th><th>Categoría</th><th>Monto</th><th>Día</th><th>Cuenta</th><th>Estado</th><th></th></tr></thead>
+      <tbody>
+        {% for recurrente in recurrentes %}
+          <tr>
+            <td><span class="badge rounded-pill {% if recurrente.tipo == 'ingreso' %}text-bg-success{% else %}text-bg-warning{% endif %}">{{ recurrente.get_tipo_display }}</span></td>
+            <td><strong>{{ recurrente.concepto }}</strong></td>
+            <td>{% if recurrente.categoria %}{% if recurrente.categoria.parent %}{{ recurrente.categoria.parent.nombre }} > {% endif %}{{ recurrente.categoria.nombre }}{% else %}<span class="muted">Sin categoría</span>{% endif %}</td>
+            <td class="amount">{{ recurrente.monto }}</td>
+            <td>{{ recurrente.dia_mes }}</td>
+            <td>{{ recurrente.cuenta|default:"" }}</td>
+            <td><span class="badge rounded-pill {% if recurrente.activo %}text-bg-success{% else %}text-bg-secondary{% endif %}">{% if recurrente.activo %}Activo{% else %}Inactivo{% endif %}</span></td>
+            <td class="text-nowrap">
+              <span class="action-icons">
+                <a class="btn btn-sm btn-outline-primary btn-icon" href="{% url 'finance_object_update' 'recurrente' recurrente.pk %}" title="Editar" aria-label="Editar"><span class="material-symbols-outlined">edit</span></a>
+                <button class="btn btn-sm btn-outline-danger btn-icon" type="button" title="Eliminar" aria-label="Eliminar" data-delete-trigger="delete-recurrente-{{ recurrente.pk }}"><span class="material-symbols-outlined">delete</span></button>
+                <form id="delete-recurrente-{{ recurrente.pk }}" method="post" action="{% url 'finance_object_delete' 'recurrente' recurrente.pk %}" hidden>{% csrf_token %}<input type="hidden" name="motivo_eliminacion" data-delete-reason></form>
+              </span>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="8" class="muted">Sin movimientos recurrentes.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "core/includes/pagination.html" %}
+</section>
+{% endblock %}

@@ -8,7 +8,7 @@
 
 <section class="panel">
   <form class="row g-3 align-items-end" method="get">
-    <div class="col-md-3">
+    <div class="col-md-2">
       <label for="desde">Desde</label>
       <input class="form-control" id="desde" name="desde" type="date" value="{{ fecha_inicio|date:'Y-m-d' }}">
     </div>
@@ -37,6 +37,11 @@
       <button class="btn btn-primary btn-icon" type="submit" title="Filtrar" aria-label="Filtrar">
         <span class="material-symbols-outlined">filter_alt</span>
       </button>
+    </div>
+    <div class="col-md-1">
+      <a class="btn btn-outline-primary btn-icon" href="{% url 'reporte_financiero_csv' %}?fecha_inicio={{ fecha_inicio|date:'Y-m-d' }}&fecha_fin={{ fecha_fin|date:'Y-m-d' }}" title="Descargar reporte CSV" aria-label="Descargar reporte CSV">
+        <span class="material-symbols-outlined">download</span>
+      </a>
     </div>
   </form>
 </section>

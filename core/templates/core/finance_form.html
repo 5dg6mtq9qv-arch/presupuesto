@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block page_title %}{{ title }}{% endblock %}
+{% block page_subtitle %}Actualiza la información financiera{% endblock %}
+
+{% block content %}
+<section class="panel">
+  <form class="form-grid" method="post">
+    {% csrf_token %}
+    {% include "core/includes/unfold_form_fields.html" %}
+    <div class="form-actions actions">
+      <button class="btn btn-primary btn-icon" type="submit" title="Guardar" aria-label="Guardar">
+        <span class="material-symbols-outlined">save</span>
+      </button>
+      <a class="btn btn-outline-secondary btn-icon" href="{% url back_url %}" title="Cancelar" aria-label="Cancelar">
+        <span class="material-symbols-outlined">close</span>
+      </a>
+    </div>
+  </form>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (() => {
+    const category = document.getElementById("id_categoria");
+    const subcategory = document.getElementById("id_subcategoria");
+    if (!category || !subcategory || !window.jQuery) return;
+
+    const refreshSubcategories = () => {
+      const parentId = category.value;
+      const selected = subcategory.value;
+
+      if (jQuery(subcategory).data("select2")) {
+        jQuery(subcategory).select2("destroy");
+      }
+
+      Array.from(subcategory.options).forEach((option) => {
+        const optionParent = option.dataset.parent;
+        option.hidden = Boolean(option.value && parentId && optionParent !== parentId);
+      });
+
+      const selectedOption = subcategory.options[subcategory.selectedIndex];
+      if (selected && selectedOption?.hidden) {
+        subcategory.value = "";
+      }
+
+      jQuery(subcategory).select2({
+        width: "100%",
+        allowClear: false,
+      });
+    };
+
+    category.addEventListener("change", refreshSubcategories);
+    refreshSubcategories();
+  })();
+</script>
+{% endblock %}

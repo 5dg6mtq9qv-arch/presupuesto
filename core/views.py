@@ -1,3 +1,4 @@
+import csv
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.contrib import messages
@@ -5,7 +6,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.decorators import user_passes_test
 from django.core.paginator import Paginator
-from django.http import HttpResponseBadRequest, JsonResponse
+from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse
 from django.db import transaction
 from django.db.models import Q, Sum
 from django.shortcuts import get_object_or_404, redirect, render
@@ -15,12 +16,17 @@ from django.utils.dateparse import parse_date
 
 from .forms import (
     CategoriaForm,
+    CuentaFinancieraForm,
     DeudaForm,
+    EtiquetaForm,
     FINANCIAL_CATEGORY_TYPES,
+    MetodoPagoForm,
     MovimientoFinancieroForm,
+    MovimientoRecurrenteForm,
     PagoDeudaForm,
     PerfilCuentaForm,
     PerfilUsuarioForm,
+    PresupuestoMensualForm,
     CategoriaPrincipalForm,
     SubcategoriaForm,
     TareaForm,
@@ -28,7 +34,20 @@ from .forms import (
     UsuarioPasswordForm,
     UsuarioUpdateForm,
 )
-from .models import Categoria, Deuda, EliminacionRegistro, MovimientoFinanciero, PagoDeuda, PerfilUsuario, Tarea
+from .models import (
+    Categoria,
+    CuentaFinanciera,
+    Deuda,
+    EliminacionRegistro,
+    Etiqueta,
+    MetodoPago,
+    MovimientoFinanciero,
+    MovimientoRecurrente,
+    PagoDeuda,
+    PerfilUsuario,
+    PresupuestoMensual,
+    Tarea,
+)
 
 User = get_user_model()
 
@@ -211,6 +230,98 @@ def gastos_por_categoria(queryset, limit):
     ]
 
 
+def movimientos_confirmados_mes(user, fecha):
+    return MovimientoFinanciero.objects.filter(
+        usuario=user,
+        estado=MovimientoFinanciero.Estado.CONFIRMADO,
+        fecha__year=fecha.year,
+        fecha__month=fecha.month,
+    )
+
+
+def resumen_presupuesto(user, fecha):
+    presupuestos = PresupuestoMensual.objects.filter(
+        usuario=user,
+        anio=fecha.year,
+        mes=fecha.month,
+    ).select_related("categoria__parent")
+    movimientos = movimientos_confirmados_mes(user, fecha).filter(tipo=MovimientoFinanciero.Tipo.GASTO)
+    items = []
+    total_presupuesto = Decimal("0")
+    total_usado = Decimal("0")
+
+    for presupuesto in presupuestos:
+        categoria_ids = [presupuesto.categoria_id]
+        if not presupuesto.categoria.parent_id:
+            categoria_ids.extend(presupuesto.categoria.subcategorias.values_list("pk", flat=True))
+        usado = movimientos.filter(categoria_id__in=categoria_ids).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+        total_presupuesto += presupuesto.monto
+        total_usado += usado
+        porcentaje = Decimal("0")
+        if presupuesto.monto:
+            porcentaje = (usado / presupuesto.monto * Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        items.append(
+            {
+                "categoria": categoria_grafica(presupuesto.categoria)[0],
+                "color": categoria_grafica(presupuesto.categoria)[1],
+                "presupuesto": presupuesto.monto,
+                "usado": usado,
+                "restante": presupuesto.monto - usado,
+                "porcentaje": porcentaje,
+            }
+        )
+
+    return {
+        "items": items,
+        "total_presupuesto": total_presupuesto,
+        "total_usado": total_usado,
+        "total_restante": total_presupuesto - total_usado,
+    }
+
+
+def saldos_por_cuenta(user):
+    movimientos = MovimientoFinanciero.objects.filter(
+        usuario=user,
+        estado=MovimientoFinanciero.Estado.CONFIRMADO,
+        cuenta__isnull=False,
+    )
+    cuentas = []
+    for cuenta in CuentaFinanciera.objects.filter(usuario=user, activa=True).order_by("nombre"):
+        ingresos = movimientos.filter(cuenta=cuenta, tipo=MovimientoFinanciero.Tipo.INGRESO).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+        gastos = movimientos.filter(cuenta=cuenta, tipo=MovimientoFinanciero.Tipo.GASTO).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+        cuentas.append(
+            {
+                "nombre": cuenta.nombre,
+                "color": cuenta.color or "#38bdf8",
+                "saldo": cuenta.saldo_inicial + ingresos - gastos,
+            }
+        )
+    return cuentas
+
+
+def proyeccion_recurrente(user, base_fecha):
+    recurrentes = MovimientoRecurrente.objects.filter(usuario=user, activo=True)
+    ingresos = recurrentes.filter(tipo=MovimientoFinanciero.Tipo.INGRESO).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    gastos = recurrentes.filter(tipo=MovimientoFinanciero.Tipo.GASTO).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    pagos_deuda = Deuda.objects.filter(usuario=user, estado=Deuda.Estado.ACTIVA).aggregate(total=Sum("saldo_actual"))["total"] or Decimal("0")
+    meses = []
+    saldo = Decimal("0")
+    for offset in range(1, 4):
+        month_index = base_fecha.month - 1 + offset
+        year = base_fecha.year + month_index // 12
+        month = month_index % 12 + 1
+        saldo += ingresos - gastos
+        meses.append(
+            {
+                "mes": f"{month:02d}/{year}",
+                "ingresos": float(ingresos),
+                "gastos": float(gastos),
+                "saldo": float(saldo - pagos_deuda),
+            }
+        )
+    return meses
+
+
 def paginate_queryset(request, queryset, per_page=10):
     page_obj = Paginator(queryset, per_page).get_page(request.GET.get("page"))
     query = request.GET.copy()
@@ -251,11 +362,176 @@ def perfil_update(request):
     )
 
 
+def simple_finance_list(request, model, form_class, template, context_name, title, subtitle, success_message):
+    form = form_class(user=request.user)
+    if request.method == "POST":
+        form = form_class(request.POST, user=request.user)
+        if form.is_valid():
+            assign_user_and_save(form, request.user)
+            messages.success(request, success_message)
+            return redirect(request.resolver_match.url_name)
+
+    queryset = model.objects.filter(usuario=request.user)
+    q = request.GET.get("q", "").strip()
+    if q:
+        queryset = queryset.filter(nombre__icontains=q)
+    page_obj, list_querystring = paginate_queryset(request, queryset)
+    return render(
+        request,
+        template,
+        {
+            "form": form,
+            context_name: page_obj,
+            "page_obj": page_obj,
+            "list_querystring": list_querystring,
+            "filters": {"q": q},
+            "title": title,
+            "subtitle": subtitle,
+        },
+    )
+
+
+@login_required
+def cuenta_list(request):
+    return simple_finance_list(request, CuentaFinanciera, CuentaFinancieraForm, "core/cuenta_list.html", "cuentas", "Cuentas", "General y efectivo como base; agrega bancos o tarjetas según necesites.", "Cuenta creada.")
+
+
+@login_required
+def metodo_pago_list(request):
+    return simple_finance_list(request, MetodoPago, MetodoPagoForm, "core/metodo_pago_list.html", "metodos", "Métodos de pago", "Formas de pago para entender hábitos y canales.", "Método creado.")
+
+
+@login_required
+def etiqueta_list(request):
+    return simple_finance_list(request, Etiqueta, EtiquetaForm, "core/etiqueta_list.html", "etiquetas", "Etiquetas", "Marcas transversales para filtrar movimientos sin crear más categorías.", "Etiqueta creada.")
+
+
+@login_required
+def presupuesto_list(request):
+    form = PresupuestoMensualForm(user=request.user)
+    if request.method == "POST":
+        form = PresupuestoMensualForm(request.POST, user=request.user)
+        if form.is_valid():
+            assign_user_and_save(form, request.user)
+            messages.success(request, "Presupuesto creado.")
+            return redirect("presupuesto_list")
+
+    presupuestos = PresupuestoMensual.objects.filter(usuario=request.user).select_related("categoria__parent")
+    q = request.GET.get("q", "").strip()
+    if q:
+        presupuestos = presupuestos.filter(Q(categoria__nombre__icontains=q) | Q(categoria__parent__nombre__icontains=q))
+    page_obj, list_querystring = paginate_queryset(request, presupuestos)
+    return render(
+        request,
+        "core/presupuesto_list.html",
+        {"form": form, "presupuestos": page_obj, "page_obj": page_obj, "list_querystring": list_querystring, "filters": {"q": q}},
+    )
+
+
+@login_required
+def recurrente_list(request):
+    form = MovimientoRecurrenteForm(user=request.user)
+    if request.method == "POST":
+        form = MovimientoRecurrenteForm(request.POST, user=request.user)
+        if form.is_valid():
+            assign_user_and_save(form, request.user)
+            messages.success(request, "Movimiento recurrente creado.")
+            return redirect("recurrente_list")
+
+    recurrentes = MovimientoRecurrente.objects.filter(usuario=request.user).select_related("categoria__parent", "cuenta", "metodo_pago")
+    q = request.GET.get("q", "").strip()
+    if q:
+        recurrentes = recurrentes.filter(Q(concepto__icontains=q) | Q(categoria__nombre__icontains=q) | Q(categoria__parent__nombre__icontains=q))
+    page_obj, list_querystring = paginate_queryset(request, recurrentes)
+    return render(
+        request,
+        "core/recurrente_list.html",
+        {"form": form, "recurrentes": page_obj, "page_obj": page_obj, "list_querystring": list_querystring, "filters": {"q": q}},
+    )
+
+
+@login_required
+def finance_object_update(request, kind, pk):
+    config = {
+        "cuenta": (CuentaFinanciera, CuentaFinancieraForm, "cuenta", "cuenta_list"),
+        "metodo": (MetodoPago, MetodoPagoForm, "método de pago", "metodo_pago_list"),
+        "etiqueta": (Etiqueta, EtiquetaForm, "etiqueta", "etiqueta_list"),
+        "presupuesto": (PresupuestoMensual, PresupuestoMensualForm, "presupuesto", "presupuesto_list"),
+        "recurrente": (MovimientoRecurrente, MovimientoRecurrenteForm, "movimiento recurrente", "recurrente_list"),
+    }
+    if kind not in config:
+        return HttpResponseBadRequest("Tipo inválido.")
+    model, form_class, label, back_url = config[kind]
+    instance = get_object_or_404(model, pk=pk, usuario=request.user)
+    if request.method == "POST":
+        form = form_class(request.POST, instance=instance, user=request.user)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f"{label.capitalize()} actualizado.")
+            return redirect(back_url)
+    else:
+        form = form_class(instance=instance, user=request.user)
+    return render(request, "core/finance_form.html", {"form": form, "title": f"Editar {label}", "back_url": back_url})
+
+
+@login_required
+def finance_object_delete(request, kind, pk):
+    config = {
+        "cuenta": (CuentaFinanciera, "cuenta_list", "Cuenta eliminada."),
+        "metodo": (MetodoPago, "metodo_pago_list", "Método eliminado."),
+        "etiqueta": (Etiqueta, "etiqueta_list", "Etiqueta eliminada."),
+        "presupuesto": (PresupuestoMensual, "presupuesto_list", "Presupuesto eliminado."),
+        "recurrente": (MovimientoRecurrente, "recurrente_list", "Recurrente eliminado."),
+    }
+    if kind not in config:
+        return HttpResponseBadRequest("Tipo inválido.")
+    model, back_url, success_message = config[kind]
+    instance = get_object_or_404(model, pk=pk, usuario=request.user)
+    if request.method != "POST":
+        return redirect(back_url)
+    registrar_eliminacion(request, instance)
+    instance.delete()
+    messages.success(request, success_message)
+    return redirect(back_url)
+
+
+@login_required
+def reporte_financiero_csv(request):
+    hoy = timezone.localdate()
+    fecha_inicio = parse_date(request.GET.get("fecha_inicio", "")) or hoy.replace(day=1)
+    fecha_fin = parse_date(request.GET.get("fecha_fin", "")) or hoy
+    movimientos = MovimientoFinanciero.objects.filter(
+        usuario=request.user,
+        estado=MovimientoFinanciero.Estado.CONFIRMADO,
+        fecha__range=(fecha_inicio, fecha_fin),
+    ).select_related("categoria__parent", "cuenta", "metodo_pago").prefetch_related("etiquetas")
+
+    response = HttpResponse(content_type="text/csv")
+    response["Content-Disposition"] = f'attachment; filename="reporte-financiero-{fecha_inicio}-{fecha_fin}.csv"'
+    writer = csv.writer(response)
+    writer.writerow(["Fecha", "Tipo", "Categoría", "Descripción", "Monto", "Cuenta", "Método", "Etiquetas"])
+    for movimiento in movimientos:
+        categoria = ""
+        if movimiento.categoria:
+            categoria = f"{movimiento.categoria.parent.nombre} > {movimiento.categoria.nombre}" if movimiento.categoria.parent_id else movimiento.categoria.nombre
+        writer.writerow([
+            movimiento.fecha,
+            movimiento.get_tipo_display(),
+            categoria,
+            movimiento.concepto,
+            movimiento.monto,
+            movimiento.cuenta.nombre if movimiento.cuenta else "",
+            movimiento.metodo_pago.nombre if movimiento.metodo_pago else "",
+            ", ".join(etiqueta.nombre for etiqueta in movimiento.etiquetas.all()),
+        ])
+    return response
+
+
 @admin_required
 def usuario_list(request):
     usuarios = User.objects.order_by("-is_active", "username")
     q = request.GET.get("q", "").strip()
-    estado = request.GET.get("estado", MovimientoFinanciero.Estado.CONFIRMADO)
+    estado = request.GET.get("estado", "")
     rol = request.GET.get("rol", "")
     if q:
         usuarios = usuarios.filter(
@@ -417,6 +693,10 @@ def dashboard(request):
         movimientos_mes.filter(tipo=MovimientoFinanciero.Tipo.GASTO),
         8,
     )
+    presupuesto = resumen_presupuesto(request.user, hoy)
+    cuentas_resumen = saldos_por_cuenta(request.user)
+    top_gastos = movimientos_mes.filter(tipo=MovimientoFinanciero.Tipo.GASTO).select_related("categoria__parent").order_by("-monto")[:5]
+    proyeccion = proyeccion_recurrente(request.user, hoy)
 
     def add_months(fecha, months):
         month_index = fecha.month - 1 + months
@@ -481,6 +761,22 @@ def dashboard(request):
             "values": [item["total"] for item in ingresos_categoria],
             "colors": [item["color"] for item in ingresos_categoria],
         },
+        "presupuesto": {
+            "labels": [item["categoria"] for item in presupuesto["items"]],
+            "usado": [float(item["usado"]) for item in presupuesto["items"]],
+            "presupuesto": [float(item["presupuesto"]) for item in presupuesto["items"]],
+        },
+        "cuentas": {
+            "labels": [item["nombre"] for item in cuentas_resumen],
+            "values": [float(item["saldo"]) for item in cuentas_resumen],
+            "colors": [item["color"] for item in cuentas_resumen],
+        },
+        "proyeccion": {
+            "labels": [item["mes"] for item in proyeccion],
+            "ingresos": [item["ingresos"] for item in proyeccion],
+            "gastos": [item["gastos"] for item in proyeccion],
+            "saldo": [item["saldo"] for item in proyeccion],
+        },
     }
     if request.user.is_staff:
         chart_data["tareas"] = {
@@ -515,6 +811,9 @@ def dashboard(request):
             "tarea_resumen": tarea_resumen,
             "ingresos_categoria": ingresos_categoria,
             "gastos_categoria": gastos_categoria,
+            "presupuesto": presupuesto,
+            "cuentas_resumen": cuentas_resumen,
+            "top_gastos": top_gastos,
             "chart_data": chart_data,
             "ultimos_movimientos": ultimos_movimientos,
         },
@@ -1011,10 +1310,13 @@ def movimiento_list(request):
     movimientos = MovimientoFinanciero.objects.filter(
         usuario=request.user,
         tipo=active_tipo,
-    ).select_related("categoria__parent")
+    ).select_related("categoria__parent", "cuenta", "metodo_pago").prefetch_related("etiquetas")
     q = request.GET.get("q", "").strip()
     estado = request.GET.get("estado", "")
     categoria_id = request.GET.get("categoria", "")
+    cuenta_id = request.GET.get("cuenta", "")
+    metodo_id = request.GET.get("metodo", "")
+    etiqueta_id = request.GET.get("etiqueta", "")
     if q:
         movimientos = movimientos.filter(
             Q(concepto__icontains=q)
@@ -1036,6 +1338,12 @@ def movimiento_list(request):
             movimientos = movimientos.filter(categoria_id__in=categoria_ids)
         else:
             categoria_id = ""
+    if cuenta_id.isdigit():
+        movimientos = movimientos.filter(cuenta_id=cuenta_id)
+    if metodo_id.isdigit():
+        movimientos = movimientos.filter(metodo_pago_id=metodo_id)
+    if etiqueta_id.isdigit():
+        movimientos = movimientos.filter(etiquetas__id=etiqueta_id)
     page_obj, list_querystring = paginate_queryset(request, movimientos)
     categorias = Categoria.objects.filter(
         usuario=request.user,
@@ -1056,7 +1364,10 @@ def movimiento_list(request):
             "active_tipo": active_tipo,
             "create_url_name": create_url_name,
             "categorias": categorias,
-            "filters": {"q": q, "estado": estado, "categoria": categoria_id},
+            "cuentas": CuentaFinanciera.objects.filter(usuario=request.user, activa=True).order_by("nombre"),
+            "metodos": MetodoPago.objects.filter(usuario=request.user, activo=True).order_by("nombre"),
+            "etiquetas": Etiqueta.objects.filter(usuario=request.user).order_by("nombre"),
+            "filters": {"q": q, "estado": estado, "categoria": categoria_id, "cuenta": cuenta_id, "metodo": metodo_id, "etiqueta": etiqueta_id},
         },
     )
 

@@ -6,7 +6,19 @@ from django.contrib.auth.forms import SetPasswordForm
 from django.contrib.auth.password_validation import validate_password
 from django.utils import timezone
 
-from .models import Categoria, Deuda, MovimientoFinanciero, PagoDeuda, PerfilUsuario, Tarea
+from .models import (
+    Categoria,
+    CuentaFinanciera,
+    Deuda,
+    Etiqueta,
+    MetodoPago,
+    MovimientoFinanciero,
+    MovimientoRecurrente,
+    PagoDeuda,
+    PerfilUsuario,
+    PresupuestoMensual,
+    Tarea,
+)
 
 User = get_user_model()
 
@@ -43,6 +55,22 @@ def get_general_subcategory(parent):
     )
 
 
+def get_general_account(user):
+    account = CuentaFinanciera.objects.filter(
+        usuario=user,
+        nombre__iexact="General",
+    ).order_by("pk").first()
+    if account:
+        return account
+
+    return CuentaFinanciera.objects.create(
+        usuario=user,
+        nombre="General",
+        tipo=CuentaFinanciera.Tipo.OTRO,
+        color="#64748b",
+    )
+
+
 class UserScopedModelForm(forms.ModelForm):
     def __init__(self, *args, user=None, **kwargs):
         self.user = user
@@ -61,6 +89,15 @@ class UserScopedModelForm(forms.ModelForm):
                 bootstrap_class = "form-control"
 
             widget.attrs["class"] = f"{css_class} {bootstrap_class}".strip()
+
+
+class ParentCategorySelect(forms.Select):
+    def create_option(self, name, value, label, selected, index, subindex=None, attrs=None):
+        option = super().create_option(name, value, label, selected, index, subindex=subindex, attrs=attrs)
+        instance = getattr(value, "instance", None)
+        if instance and instance.parent_id:
+            option["attrs"]["data-parent"] = str(instance.parent_id)
+        return option
 
 
 class BootstrapFormMixin:
@@ -316,10 +353,11 @@ class TareaForm(UserScopedModelForm):
 class MovimientoFinancieroForm(UserScopedModelForm):
     class Meta:
         model = MovimientoFinanciero
-        fields = ["categoria", "monto", "fecha", "concepto", "comprobante"]
+        fields = ["categoria", "cuenta", "metodo_pago", "etiquetas", "monto", "fecha", "concepto", "comprobante"]
         labels = {
             "concepto": "Descripción",
             "comprobante": "Comprobante",
+            "metodo_pago": "Método de pago",
         }
         help_texts = {
             "comprobante": "Opcional: sube una captura, foto o archivo del pago.",
@@ -328,6 +366,7 @@ class MovimientoFinancieroForm(UserScopedModelForm):
             "fecha": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
             "monto": forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
             "comprobante": forms.ClearableFileInput(attrs={"accept": "image/*,.pdf"}),
+            "etiquetas": forms.SelectMultiple(attrs={"size": "1", "data-compact-multiple": "true"}),
         }
 
     def __init__(self, *args, user=None, tipo=None, **kwargs):
@@ -342,8 +381,14 @@ class MovimientoFinancieroForm(UserScopedModelForm):
         )
         self.fields["categoria"].empty_label = "Selecciona una categoria"
         self.fields["categoria"].help_text = "Los colores de la categoria se usan en las graficas."
+        self.fields["cuenta"].queryset = CuentaFinanciera.objects.filter(usuario=user, activa=True).order_by("nombre")
+        self.fields["cuenta"].empty_label = None
+        self.fields["metodo_pago"].queryset = MetodoPago.objects.filter(usuario=user, activo=True).order_by("nombre")
+        self.fields["metodo_pago"].empty_label = "Sin método"
+        self.fields["etiquetas"].queryset = Etiqueta.objects.filter(usuario=user).order_by("nombre")
         if not self.is_bound and not self.instance.pk:
             self.fields["fecha"].initial = timezone.localdate().isoformat()
+            self.fields["cuenta"].initial = get_general_account(user)
 
     def clean(self):
         cleaned_data = super().clean()
@@ -358,8 +403,205 @@ class MovimientoFinancieroForm(UserScopedModelForm):
         instance = super().save(commit=False)
         if instance.categoria_id and not instance.categoria.parent_id:
             instance.categoria = get_general_subcategory(instance.categoria)
+        if not instance.cuenta_id:
+            instance.cuenta = get_general_account(self.user)
         if self.tipo:
             instance.tipo = self.tipo
+        if commit:
+            instance.save()
+            self.save_m2m()
+        return instance
+
+
+class CuentaFinancieraForm(UserScopedModelForm):
+    class Meta:
+        model = CuentaFinanciera
+        fields = ["nombre", "tipo", "saldo_inicial", "color", "activa"]
+        widgets = {
+            "saldo_inicial": forms.NumberInput(attrs={"step": "0.01"}),
+            "color": forms.ColorInput(attrs={"value": "#38bdf8", "title": "Elige un color"}),
+        }
+
+    def clean_nombre(self):
+        nombre = self.cleaned_data["nombre"]
+        if CuentaFinanciera.objects.filter(usuario=self.user, nombre__iexact=nombre).exclude(pk=self.instance.pk).exists():
+            raise forms.ValidationError("Ya existe.")
+        return nombre
+
+
+class MetodoPagoForm(UserScopedModelForm):
+    class Meta:
+        model = MetodoPago
+        fields = ["nombre", "tipo", "activo"]
+
+    def clean_nombre(self):
+        nombre = self.cleaned_data["nombre"]
+        if MetodoPago.objects.filter(usuario=self.user, nombre__iexact=nombre).exclude(pk=self.instance.pk).exists():
+            raise forms.ValidationError("Ya existe.")
+        return nombre
+
+
+class EtiquetaForm(UserScopedModelForm):
+    class Meta:
+        model = Etiqueta
+        fields = ["nombre", "color"]
+        widgets = {
+            "color": forms.ColorInput(attrs={"value": "#6366f1", "title": "Elige un color"}),
+        }
+
+    def clean_nombre(self):
+        nombre = self.cleaned_data["nombre"]
+        if Etiqueta.objects.filter(usuario=self.user, nombre__iexact=nombre).exclude(pk=self.instance.pk).exists():
+            raise forms.ValidationError("Ya existe.")
+        return nombre
+
+
+class PresupuestoMensualForm(UserScopedModelForm):
+    MONTH_CHOICES = [
+        (1, "Enero"),
+        (2, "Febrero"),
+        (3, "Marzo"),
+        (4, "Abril"),
+        (5, "Mayo"),
+        (6, "Junio"),
+        (7, "Julio"),
+        (8, "Agosto"),
+        (9, "Septiembre"),
+        (10, "Octubre"),
+        (11, "Noviembre"),
+        (12, "Diciembre"),
+    ]
+
+    subcategoria = forms.ModelChoiceField(
+        queryset=Categoria.objects.none(),
+        required=False,
+        label="Subcategoría",
+        widget=ParentCategorySelect,
+    )
+    mes = forms.TypedChoiceField(
+        choices=MONTH_CHOICES,
+        coerce=int,
+        label="Mes",
+    )
+
+    class Meta:
+        model = PresupuestoMensual
+        fields = ["categoria", "subcategoria", "anio", "mes", "monto", "nota"]
+        labels = {
+            "categoria": "Categoría",
+        }
+        widgets = {
+            "monto": forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
+            "anio": forms.NumberInput(attrs={"min": "2000"}),
+        }
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, user=user, **kwargs)
+        self.fields["categoria"].queryset = Categoria.objects.filter(
+            usuario=user,
+            tipo__in=FINANCIAL_CATEGORY_TYPES,
+            parent__isnull=True,
+        ).order_by("nombre")
+        self.fields["categoria"].empty_label = "Selecciona una categoría"
+        self.fields["subcategoria"].queryset = Categoria.objects.filter(
+            usuario=user,
+            tipo__in=FINANCIAL_CATEGORY_TYPES,
+            parent__isnull=False,
+        ).select_related("parent").order_by("parent__nombre", "nombre")
+        self.fields["subcategoria"].label_from_instance = lambda obj: f"{obj.parent.nombre} > {obj.nombre}"
+        self.fields["subcategoria"].empty_label = "Toda la categoría"
+
+        selected_category = None
+        if self.is_bound:
+            category_value = self.data.get(self.add_prefix("categoria"))
+            if category_value and str(category_value).isdigit():
+                selected_category = Categoria.objects.filter(pk=category_value, usuario=user).first()
+        elif self.instance.pk and self.instance.categoria_id:
+            selected_category = self.instance.categoria.parent or self.instance.categoria
+            self.fields["categoria"].initial = selected_category
+            if self.instance.categoria.parent_id:
+                self.fields["subcategoria"].initial = self.instance.categoria
+
+        if not self.is_bound and not self.instance.pk:
+            hoy = timezone.localdate()
+            self.fields["anio"].initial = hoy.year
+            self.fields["mes"].initial = hoy.month
+
+    def clean(self):
+        cleaned_data = super().clean()
+        categoria = cleaned_data.get("categoria")
+        subcategoria = cleaned_data.get("subcategoria")
+        anio = cleaned_data.get("anio")
+        mes = cleaned_data.get("mes")
+        if mes and not 1 <= mes <= 12:
+            self.add_error("mes", "Debe estar entre 1 y 12.")
+        if subcategoria and categoria and subcategoria.parent_id != categoria.pk:
+            self.add_error("subcategoria", "La subcategoría debe pertenecer a la categoría seleccionada.")
+
+        target_categoria = subcategoria or categoria
+        cleaned_data["categoria"] = target_categoria
+        if target_categoria and anio and mes and PresupuestoMensual.objects.filter(
+            usuario=self.user,
+            categoria=target_categoria,
+            anio=anio,
+            mes=mes,
+        ).exclude(pk=self.instance.pk).exists():
+            self.add_error("categoria", "Ya existe presupuesto para esa categoría o subcategoría en ese mes.")
+        return cleaned_data
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        subcategoria = self.cleaned_data.get("subcategoria")
+        if subcategoria:
+            instance.categoria = subcategoria
+        if commit:
+            instance.save()
+            self.save_m2m()
+        return instance
+
+
+class MovimientoRecurrenteForm(UserScopedModelForm):
+    class Meta:
+        model = MovimientoRecurrente
+        fields = ["tipo", "categoria", "cuenta", "metodo_pago", "concepto", "monto", "dia_mes", "activo", "nota"]
+        labels = {
+            "metodo_pago": "Método de pago",
+            "dia_mes": "Día del mes",
+        }
+        widgets = {
+            "monto": forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
+            "dia_mes": forms.NumberInput(attrs={"min": "1", "max": "31"}),
+        }
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, user=user, **kwargs)
+        self.fields["categoria"].queryset = Categoria.objects.filter(
+            usuario=user,
+            tipo__in=FINANCIAL_CATEGORY_TYPES,
+        ).select_related("parent").order_by("parent__nombre", "nombre")
+        self.fields["categoria"].label_from_instance = lambda obj: (
+            f"{obj.parent.nombre} > {obj.nombre}" if obj.parent_id else obj.nombre
+        )
+        self.fields["categoria"].empty_label = "Sin categoría"
+        self.fields["cuenta"].queryset = CuentaFinanciera.objects.filter(usuario=user, activa=True).order_by("nombre")
+        self.fields["cuenta"].empty_label = None
+        self.fields["metodo_pago"].queryset = MetodoPago.objects.filter(usuario=user, activo=True).order_by("nombre")
+        self.fields["metodo_pago"].empty_label = "Sin método"
+        if not self.is_bound and not self.instance.pk:
+            self.fields["cuenta"].initial = get_general_account(user)
+
+    def clean_dia_mes(self):
+        dia = self.cleaned_data["dia_mes"]
+        if not 1 <= dia <= 31:
+            raise forms.ValidationError("Debe estar entre 1 y 31.")
+        return dia
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        if instance.categoria_id and not instance.categoria.parent_id:
+            instance.categoria = get_general_subcategory(instance.categoria)
+        if not instance.cuenta_id:
+            instance.cuenta = get_general_account(self.user)
         if commit:
             instance.save()
             self.save_m2m()

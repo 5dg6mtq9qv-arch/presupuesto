@@ -13,6 +13,9 @@
     <p class="mb-0 text-muted">Ingresos menos gastos y obligaciones pendientes.</p>
   </div>
   <div class="wallet-actions">
+    <a class="btn btn-light btn-icon" href="{% url 'reporte_financiero_csv' %}" title="Descargar reporte CSV" aria-label="Descargar reporte CSV">
+      <span class="material-symbols-outlined">download</span>
+    </a>
     <a class="btn btn-primary btn-icon" href="{% url 'movimiento_ingreso_create' %}" title="Nuevo ingreso" aria-label="Nuevo ingreso">
       <span class="material-symbols-outlined">add</span>
     </a>
@@ -36,6 +39,10 @@
     <div class="metric-label">Saldo en deudas</div>
     <div class="metric-value">{{ saldo_deudas }}</div>
   </section>
+  <section class="panel metric blue">
+    <div class="metric-label">Presupuesto restante</div>
+    <div class="metric-value">{{ presupuesto.total_restante }}</div>
+  </section>
 </div>
 
 <section class="panel">
@@ -52,6 +59,7 @@
     <span><strong>{{ saldo_deudas }}</strong> obligaciones pendientes</span>
     <span><strong>{{ pagos_mes }}</strong> pagado a deudas este mes</span>
     <span><strong>{{ posicion_neta }}</strong> posición neta estimada</span>
+    <span><strong>{{ presupuesto.total_usado }}</strong> usado de presupuesto</span>
   </div>
 </section>
 
@@ -118,6 +126,30 @@
   <section class="panel chart-panel">
     <div class="panel-heading">
       <div>
+        <h2>Presupuesto por categoría</h2>
+        <p class="muted mb-0">Comparación entre límite y gasto real del mes.</p>
+      </div>
+    </div>
+    <div class="chart-box chart-box-small">
+      <canvas id="presupuestoChart"></canvas>
+    </div>
+  </section>
+
+  <section class="panel chart-panel">
+    <div class="panel-heading">
+      <div>
+        <h2>Saldos por cuenta</h2>
+        <p class="muted mb-0">Dónde está distribuido tu dinero.</p>
+      </div>
+    </div>
+    <div class="chart-box chart-box-small">
+      <canvas id="cuentasChart"></canvas>
+    </div>
+  </section>
+
+  <section class="panel chart-panel">
+    <div class="panel-heading">
+      <div>
         <h2>Ingresos por categoría</h2>
         <p class="muted mb-0">Origen de los ingresos del mes actual.</p>
       </div>
@@ -137,6 +169,40 @@
     <div class="chart-box chart-box-small">
       <canvas id="gastosCategoriaChart"></canvas>
     </div>
+  </section>
+
+  <section class="panel chart-panel">
+    <div class="panel-heading">
+      <div>
+        <h2>Proyección</h2>
+        <p class="muted mb-0">Saldo estimado con movimientos recurrentes y deudas.</p>
+      </div>
+    </div>
+    <div class="chart-box chart-box-small">
+      <canvas id="proyeccionChart"></canvas>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-heading">
+      <h2>Top gastos</h2>
+      <a href="{% url 'movimiento_list' %}?tipo=gasto">Ver gastos</a>
+    </div>
+    {% if top_gastos %}
+      <div class="list-group list-group-flush">
+        {% for movimiento in top_gastos %}
+          <div class="list-group-item px-0 d-flex justify-content-between align-items-center">
+            <div>
+              <strong>{{ movimiento.concepto }}</strong>
+              <div class="small text-muted">{{ movimiento.fecha }}{% if movimiento.categoria %} · {% if movimiento.categoria.parent %}{{ movimiento.categoria.parent.nombre }} > {% endif %}{{ movimiento.categoria.nombre }}{% endif %}</div>
+            </div>
+            <span class="text-danger">{{ movimiento.monto }}</span>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="muted mb-0">Aún no hay gastos registrados.</p>
+    {% endif %}
   </section>
 
   {% if user.is_staff %}
@@ -251,6 +317,40 @@
         datasets: [{ data: data.ingresosCategoria.values, backgroundColor: data.ingresosCategoria.colors }],
       },
       options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } },
+    });
+
+    new Chart(document.getElementById("presupuestoChart"), {
+      type: "bar",
+      data: {
+        labels: data.presupuesto.labels,
+        datasets: [
+          { label: "Usado", data: data.presupuesto.usado, backgroundColor: "#fb8500", borderRadius: 8 },
+          { label: "Presupuesto", data: data.presupuesto.presupuesto, backgroundColor: "#5e35b1", borderRadius: 8 },
+        ],
+      },
+      options: moneyOptions,
+    });
+
+    new Chart(document.getElementById("cuentasChart"), {
+      type: "doughnut",
+      data: {
+        labels: data.cuentas.labels,
+        datasets: [{ data: data.cuentas.values, backgroundColor: data.cuentas.colors }],
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } },
+    });
+
+    new Chart(document.getElementById("proyeccionChart"), {
+      type: "line",
+      data: {
+        labels: data.proyeccion.labels,
+        datasets: [
+          { label: "Ingresos recurrentes", data: data.proyeccion.ingresos, borderColor: "#22c55e", backgroundColor: "#22c55e", tension: .35 },
+          { label: "Gastos recurrentes", data: data.proyeccion.gastos, borderColor: "#fb8500", backgroundColor: "#fb8500", tension: .35 },
+          { label: "Saldo proyectado", data: data.proyeccion.saldo, borderColor: "#5e35b1", backgroundColor: "#5e35b1", tension: .35 },
+        ],
+      },
+      options: moneyOptions,
     });
 
     const tareasChart = document.getElementById("tareasChart");
