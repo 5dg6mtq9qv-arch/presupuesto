@@ -819,7 +819,9 @@
         <ul class="nav-list">
           <li><a class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" href="{% url 'dashboard' %}"><span class="material-symbols-outlined">dashboard</span> Dashboard</a></li>
           <li><a class="nav-link {% if request.resolver_match.url_name == 'analisis_financiero' %}active{% endif %}" href="{% url 'analisis_financiero' %}"><span class="material-symbols-outlined">monitoring</span> Análisis</a></li>
-          <li><a class="nav-link {% if 'tarea' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'tarea_list' %}"><span class="material-symbols-outlined">task_alt</span> Tareas</a></li>
+          {% if user.is_staff %}
+            <li><a class="nav-link {% if 'tarea' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'tarea_list' %}"><span class="material-symbols-outlined">task_alt</span> Tareas</a></li>
+          {% endif %}
           <li><a class="nav-link {% if 'movimiento' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'movimiento_list' %}"><span class="material-symbols-outlined">sync_alt</span> Ingresos y gastos</a></li>
           <li><a class="nav-link {% if 'deuda' in request.resolver_match.url_name or 'pago' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'deuda_list' %}"><span class="material-symbols-outlined">receipt_long</span> Deudas</a></li>
           <li><a class="nav-link {% if 'categoria' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'categoria_list' %}"><span class="material-symbols-outlined">sell</span> Categorías</a></li>

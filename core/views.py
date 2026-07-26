@@ -357,8 +357,11 @@ def usuario_password(request, pk):
 def dashboard(request):
     hoy = timezone.localdate()
     inicio_mes = hoy.replace(day=1)
-    tareas_hoy = Tarea.objects.filter(usuario=request.user, fecha=hoy)
-    tareas = Tarea.objects.filter(usuario=request.user)
+    tareas_hoy = Tarea.objects.none()
+    tareas = Tarea.objects.none()
+    if request.user.is_staff:
+        tareas_hoy = Tarea.objects.filter(usuario=request.user, fecha=hoy)
+        tareas = Tarea.objects.filter(usuario=request.user)
     movimientos_mes = MovimientoFinanciero.objects.filter(
         usuario=request.user,
         estado=MovimientoFinanciero.Estado.CONFIRMADO,
@@ -406,6 +409,10 @@ def dashboard(request):
         ]
     }
 
+    ingresos_categoria = gastos_por_categoria(
+        movimientos_mes.filter(tipo=MovimientoFinanciero.Tipo.INGRESO),
+        8,
+    )
     gastos_categoria = gastos_por_categoria(
         movimientos_mes.filter(tipo=MovimientoFinanciero.Tipo.GASTO),
         8,
@@ -450,15 +457,6 @@ def dashboard(request):
         )
 
     chart_data = {
-        "tareas": {
-            "labels": ["Pendientes", "Trabajando", "Finalizadas", "Canceladas"],
-            "values": [
-                tarea_resumen[Tarea.Estado.PENDIENTE],
-                tarea_resumen[Tarea.Estado.EN_PROGRESO],
-                tarea_resumen[Tarea.Estado.COMPLETADA],
-                tarea_resumen[Tarea.Estado.CANCELADA],
-            ],
-        },
         "flujo": {
             "labels": [item["mes"] for item in flujo_mensual],
             "ingresos": [item["ingresos"] for item in flujo_mensual],
@@ -478,7 +476,22 @@ def dashboard(request):
             "values": [item["total"] for item in gastos_categoria],
             "colors": [item["color"] for item in gastos_categoria],
         },
+        "ingresosCategoria": {
+            "labels": [item["categoria"] for item in ingresos_categoria],
+            "values": [item["total"] for item in ingresos_categoria],
+            "colors": [item["color"] for item in ingresos_categoria],
+        },
     }
+    if request.user.is_staff:
+        chart_data["tareas"] = {
+            "labels": ["Pendientes", "Trabajando", "Finalizadas", "Canceladas"],
+            "values": [
+                tarea_resumen[Tarea.Estado.PENDIENTE],
+                tarea_resumen[Tarea.Estado.EN_PROGRESO],
+                tarea_resumen[Tarea.Estado.COMPLETADA],
+                tarea_resumen[Tarea.Estado.CANCELADA],
+            ],
+        }
 
     ultimos_movimientos = MovimientoFinanciero.objects.filter(
         usuario=request.user,
@@ -500,6 +513,7 @@ def dashboard(request):
             "uso_ingresos": uso_ingresos,
             "estado_presupuesto": estado_presupuesto,
             "tarea_resumen": tarea_resumen,
+            "ingresos_categoria": ingresos_categoria,
             "gastos_categoria": gastos_categoria,
             "chart_data": chart_data,
             "ultimos_movimientos": ultimos_movimientos,
@@ -835,7 +849,7 @@ def categoria_delete(request, pk):
     return redirect(back_url)
 
 
-@login_required
+@admin_required
 def tarea_list(request):
     tareas = Tarea.objects.filter(usuario=request.user).select_related("categoria")
     q = request.GET.get("q", "").strip()
@@ -894,7 +908,7 @@ def tarea_list(request):
     )
 
 
-@login_required
+@admin_required
 def tarea_create(request):
     if request.method == "POST":
         form = TareaForm(request.POST, user=request.user)
@@ -912,7 +926,7 @@ def tarea_create(request):
     return render(request, "core/tarea_form.html", {"form": form, "title": "Nueva tarea"})
 
 
-@login_required
+@admin_required
 def tarea_update(request, pk):
     tarea = get_object_or_404(Tarea, pk=pk, usuario=request.user)
     if request.method == "POST":
@@ -926,7 +940,7 @@ def tarea_update(request, pk):
     return render(request, "core/tarea_form.html", {"form": form, "title": "Editar tarea"})
 
 
-@login_required
+@admin_required
 def tarea_estado(request, pk, estado):
     if request.method != "POST":
         return HttpResponseBadRequest("Metodo no permitido.")
@@ -977,7 +991,7 @@ def tarea_estado(request, pk, estado):
     return redirect("tarea_list")
 
 
-@login_required
+@admin_required
 def tarea_delete(request, pk):
     tarea = get_object_or_404(Tarea, pk=pk, usuario=request.user)
     if request.method != "POST":

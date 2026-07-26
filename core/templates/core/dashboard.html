@@ -80,23 +80,25 @@
     </div>
   </section>
 
-  <section class="panel chart-panel">
-    <div class="panel-heading">
-      <div>
-        <h2>Tareas</h2>
-        <p class="muted mb-0">Pendientes, trabajando, finalizadas y canceladas.</p>
+  {% if user.is_staff %}
+    <section class="panel chart-panel">
+      <div class="panel-heading">
+        <div>
+          <h2>Tareas</h2>
+          <p class="muted mb-0">Pendientes, trabajando, finalizadas y canceladas.</p>
+        </div>
       </div>
-    </div>
-    <div class="chart-box chart-box-small">
-      <canvas id="tareasChart"></canvas>
-    </div>
-    <div class="status-list">
-      <span><strong>{{ tarea_resumen.pendiente }}</strong> pendientes</span>
-      <span><strong>{{ tarea_resumen.en_progreso }}</strong> trabajando</span>
-      <span><strong>{{ tarea_resumen.completada }}</strong> finalizadas</span>
-      <span><strong>{{ tarea_resumen.cancelada }}</strong> canceladas</span>
-    </div>
-  </section>
+      <div class="chart-box chart-box-small">
+        <canvas id="tareasChart"></canvas>
+      </div>
+      <div class="status-list">
+        <span><strong>{{ tarea_resumen.pendiente }}</strong> pendientes</span>
+        <span><strong>{{ tarea_resumen.en_progreso }}</strong> trabajando</span>
+        <span><strong>{{ tarea_resumen.completada }}</strong> finalizadas</span>
+        <span><strong>{{ tarea_resumen.cancelada }}</strong> canceladas</span>
+      </div>
+    </section>
+  {% endif %}
 
   <section class="panel chart-panel">
     <div class="panel-heading">
@@ -116,6 +118,18 @@
   <section class="panel chart-panel">
     <div class="panel-heading">
       <div>
+        <h2>Ingresos por categoría</h2>
+        <p class="muted mb-0">Origen de los ingresos del mes actual.</p>
+      </div>
+    </div>
+    <div class="chart-box chart-box-small">
+      <canvas id="ingresosCategoriaChart"></canvas>
+    </div>
+  </section>
+
+  <section class="panel chart-panel">
+    <div class="panel-heading">
+      <div>
         <h2>Gastos por categoría</h2>
         <p class="muted mb-0">Distribución del mes actual.</p>
       </div>
@@ -125,24 +139,26 @@
     </div>
   </section>
 
-  <section class="panel">
-    <div class="panel-heading">
-      <h2>Tareas de hoy</h2>
-      <a href="{% url 'tarea_list' %}">Ver tablero</a>
-    </div>
-    {% if tareas_hoy %}
-      <div class="list-group list-group-flush">
-        {% for tarea in tareas_hoy %}
-          <div class="list-group-item px-0 d-flex justify-content-between align-items-center">
-            <span>{{ tarea.titulo }}</span>
-            <span class="badge rounded-pill text-bg-light border">{{ tarea.get_estado_display }}</span>
-          </div>
-        {% endfor %}
+  {% if user.is_staff %}
+    <section class="panel">
+      <div class="panel-heading">
+        <h2>Tareas de hoy</h2>
+        <a href="{% url 'tarea_list' %}">Ver tablero</a>
       </div>
-    {% else %}
-      <p class="muted mb-0">No tienes tareas creadas para hoy.</p>
-    {% endif %}
-  </section>
+      {% if tareas_hoy %}
+        <div class="list-group list-group-flush">
+          {% for tarea in tareas_hoy %}
+            <div class="list-group-item px-0 d-flex justify-content-between align-items-center">
+              <span>{{ tarea.titulo }}</span>
+              <span class="badge rounded-pill text-bg-light border">{{ tarea.get_estado_display }}</span>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="muted mb-0">No tienes tareas creadas para hoy.</p>
+      {% endif %}
+    </section>
+  {% endif %}
 
   <section class="panel">
     <div class="panel-heading">
@@ -228,14 +244,26 @@
       options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } },
     });
 
-    new Chart(document.getElementById("tareasChart"), {
+    new Chart(document.getElementById("ingresosCategoriaChart"), {
       type: "doughnut",
       data: {
-        labels: data.tareas.labels,
-        datasets: [{ data: data.tareas.values, backgroundColor: ["#4357f2", "#fb8500", "#22c55e", "#b42318"] }],
+        labels: data.ingresosCategoria.labels,
+        datasets: [{ data: data.ingresosCategoria.values, backgroundColor: data.ingresosCategoria.colors }],
       },
       options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } },
     });
+
+    const tareasChart = document.getElementById("tareasChart");
+    if (tareasChart && data.tareas) {
+      new Chart(tareasChart, {
+        type: "doughnut",
+        data: {
+          labels: data.tareas.labels,
+          datasets: [{ data: data.tareas.values, backgroundColor: ["#4357f2", "#fb8500", "#22c55e", "#b42318"] }],
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } },
+      });
+    }
   })();
 </script>
 {% endblock %}
