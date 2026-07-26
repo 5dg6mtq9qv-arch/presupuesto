@@ -139,6 +139,15 @@
       color: var(--muted);
     }
 
+    .mobile-menu-toggle,
+    .sidebar-close {
+      display: none;
+    }
+
+    .sidebar-overlay {
+      display: none;
+    }
+
     .avatar {
       width: 34px;
       height: 34px;
@@ -663,11 +672,37 @@
     @media (max-width: 980px) {
       .app-shell { grid-template-columns: 1fr; }
       .sidebar {
-        position: static;
-        height: auto;
+        width: min(82vw, 300px);
+        position: fixed;
+        inset: 0 auto 0 0;
+        height: 100dvh;
         grid-row: auto;
+        transform: translateX(-105%);
+        transition: transform .18s ease;
+        z-index: 50;
+        box-shadow: 24px 0 48px rgba(15, 23, 42, .16);
+      }
+      body.sidebar-open { overflow: hidden; }
+      body.sidebar-open .sidebar { transform: translateX(0); }
+      body.sidebar-open .sidebar-overlay {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: 40;
+        background: rgba(15, 23, 42, .38);
+      }
+      .mobile-menu-toggle,
+      .sidebar-close {
+        display: inline-flex;
+      }
+      .sidebar-close {
+        position: absolute;
+        top: 18px;
+        right: 14px;
       }
       .topbar, .content, .footer { grid-column: 1; }
+      .topbar { padding: 0 14px; }
+      .content { padding: 18px 14px; }
       .dashboard-grid, .form-grid, .status-list { grid-template-columns: 1fr; }
       .chart-panel-wide { grid-column: auto; }
       .row { grid-template-columns: 1fr; }
@@ -678,11 +713,14 @@
 </head>
 <body>
   <div class="app-shell">
-    <aside class="sidebar">
+    <aside class="sidebar" id="sidebar">
       <a class="brand" href="{% url 'dashboard' %}">
         <span class="brand-mark">TB</span>
         <span>TaskBudget</span>
       </a>
+      <button class="btn btn-light btn-icon sidebar-close" type="button" title="Cerrar menú" aria-label="Cerrar menú" data-sidebar-close>
+        <span class="material-symbols-outlined">close</span>
+      </button>
       {% if user.is_authenticated %}
         <div class="nav-section">Principal</div>
         <ul class="nav-list">
@@ -703,9 +741,15 @@
         {% endif %}
       {% endif %}
     </aside>
+    <div class="sidebar-overlay" data-sidebar-close></div>
 
     <header class="topbar">
-      <a class="btn btn-light btn-icon" href="{% url 'dashboard' %}" title="Inicio" aria-label="Inicio"><span class="material-symbols-outlined">home</span></a>
+      <div class="topbar-actions">
+        <button class="btn btn-light btn-icon mobile-menu-toggle" type="button" title="Menú" aria-label="Menú" aria-controls="sidebar" aria-expanded="false" data-sidebar-open>
+          <span class="material-symbols-outlined">menu</span>
+        </button>
+        <a class="btn btn-light btn-icon" href="{% url 'dashboard' %}" title="Inicio" aria-label="Inicio"><span class="material-symbols-outlined">home</span></a>
+      </div>
       {% if user.is_authenticated %}
         <div class="topbar-actions">
           <a class="avatar" href="{% url 'perfil_update' %}" title="Mi perfil" aria-label="Mi perfil">
@@ -747,6 +791,26 @@
     </footer>
   </div>
 
+  <script>
+    (() => {
+      const openButton = document.querySelector("[data-sidebar-open]");
+      const closeButtons = document.querySelectorAll("[data-sidebar-close]");
+
+      function setSidebar(open) {
+        document.body.classList.toggle("sidebar-open", open);
+        if (openButton) openButton.setAttribute("aria-expanded", String(open));
+      }
+
+      openButton?.addEventListener("click", () => setSidebar(true));
+      closeButtons.forEach((button) => button.addEventListener("click", () => setSidebar(false)));
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") setSidebar(false);
+      });
+      document.querySelectorAll(".sidebar .nav-link").forEach((link) => {
+        link.addEventListener("click", () => setSidebar(false));
+      });
+    })();
+  </script>
   <script>
     (() => {
       document.querySelectorAll('input[type="date"]').forEach((input) => {
