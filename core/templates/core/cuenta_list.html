@@ -35,13 +35,16 @@
 <section class="panel">
   <div class="table-wrap">
     <table class="table table-hover align-middle mb-0">
-      <thead><tr><th>Cuenta</th><th>Tipo</th><th>Saldo inicial</th><th>Estado</th><th></th></tr></thead>
+      <thead><tr><th>Cuenta</th><th>Tipo</th><th>Saldo inicial</th><th>Ingresos</th><th>Gastos</th><th>Saldo actual</th><th>Estado</th><th></th></tr></thead>
       <tbody>
         {% for cuenta in cuentas %}
           <tr>
             <td><span class="color-swatch" style="background-color: {{ cuenta.color|default:'#38bdf8' }};"></span> <strong>{{ cuenta.nombre }}</strong></td>
             <td>{{ cuenta.get_tipo_display }}</td>
             <td class="amount">{{ cuenta.saldo_inicial }}</td>
+            <td class="amount text-success">{{ cuenta.ingresos_confirmados }}</td>
+            <td class="amount text-danger">{{ cuenta.gastos_confirmados }}</td>
+            <td class="amount"><strong>{{ cuenta.saldo_actual }}</strong></td>
             <td><span class="badge rounded-pill {% if cuenta.activa %}text-bg-success{% else %}text-bg-secondary{% endif %}">{% if cuenta.activa %}Activa{% else %}Inactiva{% endif %}</span></td>
             <td class="text-nowrap">
               <span class="action-icons">
@@ -52,7 +55,7 @@
             </td>
           </tr>
         {% empty %}
-          <tr><td colspan="5" class="muted">Sin cuentas.</td></tr>
+          <tr><td colspan="8" class="muted">Sin cuentas.</td></tr>
         {% endfor %}
       </tbody>
     </table>

@@ -393,7 +393,49 @@ def simple_finance_list(request, model, form_class, template, context_name, titl
 
 @login_required
 def cuenta_list(request):
-    return simple_finance_list(request, CuentaFinanciera, CuentaFinancieraForm, "core/cuenta_list.html", "cuentas", "Cuentas", "General y efectivo como base; agrega bancos o tarjetas según necesites.", "Cuenta creada.")
+    form = CuentaFinancieraForm(user=request.user)
+    if request.method == "POST":
+        form = CuentaFinancieraForm(request.POST, user=request.user)
+        if form.is_valid():
+            assign_user_and_save(form, request.user)
+            messages.success(request, "Cuenta creada.")
+            return redirect("cuenta_list")
+
+    cuentas = CuentaFinanciera.objects.filter(usuario=request.user)
+    q = request.GET.get("q", "").strip()
+    if q:
+        cuentas = cuentas.filter(nombre__icontains=q)
+    page_obj, list_querystring = paginate_queryset(request, cuentas)
+
+    movimientos = MovimientoFinanciero.objects.filter(
+        usuario=request.user,
+        estado=MovimientoFinanciero.Estado.CONFIRMADO,
+        cuenta__isnull=False,
+    )
+    for cuenta in page_obj:
+        cuenta.ingresos_confirmados = movimientos.filter(
+            cuenta=cuenta,
+            tipo=MovimientoFinanciero.Tipo.INGRESO,
+        ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+        cuenta.gastos_confirmados = movimientos.filter(
+            cuenta=cuenta,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+        ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+        cuenta.saldo_actual = cuenta.saldo_inicial + cuenta.ingresos_confirmados - cuenta.gastos_confirmados
+
+    return render(
+        request,
+        "core/cuenta_list.html",
+        {
+            "form": form,
+            "cuentas": page_obj,
+            "page_obj": page_obj,
+            "list_querystring": list_querystring,
+            "filters": {"q": q},
+            "title": "Cuentas",
+            "subtitle": "General y efectivo como base; agrega bancos o tarjetas según necesites.",
+        },
+    )
 
 
 @login_required
