@@ -1,39 +1,223 @@
 {% extends "base.html" %}
 
+{% block page_title %}Panel principal{% endblock %}
+{% block page_subtitle %}Resumen de tareas, finanzas, gastos y deudas{% endblock %}
+
 {% block content %}
-<h1>Hoy</h1>
+{{ chart_data|json_script:"dashboard-data" }}
+
+<div class="wallet-hero">
+  <div>
+    <span class="badge rounded-pill text-bg-light border mb-2">Resumen del mes</span>
+    <h2>Balance: <span class="{% if balance >= 0 %}text-success{% else %}text-danger{% endif %}">{{ balance }}</span></h2>
+    <p class="mb-0 text-muted">Ingresos, egresos, pagos de deuda y avance de tareas en un solo tablero.</p>
+  </div>
+  <div class="wallet-actions">
+    <a class="btn btn-light" href="{% url 'movimiento_create' %}">Nuevo movimiento</a>
+    <a class="btn btn-primary" href="{% url 'tarea_create' %}">Nueva tarea</a>
+  </div>
+</div>
+
 <div class="grid">
-  <section class="panel">
-    <h2>Tareas de {{ hoy }}</h2>
-    {% if tareas_hoy %}
-      <ul>
-        {% for tarea in tareas_hoy %}
-          <li>{{ tarea.titulo }} <span class="muted">{{ tarea.get_estado_display }}</span></li>
-        {% endfor %}
-      </ul>
-    {% else %}
-      <p class="muted">No tienes tareas para hoy.</p>
-    {% endif %}
-    <a class="button secondary" href="{% url 'tarea_create' %}">Nueva tarea</a>
+  <section class="panel metric green">
+    <div class="metric-label">Ingresos del mes</div>
+    <div class="metric-value">{{ ingresos }}</div>
   </section>
-  <section class="panel">
-    <h2>Mes actual</h2>
-    <p>Ingresos: <strong class="amount">{{ ingresos }}</strong></p>
-    <p>Gastos: <strong class="amount">{{ gastos }}</strong></p>
-    <p>Balance: <strong class="amount">{{ balance }}</strong></p>
-    <a class="button secondary" href="{% url 'movimiento_create' %}">Nuevo movimiento</a>
+  <section class="panel metric orange">
+    <div class="metric-label">Gastos del mes</div>
+    <div class="metric-value">{{ gastos }}</div>
   </section>
-  <section class="panel">
-    <h2>Deudas activas</h2>
-    <p>Saldo: <strong class="amount">{{ saldo_deudas }}</strong></p>
-    {% if deudas_activas %}
-      <ul>
-        {% for deuda in deudas_activas %}
-          <li>{{ deuda.acreedor }} <span class="muted">{{ deuda.saldo_actual }}</span></li>
-        {% endfor %}
-      </ul>
-    {% endif %}
-    <a class="button secondary" href="{% url 'deuda_create' %}">Nueva deuda</a>
+  <section class="panel metric blue">
+    <div class="metric-label">Pagos a deudas</div>
+    <div class="metric-value">{{ pagos_mes }}</div>
+  </section>
+  <section class="panel metric gray">
+    <div class="metric-label">Saldo en deudas</div>
+    <div class="metric-value">{{ saldo_deudas }}</div>
   </section>
 </div>
+
+<div class="dashboard-grid">
+  <section class="panel chart-panel chart-panel-wide">
+    <div class="panel-heading">
+      <div>
+        <h2>Flujo de dinero</h2>
+        <p class="muted mb-0">Ingresos, gastos y balance de los últimos 6 meses.</p>
+      </div>
+    </div>
+    <div class="chart-box">
+      <canvas id="flujoChart"></canvas>
+    </div>
+  </section>
+
+  <section class="panel chart-panel">
+    <div class="panel-heading">
+      <div>
+        <h2>Gastos por categoría</h2>
+        <p class="muted mb-0">Distribución del mes actual.</p>
+      </div>
+    </div>
+    <div class="chart-box chart-box-small">
+      <canvas id="gastosCategoriaChart"></canvas>
+    </div>
+  </section>
+
+  <section class="panel chart-panel">
+    <div class="panel-heading">
+      <div>
+        <h2>Tareas</h2>
+        <p class="muted mb-0">Pendientes, trabajando, finalizadas y canceladas.</p>
+      </div>
+    </div>
+    <div class="chart-box chart-box-small">
+      <canvas id="tareasChart"></canvas>
+    </div>
+    <div class="status-list">
+      <span><strong>{{ tarea_resumen.pendiente }}</strong> pendientes</span>
+      <span><strong>{{ tarea_resumen.en_progreso }}</strong> trabajando</span>
+      <span><strong>{{ tarea_resumen.completada }}</strong> finalizadas</span>
+      <span><strong>{{ tarea_resumen.cancelada }}</strong> canceladas</span>
+    </div>
+  </section>
+
+  <section class="panel chart-panel">
+    <div class="panel-heading">
+      <div>
+        <h2>Deudas</h2>
+        <p class="muted mb-0">Estado general de obligaciones.</p>
+      </div>
+    </div>
+    <div class="chart-box chart-box-small">
+      <canvas id="deudasChart"></canvas>
+    </div>
+    <div class="status-list">
+      <span><strong>{{ deuda_resumen.activa }}</strong> activas</span>
+      <span><strong>{{ deuda_resumen.pagada }}</strong> pagadas</span>
+      <span><strong>{{ deuda_resumen.cancelada }}</strong> canceladas</span>
+    </div>
+  </section>
+</div>
+
+<div class="dashboard-grid">
+  <section class="panel">
+    <div class="panel-heading">
+      <h2>Tareas de hoy</h2>
+      <a href="{% url 'tarea_list' %}">Ver tablero</a>
+    </div>
+    {% if tareas_hoy %}
+      <div class="list-group list-group-flush">
+        {% for tarea in tareas_hoy %}
+          <div class="list-group-item px-0 d-flex justify-content-between align-items-center">
+            <span>{{ tarea.titulo }}</span>
+            <span class="badge rounded-pill text-bg-light border">{{ tarea.get_estado_display }}</span>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="muted mb-0">No tienes tareas creadas para hoy.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <div class="panel-heading">
+      <h2>Últimos movimientos</h2>
+      <a href="{% url 'movimiento_list' %}">Ver finanzas</a>
+    </div>
+    {% if ultimos_movimientos %}
+      <div class="list-group list-group-flush">
+        {% for movimiento in ultimos_movimientos %}
+          <div class="list-group-item px-0 d-flex justify-content-between align-items-center">
+            <div>
+              <strong>{{ movimiento.concepto }}</strong>
+              <div class="small text-muted">{{ movimiento.fecha }}{% if movimiento.categoria %} · {{ movimiento.categoria.nombre }}{% endif %}</div>
+            </div>
+            <span class="{% if movimiento.tipo == 'ingreso' %}text-success{% else %}text-danger{% endif %}">
+              {% if movimiento.tipo == 'ingreso' %}+{% else %}-{% endif %}{{ movimiento.monto }}
+            </span>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="muted mb-0">Aún no hay movimientos registrados.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <div class="panel-heading">
+      <h2>Deudas recientes</h2>
+      <a href="{% url 'deuda_list' %}">Ver deudas</a>
+    </div>
+    {% if ultimas_deudas %}
+      <div class="list-group list-group-flush">
+        {% for deuda in ultimas_deudas %}
+          <div class="list-group-item px-0">
+            <div class="d-flex justify-content-between">
+              <strong>{{ deuda.acreedor }}</strong>
+              <span class="amount">{{ deuda.saldo_actual }}</span>
+            </div>
+            <div class="small text-muted">{{ deuda.concepto }} · {{ deuda.pagos.count }}/{{ deuda.numero_cuotas }} pagos</div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="muted mb-0">No hay deudas registradas.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script>
+  (() => {
+    const data = JSON.parse(document.getElementById("dashboard-data").textContent);
+
+    const moneyOptions = {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { position: "bottom" } },
+      scales: { y: { beginAtZero: true } },
+    };
+
+    new Chart(document.getElementById("flujoChart"), {
+      type: "bar",
+      data: {
+        labels: data.flujo.labels,
+        datasets: [
+          { label: "Ingresos", data: data.flujo.ingresos, backgroundColor: "#22c55e", borderRadius: 8 },
+          { label: "Gastos", data: data.flujo.gastos, backgroundColor: "#fb8500", borderRadius: 8 },
+          { label: "Balance", data: data.flujo.balance, type: "line", borderColor: "#4357f2", backgroundColor: "#4357f2", tension: .35 },
+        ],
+      },
+      options: moneyOptions,
+    });
+
+    new Chart(document.getElementById("gastosCategoriaChart"), {
+      type: "doughnut",
+      data: {
+        labels: data.gastosCategoria.labels,
+        datasets: [{ data: data.gastosCategoria.values, backgroundColor: data.gastosCategoria.colors }],
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } },
+    });
+
+    new Chart(document.getElementById("tareasChart"), {
+      type: "doughnut",
+      data: {
+        labels: data.tareas.labels,
+        datasets: [{ data: data.tareas.values, backgroundColor: ["#4357f2", "#fb8500", "#22c55e", "#b42318"] }],
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } },
+    });
+
+    new Chart(document.getElementById("deudasChart"), {
+      type: "doughnut",
+      data: {
+        labels: data.deudas.labels,
+        datasets: [{ data: data.deudas.values, backgroundColor: ["#fb8500", "#22c55e", "#b42318"] }],
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } },
+    });
+  })();
+</script>
 {% endblock %}

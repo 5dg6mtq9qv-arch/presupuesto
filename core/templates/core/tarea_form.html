@@ -1,14 +1,16 @@
 {% extends "base.html" %}
 
+{% block page_title %}{{ title }}{% endblock %}
+{% block page_subtitle %}Registra la tarea; el inicio y fin se guardan al moverla de estado{% endblock %}
+
 {% block content %}
 <section class="panel">
-  <h1>{{ title }}</h1>
-  <form class="fields" method="post">
+  <form class="form-grid" method="post">
     {% csrf_token %}
     {{ form.as_p }}
-    <div class="actions">
-      <button type="submit">Guardar</button>
-      <a class="button secondary" href="{% url 'tarea_list' %}">Cancelar</a>
+    <div class="form-actions actions">
+      <button class="btn btn-primary" type="submit">Guardar</button>
+      <a class="btn btn-outline-primary" href="{% url 'tarea_list' %}">Cancelar</a>
     </div>
   </form>
 </section>

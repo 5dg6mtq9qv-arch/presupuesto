@@ -1,15 +1,69 @@
 {% extends "base.html" %}
 
+{% block page_title %}{{ title }}{% endblock %}
+{% block page_subtitle %}Controla saldo, vencimiento y estado de cada deuda{% endblock %}
+
 {% block content %}
 <section class="panel">
-  <h1>{{ title }}</h1>
-  <form class="fields" method="post">
+  <form class="form-grid" method="post">
     {% csrf_token %}
     {{ form.as_p }}
-    <div class="actions">
-      <button type="submit">Guardar</button>
-      <a class="button secondary" href="{% url 'deuda_list' %}">Cancelar</a>
+    <div class="form-actions actions">
+      <button class="btn btn-primary" type="submit">Guardar</button>
+      <a class="btn btn-outline-primary" href="{% url 'deuda_list' %}">Cancelar</a>
     </div>
   </form>
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (() => {
+    const fechaInicioInput = document.getElementById("id_fecha_inicio");
+    const cuotasInput = document.getElementById("id_numero_cuotas");
+    const fechaVencimientoInput = document.getElementById("id_fecha_vencimiento");
+
+    if (!fechaInicioInput || !cuotasInput || !fechaVencimientoInput) {
+      return;
+    }
+
+    function pad(value) {
+      return String(value).padStart(2, "0");
+    }
+
+    function addMonths(date, months) {
+      const result = new Date(date.getTime());
+      const originalDay = result.getDate();
+      result.setMonth(result.getMonth() + months);
+
+      if (result.getDate() !== originalDay) {
+        result.setDate(0);
+      }
+
+      return result;
+    }
+
+    function formatDate(date) {
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+    }
+
+    function updateFechaVencimiento() {
+      const fechaInicio = fechaInicioInput.value;
+      const cuotas = Number.parseInt(cuotasInput.value, 10);
+
+      if (!fechaInicio || !Number.isFinite(cuotas) || cuotas < 1) {
+        fechaVencimientoInput.value = "";
+        return;
+      }
+
+      const [year, month, day] = fechaInicio.split("-").map(Number);
+      const startDate = new Date(year, month - 1, day);
+      fechaVencimientoInput.value = formatDate(addMonths(startDate, cuotas));
+    }
+
+    fechaInicioInput.addEventListener("change", updateFechaVencimiento);
+    cuotasInput.addEventListener("input", updateFechaVencimiento);
+    updateFechaVencimiento();
+  })();
+</script>
 {% endblock %}

@@ -5,10 +5,17 @@ from . import views
 
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
+    path("usuarios/", views.usuario_list, name="usuario_list"),
+    path("usuarios/nuevo/", views.usuario_create, name="usuario_create"),
+    path("usuarios/<int:pk>/editar/", views.usuario_update, name="usuario_update"),
+    path("usuarios/<int:pk>/contrasenia/", views.usuario_password, name="usuario_password"),
     path("categorias/", views.categoria_list, name="categoria_list"),
+    path("categorias/<int:pk>/editar/", views.categoria_update, name="categoria_update"),
+    path("categorias/<int:pk>/eliminar/", views.categoria_delete, name="categoria_delete"),
     path("tareas/", views.tarea_list, name="tarea_list"),
     path("tareas/nueva/", views.tarea_create, name="tarea_create"),
     path("tareas/<int:pk>/editar/", views.tarea_update, name="tarea_update"),
+    path("tareas/<int:pk>/estado/<str:estado>/", views.tarea_estado, name="tarea_estado"),
     path("tareas/<int:pk>/eliminar/", views.tarea_delete, name="tarea_delete"),
     path("movimientos/", views.movimiento_list, name="movimiento_list"),
     path("movimientos/nuevo/", views.movimiento_create, name="movimiento_create"),

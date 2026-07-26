@@ -5,9 +5,7 @@ from django.conf import settings
 class Categoria(models.Model):
     class Tipo(models.TextChoices):
         TAREA = "tarea", "Tarea"
-        INGRESO = "ingreso", "Ingreso"
-        GASTO = "gasto", "Gasto"
-        DEUDA = "deuda", "Deuda"
+        COMUN = "comun", "Común"
 
     usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     nombre = models.CharField(max_length=80)
@@ -31,8 +29,8 @@ class Categoria(models.Model):
 class Tarea(models.Model):
     class Estado(models.TextChoices):
         PENDIENTE = "pendiente", "Pendiente"
-        EN_PROGRESO = "en_progreso", "En progreso"
-        COMPLETADA = "completada", "Completada"
+        EN_PROGRESO = "en_progreso", "Trabajando"
+        COMPLETADA = "completada", "Finalizada"
         CANCELADA = "cancelada", "Cancelada"
 
     class Prioridad(models.TextChoices):
@@ -108,10 +106,17 @@ class Deuda(models.Model):
         CANCELADA = "cancelada", "Cancelada"
 
     usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    categoria = models.ForeignKey(
+        Categoria,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
     acreedor = models.CharField(max_length=120)
     concepto = models.CharField(max_length=160)
     monto_inicial = models.DecimalField(max_digits=12, decimal_places=2)
     saldo_actual = models.DecimalField(max_digits=12, decimal_places=2)
+    numero_cuotas = models.PositiveIntegerField(default=1)
     fecha_inicio = models.DateField()
     fecha_vencimiento = models.DateField(null=True, blank=True)
     estado = models.CharField(

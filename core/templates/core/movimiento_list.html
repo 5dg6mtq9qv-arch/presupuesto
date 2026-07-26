@@ -1,26 +1,47 @@
 {% extends "base.html" %}
 
+{% block page_title %}Ingresos y gastos{% endblock %}
+{% block page_subtitle %}Movimientos financieros personales del usuario actual{% endblock %}
+
 {% block content %}
 <div class="actions">
-  <h1>Finanzas</h1>
-  <a class="button" href="{% url 'movimiento_create' %}">Nuevo movimiento</a>
+  <div></div>
+  <a class="btn btn-primary shadow-sm" href="{% url 'movimiento_create' %}">Nuevo movimiento</a>
 </div>
 <section class="panel">
-  <table>
-    <thead><tr><th>Concepto</th><th>Tipo</th><th>Monto</th><th>Fecha</th><th></th></tr></thead>
-    <tbody>
-      {% for movimiento in movimientos %}
-        <tr>
-          <td>{{ movimiento.concepto }}</td>
-          <td>{{ movimiento.get_tipo_display }}</td>
-          <td class="amount">{{ movimiento.monto }}</td>
-          <td>{{ movimiento.fecha }}</td>
-          <td><a href="{% url 'movimiento_update' movimiento.pk %}">Editar</a> · <a href="{% url 'movimiento_delete' movimiento.pk %}">Eliminar</a></td>
-        </tr>
-      {% empty %}
-        <tr><td colspan="5" class="muted">Sin movimientos.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div class="table-wrap">
+    <table class="table table-hover align-middle mb-0">
+      <thead><tr><th>Concepto</th><th>Tipo</th><th>Categoria</th><th>Monto</th><th>Fecha</th><th></th></tr></thead>
+      <tbody>
+        {% for movimiento in movimientos %}
+          <tr>
+            <td>{{ movimiento.concepto }}</td>
+            <td>
+              <span class="badge rounded-pill {% if movimiento.tipo == 'ingreso' %}text-bg-success{% else %}text-bg-warning{% endif %}">
+                {{ movimiento.get_tipo_display }}
+              </span>
+            </td>
+            <td>
+              {% if movimiento.categoria %}
+                <span class="badge rounded-pill text-bg-light border">
+                  {% if movimiento.categoria.color %}
+                    <span class="color-swatch" style="background-color: {{ movimiento.categoria.color }};"></span>
+                  {% endif %}
+                  {{ movimiento.categoria.nombre }}
+                </span>
+              {% else %}
+                <span class="muted">Sin categoria</span>
+              {% endif %}
+            </td>
+            <td class="amount">{{ movimiento.monto }}</td>
+            <td>{{ movimiento.fecha }}</td>
+            <td><a href="{% url 'movimiento_update' movimiento.pk %}">Editar</a> · <a href="{% url 'movimiento_delete' movimiento.pk %}">Eliminar</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="muted">Sin movimientos.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
 {% endblock %}

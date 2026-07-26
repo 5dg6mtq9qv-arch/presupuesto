@@ -1,15 +1,16 @@
 {% extends "base.html" %}
 
+{% block page_title %}Registrar pago{% endblock %}
+{% block page_subtitle %}{{ deuda.acreedor }} · saldo actual {{ deuda.saldo_actual }} · cuota {{ deuda.pagos.count|add:1 }} de {{ deuda.numero_cuotas }}{% endblock %}
+
 {% block content %}
 <section class="panel">
-  <h1>Nuevo pago</h1>
-  <p class="muted">{{ deuda.acreedor }} · saldo actual {{ deuda.saldo_actual }}</p>
-  <form class="fields" method="post">
+  <form class="form-grid" method="post">
     {% csrf_token %}
     {{ form.as_p }}
-    <div class="actions">
-      <button type="submit">Guardar pago</button>
-      <a class="button secondary" href="{% url 'deuda_list' %}">Cancelar</a>
+    <div class="form-actions actions">
+      <button class="btn btn-primary" type="submit">Guardar pago</button>
+      <a class="btn btn-outline-primary" href="{% url 'deuda_list' %}">Cancelar</a>
     </div>
   </form>
 </section>

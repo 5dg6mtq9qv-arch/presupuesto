@@ -1,26 +1,183 @@
 {% extends "base.html" %}
 
+{% block page_title %}Kanban de tareas{% endblock %}
+{% block page_subtitle %}Crea tareas y mueve su estado mientras trabajas{% endblock %}
+
 {% block content %}
 <div class="actions">
-  <h1>Tareas</h1>
-  <a class="button" href="{% url 'tarea_create' %}">Nueva tarea</a>
+  <div class="d-flex align-items-center gap-2 text-muted">
+    <span class="badge rounded-pill text-bg-light border">Tablero</span>
+    <span>Organización visual de tareas</span>
+  </div>
+  <a class="btn btn-primary shadow-sm" href="{% url 'tarea_create' %}">Nueva tarea</a>
 </div>
-<section class="panel">
-  <table>
-    <thead><tr><th>Tarea</th><th>Fecha</th><th>Estado</th><th>Prioridad</th><th></th></tr></thead>
-    <tbody>
-      {% for tarea in tareas %}
-        <tr>
-          <td>{{ tarea.titulo }}</td>
-          <td>{{ tarea.fecha }}{% if tarea.hora_inicio %} {{ tarea.hora_inicio }}{% endif %}</td>
-          <td>{{ tarea.get_estado_display }}</td>
-          <td>{{ tarea.get_prioridad_display }}</td>
-          <td><a href="{% url 'tarea_update' tarea.pk %}">Editar</a> · <a href="{% url 'tarea_delete' tarea.pk %}">Eliminar</a></td>
-        </tr>
-      {% empty %}
-        <tr><td colspan="5" class="muted">Sin tareas.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+<section class="kanban">
+  {% for columna in columnas %}
+    <article class="kanban-column">
+      <div class="kanban-head {{ columna.class }}">
+        <span>{{ columna.title }} / <span class="kanban-count">{{ columna.items|length }}</span></span>
+      </div>
+      <div class="kanban-body" data-estado="{{ columna.key }}">
+        {% for tarea in columna.items %}
+          <div
+            class="task-card {{ tarea.prioridad }}"
+            draggable="true"
+            data-tarea-id="{{ tarea.pk }}"
+            data-estado="{{ tarea.estado }}"
+            data-estado-url-template="{% url 'tarea_estado' tarea.pk '__estado__' %}"
+          >
+            <div class="task-labels">
+              {% if tarea.categoria %}
+                <span class="badge rounded-pill text-bg-info">{{ tarea.categoria.nombre }}</span>
+              {% endif %}
+              <span class="badge rounded-pill {% if tarea.prioridad == 'alta' %}text-bg-warning{% elif tarea.prioridad == 'media' %}text-bg-primary{% else %}text-bg-success{% endif %}">
+                {{ tarea.get_prioridad_display }}
+              </span>
+            </div>
+            <div class="task-title">{{ tarea.titulo }}</div>
+            {% if tarea.descripcion %}
+              <div>{{ tarea.descripcion|truncatechars:90 }}</div>
+            {% endif %}
+            <div class="task-meta">
+              <span class="task-date-chip">◷ {{ tarea.creado|date:"d/m" }}</span>
+              <span class="task-code">#{{ tarea.id|stringformat:"06d" }}</span>
+              <span data-time-field="inicio"{% if not tarea.hora_inicio %} hidden{% endif %}>Inicio: <span data-time-value="inicio">{{ tarea.hora_inicio|default:"" }}</span></span>
+              <span data-time-field="fin"{% if not tarea.hora_fin %} hidden{% endif %}>Fin: <span data-time-value="fin">{{ tarea.hora_fin|default:"" }}</span></span>
+            </div>
+            <div class="task-card-actions">
+              <a href="{% url 'tarea_update' tarea.pk %}">Editar</a>
+              <a href="{% url 'tarea_delete' tarea.pk %}">Eliminar</a>
+            </div>
+          </div>
+        {% empty %}
+          <div class="empty-state">Sin tareas</div>
+        {% endfor %}
+      </div>
+      <a class="kanban-add-card" href="{% url 'tarea_create' %}">＋ Agregar otra tarea</a>
+    </article>
+  {% endfor %}
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (() => {
+    const csrfToken = "{{ csrf_token }}";
+    let draggedCard = null;
+    let sourceColumn = null;
+
+    function updateCounts() {
+      document.querySelectorAll(".kanban-column").forEach((column) => {
+        const count = column.querySelectorAll(".task-card").length;
+        const countNode = column.querySelector(".kanban-count");
+        if (countNode) countNode.textContent = count;
+      });
+    }
+
+    function syncEmptyStates() {
+      document.querySelectorAll(".kanban-body").forEach((body) => {
+        const hasCards = body.querySelector(".task-card");
+        const emptyState = body.querySelector(".empty-state");
+
+        if (hasCards && emptyState) {
+          emptyState.remove();
+        } else if (!hasCards && !emptyState) {
+          const empty = document.createElement("div");
+          empty.className = "empty-state";
+          empty.textContent = "Sin tareas";
+          body.appendChild(empty);
+        }
+      });
+    }
+
+    function updateCardTimes(card, data) {
+      const inicioField = card.querySelector('[data-time-field="inicio"]');
+      const inicioValue = card.querySelector('[data-time-value="inicio"]');
+      const finField = card.querySelector('[data-time-field="fin"]');
+      const finValue = card.querySelector('[data-time-value="fin"]');
+
+      if (inicioField && inicioValue) {
+        inicioValue.textContent = data.hora_inicio || "";
+        inicioField.hidden = !data.hora_inicio;
+      }
+
+      if (finField && finValue) {
+        finValue.textContent = data.hora_fin || "";
+        finField.hidden = !data.hora_fin;
+      }
+    }
+
+    async function persistState(card, targetEstado) {
+      const url = card.dataset.estadoUrlTemplate.replace("__estado__", targetEstado);
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "X-CSRFToken": csrfToken,
+          "X-Requested-With": "XMLHttpRequest",
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("No se pudo actualizar el estado.");
+      }
+
+      return response.json();
+    }
+
+    document.querySelectorAll(".task-card").forEach((card) => {
+      card.addEventListener("dragstart", (event) => {
+        draggedCard = card;
+        sourceColumn = card.closest(".kanban-body");
+        card.classList.add("dragging");
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", card.dataset.tareaId);
+      });
+
+      card.addEventListener("dragend", () => {
+        card.classList.remove("dragging");
+        draggedCard = null;
+        sourceColumn = null;
+        document.querySelectorAll(".kanban-body").forEach((body) => body.classList.remove("drag-over"));
+      });
+    });
+
+    document.querySelectorAll(".kanban-body").forEach((body) => {
+      body.addEventListener("dragover", (event) => {
+        event.preventDefault();
+        body.classList.add("drag-over");
+      });
+
+      body.addEventListener("dragleave", () => {
+        body.classList.remove("drag-over");
+      });
+
+      body.addEventListener("drop", async (event) => {
+        event.preventDefault();
+        body.classList.remove("drag-over");
+
+        if (!draggedCard || draggedCard.dataset.estado === body.dataset.estado) {
+          return;
+        }
+
+        const card = draggedCard;
+        const previousColumn = sourceColumn;
+        const targetEstado = body.dataset.estado;
+        body.appendChild(card);
+        syncEmptyStates();
+        updateCounts();
+
+        try {
+          const data = await persistState(card, targetEstado);
+          card.dataset.estado = data.estado;
+          updateCardTimes(card, data);
+        } catch (error) {
+          if (previousColumn) previousColumn.appendChild(card);
+          syncEmptyStates();
+          updateCounts();
+          alert(error.message);
+        }
+      });
+    });
+  })();
+</script>
 {% endblock %}

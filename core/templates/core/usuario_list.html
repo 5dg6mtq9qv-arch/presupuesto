@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block page_title %}Usuarios{% endblock %}
+{% block page_subtitle %}Administra quién puede entrar al sistema{% endblock %}
+
+{% block content %}
+<div class="actions">
+  <div></div>
+  <a class="btn btn-primary shadow-sm" href="{% url 'usuario_create' %}">Nuevo usuario</a>
+</div>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table class="table table-hover align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Usuario</th>
+          <th>Nombre</th>
+          <th>Correo</th>
+          <th>Estado</th>
+          <th>Rol</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for usuario in usuarios %}
+          <tr>
+            <td><strong>{{ usuario.username }}</strong></td>
+            <td>{{ usuario.get_full_name|default:"-" }}</td>
+            <td>{{ usuario.email|default:"-" }}</td>
+            <td>
+              {% if usuario.is_active %}
+                <span class="badge rounded-pill text-bg-success">Activo</span>
+              {% else %}
+                <span class="badge rounded-pill text-bg-secondary">Inactivo</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if usuario.is_superuser %}
+                <span class="badge rounded-pill text-bg-danger">Superadmin</span>
+              {% elif usuario.is_staff %}
+                <span class="badge rounded-pill text-bg-primary">Admin</span>
+              {% else %}
+                <span class="badge rounded-pill text-bg-light border">Usuario</span>
+              {% endif %}
+            </td>
+            <td class="text-nowrap">
+              <a href="{% url 'usuario_update' usuario.pk %}">Editar</a>
+              ·
+              <a href="{% url 'usuario_password' usuario.pk %}">Cambiar contraseña</a>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="muted">Sin usuarios.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

@@ -1,17 +1,19 @@
 {% extends "base.html" %}
 
+{% block page_title %}Ingresar{% endblock %}
+{% block page_subtitle %}Usa tu usuario asignado por el administrador{% endblock %}
+
 {% block content %}
 <section class="panel">
-  <h1>Ingresar</h1>
   {% if form.errors %}
-    <p class="muted">Usuario o contrasena incorrectos.</p>
+    <div class="alert alert-danger">Usuario o contrasena incorrectos.</div>
   {% endif %}
-  <form class="fields" method="post">
+  <form class="form-grid" method="post">
     {% csrf_token %}
     {{ form.as_p }}
-    <div class="actions">
-      <button type="submit">Entrar</button>
-      <a class="button secondary" href="{% url 'admin:index' %}">Admin</a>
+    <div class="form-actions actions">
+      <button class="btn btn-primary" type="submit">Entrar</button>
+      <a class="btn btn-outline-primary" href="{% url 'admin:index' %}">Admin</a>
     </div>
   </form>
 </section>

@@ -3,152 +3,741 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>TaskBudget</title>
+  <title>{% block title %}TaskBudget{% endblock %}</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
     :root {
-      color-scheme: light;
-      --bg: #f5f7fb;
-      --panel: #ffffff;
-      --text: #17202a;
-      --muted: #667085;
-      --line: #d8dee9;
-      --accent: #146c94;
-      --danger: #b42318;
+      --bg: #f4f7fb;
+      --surface: #ffffff;
+      --surface-soft: #f7f9fc;
+      --text: #172033;
+      --muted: #748094;
+      --line: #e1e7ef;
+      --blue: #2563eb;
+      --blue-dark: #1d4ed8;
+      --orange: #f59e0b;
+      --green: #14a66b;
+      --gray: #64748b;
+      --red: #dc2626;
+      --shadow: 0 18px 45px rgba(15, 23, 42, .07);
+      --shadow-soft: 0 8px 24px rgba(15, 23, 42, .055);
+      --radius: 18px;
     }
+
     * { box-sizing: border-box; }
+
     body {
       margin: 0;
-      background: var(--bg);
+      background:
+        radial-gradient(circle at 20% 0%, rgba(20, 166, 107, .08), transparent 28rem),
+        radial-gradient(circle at 100% 10%, rgba(37, 99, 235, .07), transparent 26rem),
+        var(--bg);
       color: var(--text);
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 14px;
     }
-    header {
-      background: var(--panel);
-      border-bottom: 1px solid var(--line);
-      padding: 14px 24px;
+
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .app-shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 260px 1fr;
+    }
+
+    .sidebar {
+      background: #101827;
+      color: #e5edf7;
+      padding: 24px 18px;
       display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
+      flex-direction: column;
+      gap: 26px;
+      box-shadow: 10px 0 30px rgba(15, 23, 42, .10);
     }
-    nav {
+
+    .brand {
+      color: white;
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: 0;
       display: flex;
       align-items: center;
       gap: 10px;
-      flex-wrap: wrap;
     }
-    main {
-      width: min(1120px, calc(100% - 32px));
-      margin: 24px auto;
+
+    .brand-mark {
+      width: 38px;
+      height: 38px;
+      border-radius: 13px;
+      background: linear-gradient(135deg, #14a66b, #2563eb);
+      display: grid;
+      place-items: center;
+      font-weight: 900;
+      box-shadow: 0 10px 22px rgba(20, 166, 107, .24);
     }
-    a { color: var(--accent); text-decoration: none; }
-    a:hover { text-decoration: underline; }
-    .brand { font-weight: 700; color: var(--text); }
+
+    .nav-group {
+      display: grid;
+      gap: 6px;
+    }
+
+    .nav-link {
+      color: #c4cfdd;
+      border-radius: 14px;
+      padding: 11px 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 650;
+    }
+
+    .nav-link:hover {
+      background: rgba(255, 255, 255, .075);
+      color: white;
+      text-decoration: none;
+    }
+
+    .nav-link.active {
+      background: rgba(255, 255, 255, .13);
+      color: white;
+      box-shadow: inset 3px 0 0 #14a66b;
+    }
+
+    .sidebar-footer {
+      margin-top: auto;
+      color: #9ca3af;
+      font-size: 13px;
+    }
+
+    .content {
+      min-width: 0;
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+
+    .topbar {
+      background: rgba(255, 255, 255, .82);
+      border-bottom: 1px solid var(--line);
+      padding: 18px 30px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 18px;
+      backdrop-filter: blur(14px);
+    }
+
+    .page-title h1 {
+      margin: 0;
+      font-size: 24px;
+      letter-spacing: 0;
+      font-weight: 760;
+    }
+
+    .page-title p {
+      margin: 4px 0 0;
+      color: var(--muted);
+    }
+
+    .user-menu {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .avatar {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #14a66b, #0f8c62);
+      color: white;
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .page {
+      padding: 30px;
+      overflow-x: hidden;
+    }
+
+    .messages {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 18px;
+    }
+
     .panel {
-      background: var(--panel);
+      background: var(--surface);
       border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 18px;
-      margin-bottom: 16px;
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      padding: 22px;
+      margin-bottom: 20px;
     }
+
+    .panel h2, .panel h3 {
+      margin: 0 0 12px;
+      font-size: 17px;
+    }
+
     .grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       gap: 16px;
     }
-    .actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-    .button, button {
-      border: 1px solid var(--accent);
-      background: var(--accent);
+
+    .metric {
+      border-left: 4px solid var(--blue);
+      box-shadow: var(--shadow-soft);
+    }
+
+    .metric.orange { border-left-color: var(--orange); }
+    .metric.green { border-left-color: var(--green); }
+    .metric.gray { border-left-color: var(--gray); }
+
+    .metric-label {
+      color: var(--muted);
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 12px;
+    }
+
+    .metric-value {
+      margin-top: 8px;
+      font-size: 30px;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .wallet-hero {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      border-radius: 22px;
+      padding: 24px;
+      margin-bottom: 20px;
+      color: #0f172a;
+      background:
+        radial-gradient(circle at 12% 20%, rgba(255,255,255,.82), transparent 18rem),
+        linear-gradient(135deg, #dff8ec 0%, #dcecff 55%, #ffffff 100%);
+      border: 1px solid rgba(255, 255, 255, .8);
+      box-shadow: var(--shadow);
+    }
+
+    .wallet-hero h2 {
+      margin: 0;
+      font-size: 28px;
+      font-weight: 850;
+    }
+
+    .wallet-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+      align-items: stretch;
+    }
+
+    .chart-panel-wide {
+      grid-column: span 2;
+    }
+
+    .panel-heading {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .panel-heading h2 {
+      margin: 0;
+    }
+
+    .chart-box {
+      position: relative;
+      height: 290px;
+    }
+
+    .chart-box-small {
+      height: 230px;
+    }
+
+    .status-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .status-list span {
+      background: var(--surface-soft);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 8px 10px;
+    }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+
+    .button, button:not(.btn) {
+      border: 1px solid var(--blue);
+      background: var(--blue);
       color: white;
-      border-radius: 6px;
-      padding: 8px 12px;
+      border-radius: 13px;
+      padding: 9px 13px;
+      min-height: 38px;
       font: inherit;
+      font-weight: 700;
       cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
     }
-    .button.secondary, button.secondary {
-      background: white;
-      color: var(--accent);
+
+    .button:hover { text-decoration: none; background: var(--blue-dark); }
+    .button.secondary, button.secondary:not(.btn) { background: white; color: var(--blue); }
+    .button.secondary:hover, button.secondary:not(.btn):hover { background: #eef2ff; }
+    .button.danger, button.danger:not(.btn) { border-color: var(--red); background: var(--red); color: white; }
+
+    .btn {
+      border-radius: 13px;
+      font-weight: 700;
+      padding: 9px 14px;
     }
-    .button.danger, button.danger {
-      border-color: var(--danger);
-      background: var(--danger);
+
+    .btn-sm {
+      border-radius: 10px;
+      padding: 6px 10px;
     }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #14a66b, #2563eb);
+      border-color: transparent;
+      box-shadow: 0 10px 20px rgba(37, 99, 235, .18);
+    }
+
+    .btn-primary:hover {
+      filter: brightness(.96);
+      border-color: transparent;
+    }
+
+    .btn-outline-primary {
+      color: var(--blue);
+      border-color: rgba(37, 99, 235, .45);
+      background: rgba(255, 255, 255, .72);
+    }
+
+    .btn-outline-primary:hover {
+      background: var(--blue);
+      border-color: var(--blue);
+      color: white;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+    }
+
     table {
       width: 100%;
       border-collapse: collapse;
-      background: var(--panel);
+      background: var(--surface);
     }
+
     th, td {
       border-bottom: 1px solid var(--line);
-      padding: 10px;
+      padding: 14px 10px;
       text-align: left;
       vertical-align: top;
     }
-    th { color: var(--muted); font-size: 14px; }
-    form.fields {
-      display: grid;
-      gap: 14px;
-      max-width: 720px;
+
+    th {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .035em;
     }
-    form.fields p {
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px 16px;
+      max-width: 940px;
+    }
+
+    .form-grid p {
       margin: 0;
       display: grid;
       gap: 6px;
     }
-    input, select, textarea {
+
+    .form-grid p:has(textarea), .form-actions {
+      grid-column: 1 / -1;
+    }
+
+    .form-actions {
+      padding-top: 4px;
+    }
+
+    label {
+      color: #344054;
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    input:not(.form-control):not(.form-select):not(.form-check-input), select:not(.form-select), textarea:not(.form-control) {
       width: 100%;
       border: 1px solid var(--line);
-      border-radius: 6px;
-      padding: 9px 10px;
+      border-radius: 14px;
+      padding: 11px 13px;
       font: inherit;
       background: white;
     }
-    textarea { min-height: 90px; }
-    .messages { display: grid; gap: 8px; margin-bottom: 16px; }
-    .message {
-      border: 1px solid #b7dfc1;
-      background: #ecfdf3;
-      padding: 10px 12px;
-      border-radius: 6px;
+
+    input[type="color"] {
+      width: 64px;
+      min-height: 42px;
+      padding: 4px;
+      cursor: pointer;
     }
+
+    .form-control, .form-select {
+      border-color: var(--line);
+      border-radius: 14px;
+      min-height: 44px;
+      padding: 10px 13px;
+      background-color: #ffffff;
+      box-shadow: inset 0 1px 0 rgba(15, 23, 42, .02);
+    }
+
+    .form-control:focus, .form-select:focus {
+      border-color: #14a66b;
+      box-shadow: 0 0 0 .2rem rgba(20, 166, 107, .14);
+    }
+
+    .form-control[readonly] {
+      background-color: #f8fafc;
+      color: #667085;
+      cursor: default;
+    }
+
+    textarea { min-height: 110px; resize: vertical; }
+
     .muted { color: var(--muted); }
     .amount { font-variant-numeric: tabular-nums; }
     .logout-form { margin: 0; }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .badge.green { background: #dcfce7; color: #15803d; }
+    .badge.orange { background: #ffedd5; color: #c2410c; }
+    .badge.blue { background: #e0e7ff; color: #3730a3; }
+    .badge.red { background: #fee2e2; color: #b91c1c; }
+
+    .color-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .color-swatch {
+      width: 18px;
+      height: 18px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      flex: 0 0 auto;
+      display: inline-block;
+      vertical-align: -4px;
+    }
+
+    .kanban {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(230px, 1fr));
+      gap: 18px;
+      align-items: start;
+      overflow-x: auto;
+      padding: 8px 2px 18px;
+      border-radius: 0;
+      background: transparent;
+      box-shadow: none;
+    }
+
+    .kanban-column {
+      min-width: 230px;
+      background: var(--column-color, var(--blue));
+      border-radius: 0;
+      overflow: hidden;
+      border: 0;
+      box-shadow: 0 10px 22px rgba(15, 23, 42, .16);
+    }
+
+    .kanban-column:has(.kanban-head.blue) { --column-color: #2f62bd; }
+    .kanban-column:has(.kanban-head.orange) { --column-color: #fbad3d; }
+    .kanban-column:has(.kanban-head.green) { --column-color: #12c875; }
+    .kanban-column:has(.kanban-head.red) { --column-color: #ff5733; }
+
+    .kanban-head {
+      color: white;
+      padding: 12px 12px 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-weight: 800;
+      text-transform: none;
+      letter-spacing: 0;
+      background: transparent;
+      font-size: 13px;
+    }
+
+    .kanban-head::after {
+      content: none;
+    }
+
+    .kanban-count {
+      min-width: auto;
+      height: auto;
+      border-radius: 0;
+      background: transparent;
+      color: rgba(255, 255, 255, .94);
+      display: inline;
+      font-size: inherit;
+      order: initial;
+    }
+
+    .kanban-body {
+      display: grid;
+      gap: 9px;
+      padding: 4px 9px 8px;
+      min-height: 92px;
+      max-height: calc(100vh - 220px);
+      overflow-y: auto;
+    }
+
+    .kanban-body.drag-over {
+      outline: 2px dashed rgba(255, 255, 255, .75);
+      outline-offset: -6px;
+      background: rgba(255, 255, 255, .14);
+    }
+
+    .task-card {
+      background: #ffffff;
+      border-radius: 2px;
+      box-shadow: 0 2px 5px rgba(15, 23, 42, .18);
+      border-left: 0;
+      padding: 8px;
+      display: grid;
+      gap: 6px;
+      cursor: grab;
+      user-select: none;
+      transition: transform .16s ease, box-shadow .16s ease;
+    }
+
+    .task-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 7px 14px rgba(15, 23, 42, .20);
+    }
+
+    .task-card.dragging {
+      cursor: grabbing;
+      opacity: .55;
+    }
+
+    .task-card.alta { border-top: 3px solid #f97316; }
+    .task-card.media { border-top: 3px solid #7c3aed; }
+    .task-card.baja { border-top: 3px solid #16a34a; }
+
+    .task-code {
+      color: var(--blue);
+      font-weight: 800;
+      font-size: 11px;
+    }
+
+    .task-title {
+      color: #263247;
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 11px;
+      line-height: 1.25;
+    }
+
+    .task-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      color: var(--muted);
+      font-size: 10px;
+    }
+
+    .task-labels {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+
+    .task-labels .badge {
+      min-height: 18px;
+      padding: 2px 6px;
+      font-size: 10px;
+      border-radius: 2px;
+    }
+
+    .task-date-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      border-radius: 2px;
+      background: #f5f7fb;
+      color: #667085;
+      padding: 2px 5px;
+      font-weight: 700;
+    }
+
+    .task-card-actions {
+      display: inline-flex;
+      gap: 8px;
+      color: #667085;
+      font-size: 10px;
+    }
+
+    .task-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .task-actions form {
+      margin: 0;
+    }
+
+    .task-actions button {
+      min-height: 30px;
+      padding: 5px 9px;
+      font-size: 12px;
+    }
+
+    .empty-state {
+      color: var(--muted);
+      background: rgba(255,255,255,.76);
+      border: 1px dashed rgba(255,255,255,.88);
+      border-radius: 2px;
+      padding: 12px;
+      text-align: center;
+      font-size: 11px;
+    }
+
+    .kanban-add-card {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: white;
+      padding: 7px 12px 11px;
+      font-weight: 600;
+      font-size: 12px;
+    }
+
+    .kanban-add-card:hover {
+      color: white;
+      text-decoration: none;
+      background: rgba(255,255,255,.16);
+    }
+
+    @media (max-width: 860px) {
+      .app-shell { grid-template-columns: 1fr; }
+      .sidebar { position: static; }
+      .content { min-height: 100vh; }
+      .topbar { align-items: flex-start; flex-direction: column; }
+      .page { padding: 18px; }
+      .wallet-hero { align-items: flex-start; flex-direction: column; }
+      .dashboard-grid { grid-template-columns: 1fr; }
+      .chart-panel-wide { grid-column: auto; }
+      .form-grid { grid-template-columns: 1fr; }
+      .kanban { grid-template-columns: repeat(4, minmax(230px, 1fr)); }
+    }
   </style>
 </head>
 <body>
-  <header>
-    <nav>
-      <a class="brand" href="{% url 'dashboard' %}">TaskBudget</a>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="{% url 'dashboard' %}">
+        <span class="brand-mark">TB</span>
+        <span>TaskBudget</span>
+      </a>
       {% if user.is_authenticated %}
-        <a href="{% url 'tarea_list' %}">Tareas</a>
-        <a href="{% url 'movimiento_list' %}">Finanzas</a>
-        <a href="{% url 'deuda_list' %}">Deudas</a>
-        <a href="{% url 'categoria_list' %}">Categorias</a>
-        {% if user.is_staff %}
-          <a href="{% url 'admin:index' %}">Admin</a>
-        {% endif %}
+        <nav class="nav-group">
+          <a class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" href="{% url 'dashboard' %}">Dashboard</a>
+          <a class="nav-link {% if 'tarea' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'tarea_list' %}">Tareas</a>
+          <a class="nav-link {% if 'movimiento' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'movimiento_list' %}">Ingresos y gastos</a>
+          <a class="nav-link {% if 'deuda' in request.resolver_match.url_name or 'pago' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'deuda_list' %}">Deudas</a>
+          <a class="nav-link {% if 'categoria' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'categoria_list' %}">Categorias</a>
+          {% if user.is_staff %}
+            <a class="nav-link {% if 'usuario' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'usuario_list' %}">Usuarios</a>
+            <a class="nav-link" href="{% url 'admin:index' %}">Admin Django</a>
+          {% endif %}
+        </nav>
       {% endif %}
-    </nav>
-    <div>
-      {% if user.is_authenticated %}
-        <form class="logout-form" method="post" action="{% url 'logout' %}">
-          {% csrf_token %}
-          <button class="secondary" type="submit">Salir</button>
-        </form>
-      {% endif %}
-    </div>
-  </header>
-  <main>
-    {% if messages %}
-      <div class="messages">
-        {% for message in messages %}
-          <div class="message">{{ message }}</div>
-        {% endfor %}
+      <div class="sidebar-footer">
+        Agenda diaria y finanzas personales
       </div>
-    {% endif %}
-    {% block content %}{% endblock %}
-  </main>
+    </aside>
+
+    <div class="content">
+      <header class="topbar">
+        <div class="page-title">
+          <h1>{% block page_title %}Panel{% endblock %}</h1>
+          <p>{% block page_subtitle %}Control personal por usuario{% endblock %}</p>
+        </div>
+        {% if user.is_authenticated %}
+          <div class="user-menu">
+            <span class="avatar">{{ user.username|first }}</span>
+            <strong>{{ user.username }}</strong>
+            <form class="logout-form" method="post" action="{% url 'logout' %}">
+              {% csrf_token %}
+              <button class="btn btn-outline-primary btn-sm" type="submit">Salir</button>
+            </form>
+          </div>
+        {% endif %}
+      </header>
+
+      <main class="page">
+        {% if messages %}
+          <div class="messages">
+            {% for message in messages %}
+              <div class="alert {% if message.tags == 'error' %}alert-danger{% else %}alert-{{ message.tags|default:'success' }}{% endif %} border-0 shadow-sm mb-0">{{ message }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  {% block scripts %}{% endblock %}
 </body>
 </html>

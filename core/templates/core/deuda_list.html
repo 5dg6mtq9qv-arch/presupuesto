@@ -1,32 +1,61 @@
 {% extends "base.html" %}
 
+{% block page_title %}Deudas{% endblock %}
+{% block page_subtitle %}Control de saldos, pagos y vencimientos{% endblock %}
+
 {% block content %}
 <div class="actions">
-  <h1>Deudas</h1>
-  <a class="button" href="{% url 'deuda_create' %}">Nueva deuda</a>
+  <div></div>
+  <a class="btn btn-primary shadow-sm" href="{% url 'deuda_create' %}">Nueva deuda</a>
 </div>
 <section class="panel">
-  <table>
-    <thead><tr><th>Acreedor</th><th>Concepto</th><th>Saldo</th><th>Estado</th><th>Pagos</th><th></th></tr></thead>
-    <tbody>
-      {% for deuda in deudas %}
-        <tr>
-          <td>{{ deuda.acreedor }}</td>
-          <td>{{ deuda.concepto }}</td>
-          <td class="amount">{{ deuda.saldo_actual }}</td>
-          <td>{{ deuda.get_estado_display }}</td>
-          <td>
-            <a href="{% url 'pago_create' deuda.pk %}">Agregar pago</a>
-            {% for pago in deuda.pagos.all %}
-              <div class="muted">{{ pago.fecha }}: {{ pago.monto }} <a href="{% url 'pago_delete' pago.pk %}">x</a></div>
-            {% endfor %}
-          </td>
-          <td><a href="{% url 'deuda_update' deuda.pk %}">Editar</a> · <a href="{% url 'deuda_delete' deuda.pk %}">Eliminar</a></td>
-        </tr>
-      {% empty %}
-        <tr><td colspan="6" class="muted">Sin deudas.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div class="table-wrap">
+    <table class="table table-hover align-middle mb-0">
+      <thead><tr><th>Acreedor</th><th>Categoria</th><th>Concepto</th><th>Saldo</th><th>Cuotas</th><th>Estado</th><th>Pagos</th><th></th></tr></thead>
+      <tbody>
+        {% for deuda in deudas %}
+          <tr>
+            <td><strong>{{ deuda.acreedor }}</strong></td>
+            <td>
+              {% if deuda.categoria %}
+                <span class="badge rounded-pill text-bg-light border">
+                  {% if deuda.categoria.color %}
+                    <span class="color-swatch" style="background-color: {{ deuda.categoria.color }};"></span>
+                  {% endif %}
+                  {{ deuda.categoria.nombre }}
+                </span>
+              {% else %}
+                <span class="muted">Sin categoria</span>
+              {% endif %}
+            </td>
+            <td>{{ deuda.concepto }}</td>
+            <td class="amount">{{ deuda.saldo_actual }}</td>
+            <td>
+              <span class="badge rounded-pill text-bg-light border">
+                {{ deuda.pagos.count }}/{{ deuda.numero_cuotas }}
+              </span>
+            </td>
+            <td>
+              <span class="badge rounded-pill {% if deuda.estado == 'pagada' %}text-bg-success{% elif deuda.estado == 'cancelada' %}text-bg-danger{% else %}text-bg-warning{% endif %}">
+                {{ deuda.get_estado_display }}
+              </span>
+            </td>
+            <td>
+              <a class="btn btn-sm btn-outline-primary mb-2" href="{% url 'pago_create' deuda.pk %}">Registrar pago</a>
+              {% for pago in deuda.pagos.all %}
+                <div class="d-flex align-items-center justify-content-between gap-2 small text-muted">
+                  <span>{{ pago.fecha|date:"Y-m" }} · {{ pago.monto }}</span>
+                  <a class="link-danger" href="{% url 'pago_delete' pago.pk %}">eliminar</a>
+                </div>
+              {% endfor %}
+            </td>
+            <td><a href="{% url 'deuda_update' deuda.pk %}">Editar</a> · <a href="{% url 'deuda_delete' deuda.pk %}">Eliminar</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="8" class="muted">Sin deudas.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
 {% endblock %}

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block page_title %}{{ title }}{% endblock %}
-{% block page_subtitle %}Registra ingresos y gastos por categoria{% endblock %}
+{% block page_subtitle %}Crea usuarios y controla si pueden acceder al sistema{% endblock %}
 
 {% block content %}
 <section class="panel">
@@ -10,7 +10,7 @@
     {{ form.as_p }}
     <div class="form-actions actions">
       <button class="btn btn-primary" type="submit">Guardar</button>
-      <a class="btn btn-outline-primary" href="{% url 'movimiento_list' %}">Cancelar</a>
+      <a class="btn btn-outline-primary" href="{% url 'usuario_list' %}">Cancelar</a>
     </div>
   </form>
 </section>

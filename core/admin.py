@@ -12,10 +12,10 @@ class CategoriaAdmin(admin.ModelAdmin):
 
 @admin.register(Tarea)
 class TareaAdmin(admin.ModelAdmin):
-    list_display = ("titulo", "usuario", "fecha", "hora_inicio", "estado", "prioridad")
-    list_filter = ("estado", "prioridad", "fecha")
+    list_display = ("titulo", "usuario", "creado", "hora_inicio", "hora_fin", "estado", "prioridad")
+    list_filter = ("estado", "prioridad", "creado")
     search_fields = ("titulo", "descripcion", "usuario__username")
-    date_hierarchy = "fecha"
+    date_hierarchy = "creado"
 
 
 @admin.register(MovimientoFinanciero)
@@ -35,9 +35,11 @@ class PagoDeudaInline(admin.TabularInline):
 class DeudaAdmin(admin.ModelAdmin):
     list_display = (
         "acreedor",
+        "categoria",
         "concepto",
         "monto_inicial",
         "saldo_actual",
+        "numero_cuotas",
         "fecha_vencimiento",
         "estado",
         "usuario",
