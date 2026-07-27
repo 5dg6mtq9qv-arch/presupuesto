@@ -60,7 +60,7 @@
         {% endfor %}
       </select>
     </div>
-    <div class="col-md-1">
+    <div class="col-md-1" data-submit-filter>
       <button class="btn btn-primary btn-icon" type="submit" title="Filtrar" aria-label="Filtrar">
         <span class="material-symbols-outlined">filter_alt</span>
       </button>
@@ -180,9 +180,19 @@
     const yearSelect = document.getElementById("anio");
     const desdeInput = document.getElementById("desde");
     const hastaInput = document.getElementById("hasta");
+    const typeSelect = document.getElementById("tipo");
+    const categorySelect = document.getElementById("categoria");
     const monthFilterGroups = document.querySelectorAll("[data-month-filter]");
     const yearFilterGroups = document.querySelectorAll("[data-year-filter]");
     const dateFilterGroups = document.querySelectorAll("[data-date-filter]");
+    const submitFilterGroups = document.querySelectorAll("[data-submit-filter]");
+    const submitFilters = () => {
+      if (periodSelect.form.requestSubmit) {
+        periodSelect.form.requestSubmit();
+      } else {
+        periodSelect.form.submit();
+      }
+    };
     const toggleDateInputs = () => {
       const exacto = periodSelect.value === "personalizado";
       const mensual = periodSelect.value === "mes";
@@ -200,13 +210,20 @@
       dateFilterGroups.forEach((group) => {
         group.hidden = !exacto;
       });
+      submitFilterGroups.forEach((group) => {
+        group.hidden = true;
+      });
     };
     periodSelect.addEventListener("change", () => {
       toggleDateInputs();
-      periodSelect.form.requestSubmit();
+      submitFilters();
     });
-    monthSelect.addEventListener("change", () => monthSelect.form.requestSubmit());
-    yearSelect.addEventListener("change", () => yearSelect.form.requestSubmit());
+    monthSelect.addEventListener("change", submitFilters);
+    yearSelect.addEventListener("change", submitFilters);
+    desdeInput.addEventListener("change", submitFilters);
+    hastaInput.addEventListener("change", submitFilters);
+    typeSelect.addEventListener("change", submitFilters);
+    categorySelect.addEventListener("change", submitFilters);
     toggleDateInputs();
 
     const data = JSON.parse(document.getElementById("analysis-data").textContent);
