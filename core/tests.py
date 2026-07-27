@@ -160,3 +160,17 @@ class MovimientoRecurrenteServiceTests(TestCase):
         self.assertEqual(response.context["periodo"], "todo")
         self.assertEqual(response.context["cuotas_deuda_periodo"], Decimal("600.00"))
         self.assertEqual(response.context["etiqueta_deudas_balance"], "Deudas activas")
+
+    def test_analisis_mes_permite_mes_y_anio_especificos(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(
+            reverse("analisis_financiero"),
+            {"periodo": "mes", "mes": "6", "anio": "2026"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["fecha_inicio"], datetime(2026, 6, 1).date())
+        self.assertEqual(response.context["fecha_fin"], datetime(2026, 6, 30).date())
+        self.assertEqual(response.context["mes_seleccionado"], 6)
+        self.assertEqual(response.context["anio_seleccionado"], 2026)

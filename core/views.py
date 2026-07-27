@@ -882,6 +882,18 @@ def analisis_financiero(request):
     if periodo not in periodos_validos:
         periodo = "mes"
 
+    try:
+        mes_seleccionado = int(request.GET.get("mes", hoy.month))
+    except (TypeError, ValueError):
+        mes_seleccionado = hoy.month
+    if not 1 <= mes_seleccionado <= 12:
+        mes_seleccionado = hoy.month
+
+    try:
+        anio_seleccionado = int(request.GET.get("anio", hoy.year))
+    except (TypeError, ValueError):
+        anio_seleccionado = hoy.year
+
     primeras_fechas = [
         MovimientoFinanciero.objects.filter(usuario=request.user).aggregate(fecha=Min("fecha"))["fecha"],
         PagoDeuda.objects.filter(deuda__usuario=request.user).aggregate(fecha=Min("fecha"))["fecha"],
@@ -893,8 +905,15 @@ def analisis_financiero(request):
         fecha_inicio = hoy - timedelta(days=hoy.weekday())
         fecha_fin = hoy
     elif periodo == "mes":
-        fecha_inicio = hoy.replace(day=1)
-        fecha_fin = hoy
+        ultimo_dia_mes = calendar.monthrange(anio_seleccionado, mes_seleccionado)[1]
+        fecha_inicio = hoy.replace(
+            year=anio_seleccionado,
+            month=mes_seleccionado,
+            day=1,
+        )
+        fecha_fin = fecha_inicio.replace(day=ultimo_dia_mes)
+        if anio_seleccionado == hoy.year and mes_seleccionado == hoy.month:
+            fecha_fin = hoy
     elif periodo == "semestre":
         fecha_inicio = add_months(hoy.replace(day=1), -5)
         fecha_fin = hoy
@@ -912,6 +931,22 @@ def analisis_financiero(request):
 
     if fecha_inicio > fecha_fin:
         fecha_inicio, fecha_fin = fecha_fin, fecha_inicio
+
+    anios_disponibles = range(max(primera_fecha.year, hoy.year - 5), hoy.year + 2)
+    meses_disponibles = [
+        (1, "Enero"),
+        (2, "Febrero"),
+        (3, "Marzo"),
+        (4, "Abril"),
+        (5, "Mayo"),
+        (6, "Junio"),
+        (7, "Julio"),
+        (8, "Agosto"),
+        (9, "Septiembre"),
+        (10, "Octubre"),
+        (11, "Noviembre"),
+        (12, "Diciembre"),
+    ]
 
     tipo = request.GET.get("tipo", "todos")
     categoria_id = request.GET.get("categoria", "")
@@ -1077,6 +1112,10 @@ def analisis_financiero(request):
             "fecha_inicio": fecha_inicio,
             "fecha_fin": fecha_fin,
             "periodo": periodo,
+            "mes_seleccionado": mes_seleccionado,
+            "anio_seleccionado": anio_seleccionado,
+            "meses_disponibles": meses_disponibles,
+            "anios_disponibles": anios_disponibles,
             "tipo": tipo,
             "categoria_id": categoria_id,
             "categorias": categorias,

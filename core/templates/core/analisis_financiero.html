@@ -19,6 +19,22 @@
         <option value="personalizado"{% if periodo == "personalizado" %} selected{% endif %}>Fechas exactas</option>
       </select>
     </div>
+    <div class="col-md-2" data-month-filter>
+      <label for="mes">Mes</label>
+      <select class="form-select" id="mes" name="mes">
+        {% for numero_mes, nombre_mes in meses_disponibles %}
+          <option value="{{ numero_mes }}"{% if mes_seleccionado == numero_mes %} selected{% endif %}>{{ nombre_mes }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2" data-month-filter>
+      <label for="anio">Año</label>
+      <select class="form-select" id="anio" name="anio">
+        {% for anio in anios_disponibles %}
+          <option value="{{ anio }}"{% if anio_seleccionado == anio %} selected{% endif %}>{{ anio }}</option>
+        {% endfor %}
+      </select>
+    </div>
     <div class="col-md-2">
       <label for="desde">Desde</label>
       <input class="form-control" id="desde" name="desde" type="date" value="{{ fecha_inicio|date:'Y-m-d' }}">
@@ -160,17 +176,28 @@
 <script>
   (() => {
     const periodSelect = document.getElementById("periodo");
+    const monthSelect = document.getElementById("mes");
+    const yearSelect = document.getElementById("anio");
     const desdeInput = document.getElementById("desde");
     const hastaInput = document.getElementById("hasta");
+    const monthFilterGroups = document.querySelectorAll("[data-month-filter]");
     const toggleDateInputs = () => {
       const exacto = periodSelect.value === "personalizado";
+      const mensual = periodSelect.value === "mes";
       desdeInput.disabled = !exacto;
       hastaInput.disabled = !exacto;
+      monthSelect.disabled = !mensual;
+      yearSelect.disabled = !mensual;
+      monthFilterGroups.forEach((group) => {
+        group.hidden = !mensual;
+      });
     };
     periodSelect.addEventListener("change", () => {
       toggleDateInputs();
       periodSelect.form.requestSubmit();
     });
+    monthSelect.addEventListener("change", () => monthSelect.form.requestSubmit());
+    yearSelect.addEventListener("change", () => yearSelect.form.requestSubmit());
     toggleDateInputs();
 
     const data = JSON.parse(document.getElementById("analysis-data").textContent);
