@@ -6,7 +6,7 @@ from django.test import TestCase
 from django.utils import timezone
 
 from .models import Deuda, MovimientoFinanciero, MovimientoRecurrente, PagoDeuda
-from .services import generar_movimientos_recurrentes, generar_pagos_deudas
+from .services import cuotas_deudas_programadas, generar_movimientos_recurrentes, generar_pagos_deudas
 
 
 class MovimientoRecurrenteServiceTests(TestCase):
@@ -114,3 +114,27 @@ class MovimientoRecurrenteServiceTests(TestCase):
         self.assertEqual(len(creados), 0)
         self.assertEqual(omitidos, 0)
         self.assertEqual(PagoDeuda.objects.count(), 1)
+
+    def test_cuotas_programadas_suman_solo_la_cuota_del_periodo(self):
+        deuda = Deuda.objects.create(
+            usuario=self.user,
+            acreedor="Banco",
+            concepto="Prestamo",
+            monto_inicial="600.00",
+            saldo_actual="600.00",
+            numero_cuotas=6,
+            fecha_inicio=datetime(2026, 7, 5).date(),
+            fecha_vencimiento=datetime(2027, 1, 5).date(),
+        )
+        self.set_creado(deuda, 2026, 7, 4)
+
+        cuotas, total = cuotas_deudas_programadas(
+            self.user,
+            datetime(2026, 8, 1).date(),
+            datetime(2026, 8, 31).date(),
+        )
+
+        self.assertEqual(len(cuotas), 1)
+        self.assertEqual(cuotas[0]["cuota_numero"], 1)
+        self.assertEqual(cuotas[0]["fecha"], datetime(2026, 8, 5).date())
+        self.assertEqual(total, Decimal("100.00"))

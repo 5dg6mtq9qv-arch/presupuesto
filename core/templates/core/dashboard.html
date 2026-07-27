@@ -10,7 +10,7 @@
   <div>
     <span class="badge rounded-pill {% if margen >= 0 %}text-bg-success{% else %}text-bg-warning{% endif %} mb-2">{{ estado_presupuesto }}</span>
     <h2>Posición neta: <span class="{% if posicion_neta >= 0 %}text-success{% else %}text-warning{% endif %}">{{ posicion_neta }}</span></h2>
-    <p class="mb-0 text-muted">Ingresos menos gastos y obligaciones pendientes.</p>
+    <p class="mb-0 text-muted">Ingresos menos gastos y cuotas del mes.</p>
   </div>
   <div class="wallet-actions">
     <a class="btn btn-light btn-icon" href="{% url 'reporte_financiero_csv' %}" title="Descargar reporte CSV" aria-label="Descargar reporte CSV">
@@ -36,8 +36,8 @@
     <div class="metric-value">{{ uso_ingresos }}%</div>
   </section>
   <section class="panel metric gray">
-    <div class="metric-label">Saldo en deudas</div>
-    <div class="metric-value">{{ saldo_deudas }}</div>
+    <div class="metric-label">Cuotas de deudas del mes</div>
+    <div class="metric-value">{{ cuotas_deuda_mes }}</div>
   </section>
   <section class="panel metric blue">
     <div class="metric-label">Presupuesto restante</div>
@@ -56,8 +56,9 @@
     <span><strong>{{ ingresos }}</strong> ingresos registrados</span>
     <span><strong>{{ gastos }}</strong> gastos acumulados</span>
     <span><strong>{{ margen }}</strong> margen antes de deudas</span>
-    <span><strong>{{ saldo_deudas }}</strong> obligaciones pendientes</span>
+    <span><strong>{{ cuotas_deuda_mes }}</strong> cuotas de deudas del mes</span>
     <span><strong>{{ pagos_mes }}</strong> pagado a deudas este mes</span>
+    <span><strong>{{ saldo_deudas }}</strong> saldo total pendiente</span>
     <span><strong>{{ posicion_neta }}</strong> posición neta estimada</span>
     <span><strong>{{ presupuesto.total_usado }}</strong> usado de presupuesto</span>
   </div>
@@ -80,7 +81,7 @@
     <div class="panel-heading">
       <div>
         <h2>Balance del mes</h2>
-        <p class="muted mb-0">Ingresos, gastos, obligaciones y posición neta.</p>
+        <p class="muted mb-0">Ingresos, gastos, cuotas del mes y posición neta.</p>
       </div>
     </div>
     <div class="chart-box chart-box-small">
@@ -112,7 +113,7 @@
     <div class="panel-heading">
       <div>
         <h2>Obligaciones</h2>
-        <p class="muted mb-0">Pagos realizados frente al saldo pendiente.</p>
+        <p class="muted mb-0">Cuotas del mes, pagos realizados y saldo pendiente.</p>
       </div>
     </div>
     <div class="chart-box chart-box-small">

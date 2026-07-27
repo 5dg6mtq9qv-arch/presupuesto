@@ -171,3 +171,56 @@ def generar_finanzas_automaticas(hasta_fecha=None, usuario=None):
         "pagos_deuda": pagos,
         "pagos_deuda_omitidos": pagos_omitidos,
     }
+
+
+def cuotas_deudas_programadas(usuario, fecha_inicio, fecha_fin, categoria_id=None):
+    deudas = Deuda.objects.filter(
+        usuario=usuario,
+        estado=Deuda.Estado.ACTIVA,
+        saldo_actual__gt=0,
+    ).prefetch_related("pagos")
+    if categoria_id:
+        deudas = deudas.filter(categoria_id=categoria_id)
+
+    cuotas = []
+    total = Decimal("0")
+
+    for deuda in deudas:
+        creado_local = timezone.localtime(deuda.creado)
+        pagos_count = deuda.pagos.count()
+        saldo_virtual = deuda.saldo_actual
+
+        for cuota_numero in range(pagos_count + 1, deuda.numero_cuotas + 1):
+            fecha = sumar_meses(deuda.fecha_inicio, cuota_numero)
+            vence_en = timezone.make_aware(
+                datetime.combine(fecha, time.min),
+                timezone.get_current_timezone(),
+            )
+            if vence_en <= creado_local:
+                continue
+            if fecha > fecha_fin:
+                break
+
+            cuotas_restantes = max(1, deuda.numero_cuotas - cuota_numero + 1)
+            monto = (saldo_virtual / Decimal(cuotas_restantes)).quantize(
+                Decimal("0.01"),
+                rounding=ROUND_HALF_UP,
+            )
+            monto = min(monto, saldo_virtual)
+
+            if fecha_inicio <= fecha <= fecha_fin:
+                cuotas.append(
+                    {
+                        "deuda": deuda,
+                        "cuota_numero": cuota_numero,
+                        "fecha": fecha,
+                        "monto": monto,
+                    }
+                )
+                total += monto
+
+            saldo_virtual = max(Decimal("0"), saldo_virtual - monto)
+            if saldo_virtual == Decimal("0"):
+                break
+
+    return cuotas, total

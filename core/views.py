@@ -1,3 +1,4 @@
+import calendar
 import csv
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -48,6 +49,7 @@ from .models import (
     PresupuestoMensual,
     Tarea,
 )
+from .services import cuotas_deudas_programadas
 
 User = get_user_model()
 
@@ -698,12 +700,13 @@ def dashboard(request):
         estado=Deuda.Estado.ACTIVA,
     )
     saldo_deudas = deudas_activas.aggregate(total=Sum("saldo_actual"))["total"] or Decimal("0")
+    _, cuotas_deuda_mes = cuotas_deudas_programadas(request.user, inicio_mes, hoy.replace(day=calendar.monthrange(hoy.year, hoy.month)[1]))
     pagos_mes = PagoDeuda.objects.filter(
         deuda__usuario=request.user,
         fecha__year=hoy.year,
         fecha__month=hoy.month,
     ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
-    posicion_neta = margen - saldo_deudas
+    posicion_neta = margen - cuotas_deuda_mes
     uso_ingresos = Decimal("0")
     if ingresos:
         uso_ingresos = (gastos / ingresos * Decimal("100")).quantize(
@@ -786,12 +789,12 @@ def dashboard(request):
             "margen": [item["margen"] for item in flujo_mensual],
         },
         "balanceGeneral": {
-            "labels": ["Ingresos", "Gastos", "Deudas", "Posición neta"],
-            "values": [float(ingresos), float(gastos), float(saldo_deudas), float(posicion_neta)],
+            "labels": ["Ingresos", "Gastos", "Cuotas del mes", "Posición neta"],
+            "values": [float(ingresos), float(gastos), float(cuotas_deuda_mes), float(posicion_neta)],
         },
         "obligaciones": {
-            "labels": ["Pagado este mes", "Saldo pendiente"],
-            "values": [float(pagos_mes), float(saldo_deudas)],
+            "labels": ["Cuotas del mes", "Pagado este mes", "Saldo pendiente"],
+            "values": [float(cuotas_deuda_mes), float(pagos_mes), float(saldo_deudas)],
         },
         "gastosCategoria": {
             "labels": [item["categoria"] for item in gastos_categoria],
@@ -846,6 +849,7 @@ def dashboard(request):
             "gastos": gastos,
             "margen": margen,
             "saldo_deudas": saldo_deudas,
+            "cuotas_deuda_mes": cuotas_deuda_mes,
             "pagos_mes": pagos_mes,
             "posicion_neta": posicion_neta,
             "uso_ingresos": uso_ingresos,
@@ -914,6 +918,12 @@ def analisis_financiero(request):
     if categoria_id:
         deudas_activas = deudas_activas.filter(categoria_id=categoria_id)
     saldo_deudas = deudas_activas.aggregate(total=Sum("saldo_actual"))["total"] or Decimal("0")
+    _, cuotas_deuda_periodo = cuotas_deudas_programadas(
+        request.user,
+        fecha_inicio,
+        fecha_fin,
+        categoria_id=categoria_id,
+    )
     pagos_periodo = PagoDeuda.objects.filter(
         deuda__usuario=request.user,
         fecha__range=(fecha_inicio, fecha_fin),
@@ -921,7 +931,7 @@ def analisis_financiero(request):
     if categoria_id:
         pagos_periodo = pagos_periodo.filter(deuda__categoria_id=categoria_id)
     pagos_total = pagos_periodo.aggregate(total=Sum("monto"))["total"] or Decimal("0")
-    posicion_neta = margen - saldo_deudas
+    posicion_neta = margen - cuotas_deuda_periodo
 
     uso_ingresos = Decimal("0")
     if ingresos:
@@ -1006,8 +1016,8 @@ def analisis_financiero(request):
             "colors": [item["color"] for item in gastos_categoria],
         },
         "balance": {
-            "labels": ["Ingresos", "Gastos", "Deudas", "Posición neta"],
-            "values": [float(ingresos), float(gastos), float(saldo_deudas), float(posicion_neta)],
+            "labels": ["Ingresos", "Gastos", "Cuotas del periodo", "Posición neta"],
+            "values": [float(ingresos), float(gastos), float(cuotas_deuda_periodo), float(posicion_neta)],
         },
         "proyeccion": {
             "labels": [item["mes"] for item in proyeccion],
@@ -1031,6 +1041,7 @@ def analisis_financiero(request):
             "gastos": gastos,
             "margen": margen,
             "saldo_deudas": saldo_deudas,
+            "cuotas_deuda_periodo": cuotas_deuda_periodo,
             "pagos_total": pagos_total,
             "posicion_neta": posicion_neta,
             "uso_ingresos": uso_ingresos,

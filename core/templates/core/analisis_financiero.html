@@ -50,7 +50,7 @@
   <div>
     <span class="badge rounded-pill {% if posicion_neta >= 0 %}text-bg-success{% else %}text-bg-warning{% endif %} mb-2">{{ estado }}</span>
     <h2>Posición neta: <span class="{% if posicion_neta >= 0 %}text-success{% else %}text-warning{% endif %}">{{ posicion_neta }}</span></h2>
-    <p class="mb-0 text-muted">Resultado estimado después de ingresos, gastos y obligaciones pendientes.</p>
+    <p class="mb-0 text-muted">Resultado estimado después de ingresos, gastos y cuotas del periodo.</p>
   </div>
 </div>
 
@@ -68,8 +68,8 @@
     <div class="metric-value">{{ uso_ingresos }}%</div>
   </section>
   <section class="panel metric gray">
-    <div class="metric-label">Deudas activas</div>
-    <div class="metric-value">{{ saldo_deudas }}</div>
+    <div class="metric-label">Cuotas del periodo</div>
+    <div class="metric-value">{{ cuotas_deuda_periodo }}</div>
   </section>
 </div>
 
@@ -82,6 +82,7 @@
   </div>
   <div class="status-list">
     <span><strong>{{ margen }}</strong> margen antes de deudas</span>
+    <span><strong>{{ cuotas_deuda_periodo }}</strong> cuotas de deudas del periodo</span>
     <span><strong>{{ pagos_total }}</strong> pagado a deudas en el periodo</span>
     <span><strong>{{ saldo_deudas }}</strong> saldo pendiente activo</span>
     {% if top_categoria %}
@@ -108,7 +109,7 @@
   <div class="panel-heading">
     <div>
       <h2>Balance general</h2>
-      <p class="muted mb-0">Foto amplia del periodo filtrado: ingresos, gastos, deudas y posición neta.</p>
+      <p class="muted mb-0">Foto del periodo filtrado: ingresos, gastos, cuotas de deudas y posición neta.</p>
     </div>
   </div>
   <div class="chart-box chart-box-balance">
