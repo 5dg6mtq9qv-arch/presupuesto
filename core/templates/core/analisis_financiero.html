@@ -77,7 +77,7 @@
   <div>
     <span class="badge rounded-pill {% if posicion_neta >= 0 %}text-bg-success{% else %}text-bg-warning{% endif %} mb-2">{{ estado }}</span>
     <h2>Posición neta: <span class="{% if posicion_neta >= 0 %}text-success{% else %}text-warning{% endif %}">{{ posicion_neta }}</span></h2>
-    <p class="mb-0 text-muted">Resultado estimado después de ingresos, gastos y cuotas del periodo.</p>
+    <p class="mb-0 text-muted">Resultado estimado con saldo acumulado y obligaciones del periodo.</p>
   </div>
 </div>
 
@@ -124,7 +124,7 @@
   <div class="panel-heading">
     <div>
       <h2>Tendencia del periodo</h2>
-      <p class="muted mb-0">Ingresos, gastos, pagos de deuda y margen mensual.</p>
+      <p class="muted mb-0">Saldo acumulado por fecha de corte, pagos de deuda y margen.</p>
     </div>
   </div>
   <div class="chart-box">
@@ -136,7 +136,7 @@
   <div class="panel-heading">
     <div>
       <h2>Balance general</h2>
-      <p class="muted mb-0">Foto del periodo filtrado: ingresos, gastos, cuotas de deudas y posición neta.</p>
+      <p class="muted mb-0">Foto a la fecha de corte: ingresos, gastos, cuotas de deudas y posición neta.</p>
     </div>
   </div>
   <div class="chart-box chart-box-balance">

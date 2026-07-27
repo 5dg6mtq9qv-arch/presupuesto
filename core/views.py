@@ -969,7 +969,7 @@ def analisis_financiero(request):
     movimientos = MovimientoFinanciero.objects.filter(
         usuario=request.user,
         estado=MovimientoFinanciero.Estado.CONFIRMADO,
-        fecha__range=(fecha_inicio, fecha_fin),
+        fecha__lte=fecha_fin,
     )
     if tipo in {MovimientoFinanciero.Tipo.INGRESO, MovimientoFinanciero.Tipo.GASTO}:
         movimientos = movimientos.filter(tipo=tipo)
@@ -1050,10 +1050,10 @@ def analisis_financiero(request):
 
     flujo_mensual = []
     for inicio_periodo, fin_periodo, etiqueta_periodo in periodos_flujo:
-        movimientos_periodo = movimientos.filter(fecha__gte=inicio_periodo, fecha__lt=fin_periodo)
+        movimientos_periodo = movimientos.filter(fecha__lt=fin_periodo)
         recurrentes_periodo = [
             movimiento for movimiento in recurrentes_programados
-            if inicio_periodo <= movimiento["fecha"] < fin_periodo
+            if movimiento["fecha"] < fin_periodo
         ]
         ingresos_periodo = movimientos_periodo.filter(
             tipo=MovimientoFinanciero.Tipo.INGRESO,

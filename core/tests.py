@@ -221,6 +221,33 @@ class MovimientoRecurrenteServiceTests(TestCase):
         self.assertEqual(response.context["gastos"], Decimal("30.00"))
         self.assertEqual(response.context["margen"], Decimal("970.00"))
 
+    def test_analisis_arrastra_movimientos_confirmados_de_meses_anteriores(self):
+        MovimientoFinanciero.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.INGRESO,
+            concepto="Saldo inicial",
+            monto="500.00",
+            fecha=datetime(2026, 1, 10).date(),
+        )
+        MovimientoFinanciero.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+            concepto="Compra anterior",
+            monto="80.00",
+            fecha=datetime(2026, 1, 15).date(),
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(
+            reverse("analisis_financiero"),
+            {"periodo": "mes", "mes": "2", "anio": "2026"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["ingresos"], Decimal("500.00"))
+        self.assertEqual(response.context["gastos"], Decimal("80.00"))
+        self.assertEqual(response.context["margen"], Decimal("420.00"))
+
     def test_analisis_anio_usa_anio_seleccionado(self):
         self.client.force_login(self.user)
 
