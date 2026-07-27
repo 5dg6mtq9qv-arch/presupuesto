@@ -113,6 +113,6 @@ class DeudaAdmin(ModelAdmin):
 
 @admin.register(PagoDeuda)
 class PagoDeudaAdmin(ModelAdmin):
-    list_display = ("deuda", "monto", "fecha")
+    list_display = ("deuda", "monto", "fecha", "cuota_numero")
     list_filter = ("fecha",)
     search_fields = ("deuda__acreedor", "deuda__concepto", "nota")

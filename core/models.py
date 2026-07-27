@@ -235,6 +235,12 @@ class MovimientoFinanciero(models.Model):
         null=True,
         blank=True,
     )
+    recurrente = models.ForeignKey(
+        "MovimientoRecurrente",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
     etiquetas = models.ManyToManyField(Etiqueta, blank=True)
     concepto = models.CharField(max_length=160)
     monto = models.DecimalField(max_digits=12, decimal_places=2)
@@ -246,6 +252,13 @@ class MovimientoFinanciero(models.Model):
     class Meta:
         db_table = '"movimientos_financieros"."movimiento_financiero"'
         ordering = ["-fecha", "-creado"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["usuario", "recurrente", "fecha"],
+                condition=models.Q(recurrente__isnull=False),
+                name="movimiento_recurrente_unico_por_fecha",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.get_tipo_display()}: {self.concepto}"
@@ -338,12 +351,20 @@ class PagoDeuda(models.Model):
     deuda = models.ForeignKey(Deuda, on_delete=models.CASCADE, related_name="pagos")
     monto = models.DecimalField(max_digits=12, decimal_places=2)
     fecha = models.DateField()
+    cuota_numero = models.PositiveIntegerField(null=True, blank=True)
     nota = models.TextField(blank=True)
     creado = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = '"pagos_deudas"."pago_deuda"'
         ordering = ["-fecha", "-creado"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["deuda", "cuota_numero"],
+                condition=models.Q(cuota_numero__isnull=False),
+                name="pago_deuda_unico_por_cuota",
+            ),
+        ]
 
     def __str__(self):
         return f"Pago {self.monto} - {self.deuda}"

@@ -1,3 +1,116 @@
-from django.test import TestCase
+from datetime import datetime
+from decimal import Decimal
 
-# Create your tests here.
+from django.contrib.auth import get_user_model
+from django.test import TestCase
+from django.utils import timezone
+
+from .models import Deuda, MovimientoFinanciero, MovimientoRecurrente, PagoDeuda
+from .services import generar_movimientos_recurrentes, generar_pagos_deudas
+
+
+class MovimientoRecurrenteServiceTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="cristian",
+            password="test",
+        )
+
+    def set_creado(self, instance, anio, mes, dia, hora=12):
+        creado = timezone.make_aware(datetime(anio, mes, dia, hora, 0))
+        type(instance).objects.filter(pk=instance.pk).update(creado=creado)
+        instance.refresh_from_db()
+        return instance
+
+    def test_no_genera_fechas_anteriores_a_la_creacion(self):
+        recurrente = MovimientoRecurrente.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+            concepto="Internet",
+            monto="30.00",
+            dia_mes=5,
+        )
+        recurrente = self.set_creado(recurrente, 2026, 7, 27)
+
+        creados, omitidos = generar_movimientos_recurrentes(
+            hasta_fecha=datetime(2026, 8, 5).date(),
+            usuario=self.user,
+        )
+
+        self.assertEqual(omitidos, 0)
+        self.assertEqual(len(creados), 1)
+        self.assertEqual(creados[0].fecha, datetime(2026, 8, 5).date())
+
+    def test_generacion_es_idempotente(self):
+        recurrente = MovimientoRecurrente.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+            concepto="Internet",
+            monto="30.00",
+            dia_mes=5,
+        )
+        self.set_creado(recurrente, 2026, 7, 4)
+
+        generar_movimientos_recurrentes(
+            hasta_fecha=datetime(2026, 7, 5).date(),
+            usuario=self.user,
+        )
+        creados, omitidos = generar_movimientos_recurrentes(
+            hasta_fecha=datetime(2026, 7, 5).date(),
+            usuario=self.user,
+        )
+
+        self.assertEqual(len(creados), 0)
+        self.assertEqual(omitidos, 1)
+        self.assertEqual(MovimientoFinanciero.objects.count(), 1)
+
+    def test_deuda_no_genera_cuotas_anteriores_a_la_creacion(self):
+        deuda = Deuda.objects.create(
+            usuario=self.user,
+            acreedor="Banco",
+            concepto="Prestamo",
+            monto_inicial="300.00",
+            saldo_actual="300.00",
+            numero_cuotas=3,
+            fecha_inicio=datetime(2026, 6, 5).date(),
+            fecha_vencimiento=datetime(2026, 9, 5).date(),
+        )
+        self.set_creado(deuda, 2026, 7, 27)
+
+        creados, omitidos = generar_pagos_deudas(
+            hasta_fecha=datetime(2026, 8, 5).date(),
+            usuario=self.user,
+        )
+
+        deuda.refresh_from_db()
+        self.assertEqual(omitidos, 0)
+        self.assertEqual(len(creados), 1)
+        self.assertEqual(creados[0].cuota_numero, 2)
+        self.assertEqual(creados[0].fecha, datetime(2026, 8, 5).date())
+        self.assertEqual(deuda.saldo_actual, Decimal("200.00"))
+
+    def test_generacion_de_pagos_de_deuda_es_idempotente(self):
+        deuda = Deuda.objects.create(
+            usuario=self.user,
+            acreedor="Banco",
+            concepto="Prestamo",
+            monto_inicial="200.00",
+            saldo_actual="200.00",
+            numero_cuotas=2,
+            fecha_inicio=datetime(2026, 7, 5).date(),
+            fecha_vencimiento=datetime(2026, 9, 5).date(),
+        )
+        self.set_creado(deuda, 2026, 7, 4)
+
+        generar_pagos_deudas(
+            hasta_fecha=datetime(2026, 8, 5).date(),
+            usuario=self.user,
+        )
+        creados, omitidos = generar_pagos_deudas(
+            hasta_fecha=datetime(2026, 8, 5).date(),
+            usuario=self.user,
+        )
+
+        self.assertEqual(len(creados), 0)
+        self.assertEqual(omitidos, 0)
+        self.assertEqual(PagoDeuda.objects.count(), 1)

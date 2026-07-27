@@ -79,7 +79,7 @@
               </a>
               {% for pago in deuda.pagos.all %}
                 <div class="d-flex align-items-center justify-content-between gap-2 small text-muted">
-                  <span>{{ pago.fecha|date:"Y-m" }} · {{ pago.monto }}</span>
+                  <span>{{ pago.fecha|date:"Y-m" }} · {{ pago.monto }}{% if pago.cuota_numero %} · Cuota {{ pago.cuota_numero }}{% endif %}</span>
                   <button class="btn btn-sm btn-outline-danger btn-icon" type="button" title="Eliminar pago" aria-label="Eliminar pago" data-delete-trigger="delete-pago-{{ pago.pk }}">
                     <span class="material-symbols-outlined">delete</span>
                   </button>
