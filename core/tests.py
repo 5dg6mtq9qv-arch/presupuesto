@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.urls import reverse
 from django.utils import timezone
 
 from .models import Deuda, MovimientoFinanciero, MovimientoRecurrente, PagoDeuda
@@ -138,3 +139,24 @@ class MovimientoRecurrenteServiceTests(TestCase):
         self.assertEqual(cuotas[0]["cuota_numero"], 1)
         self.assertEqual(cuotas[0]["fecha"], datetime(2026, 8, 5).date())
         self.assertEqual(total, Decimal("100.00"))
+
+    def test_analisis_todo_usa_saldo_total_de_deudas(self):
+        deuda = Deuda.objects.create(
+            usuario=self.user,
+            acreedor="Banco",
+            concepto="Prestamo",
+            monto_inicial="600.00",
+            saldo_actual="600.00",
+            numero_cuotas=6,
+            fecha_inicio=datetime(2026, 7, 5).date(),
+            fecha_vencimiento=datetime(2027, 1, 5).date(),
+        )
+        self.set_creado(deuda, 2026, 7, 4)
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("analisis_financiero"), {"periodo": "todo"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["periodo"], "todo")
+        self.assertEqual(response.context["cuotas_deuda_periodo"], Decimal("600.00"))
+        self.assertEqual(response.context["etiqueta_deudas_balance"], "Deudas activas")

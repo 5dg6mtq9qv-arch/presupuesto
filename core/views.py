@@ -1,5 +1,6 @@
 import calendar
 import csv
+from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.contrib import messages
@@ -9,7 +10,7 @@ from django.contrib.auth.decorators import user_passes_test
 from django.core.paginator import Paginator
 from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse
 from django.db import transaction
-from django.db.models import Q, Sum
+from django.db.models import Min, Q, Sum
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -876,10 +877,39 @@ def analisis_financiero(request):
         month = month_index % 12 + 1
         return fecha.replace(year=year, month=month, day=1)
 
-    fecha_inicio_default = add_months(hoy.replace(day=1), -5)
-    fecha_fin_default = hoy
-    fecha_inicio = parse_date(request.GET.get("desde", "")) or fecha_inicio_default
-    fecha_fin = parse_date(request.GET.get("hasta", "")) or fecha_fin_default
+    periodo = request.GET.get("periodo", "mes")
+    periodos_validos = {"semana", "mes", "semestre", "anio", "todo", "personalizado"}
+    if periodo not in periodos_validos:
+        periodo = "mes"
+
+    primeras_fechas = [
+        MovimientoFinanciero.objects.filter(usuario=request.user).aggregate(fecha=Min("fecha"))["fecha"],
+        PagoDeuda.objects.filter(deuda__usuario=request.user).aggregate(fecha=Min("fecha"))["fecha"],
+        Deuda.objects.filter(usuario=request.user).aggregate(fecha=Min("fecha_inicio"))["fecha"],
+    ]
+    primera_fecha = min([fecha for fecha in primeras_fechas if fecha] or [hoy])
+
+    if periodo == "semana":
+        fecha_inicio = hoy - timedelta(days=hoy.weekday())
+        fecha_fin = hoy
+    elif periodo == "mes":
+        fecha_inicio = hoy.replace(day=1)
+        fecha_fin = hoy
+    elif periodo == "semestre":
+        fecha_inicio = add_months(hoy.replace(day=1), -5)
+        fecha_fin = hoy
+    elif periodo == "anio":
+        fecha_inicio = hoy.replace(month=1, day=1)
+        fecha_fin = hoy
+    elif periodo == "todo":
+        fecha_inicio = primera_fecha
+        fecha_fin = hoy
+    else:
+        fecha_inicio_default = hoy.replace(day=1)
+        fecha_fin_default = hoy
+        fecha_inicio = parse_date(request.GET.get("desde", "")) or fecha_inicio_default
+        fecha_fin = parse_date(request.GET.get("hasta", "")) or fecha_fin_default
+
     if fecha_inicio > fecha_fin:
         fecha_inicio, fecha_fin = fecha_fin, fecha_inicio
 
@@ -918,12 +948,17 @@ def analisis_financiero(request):
     if categoria_id:
         deudas_activas = deudas_activas.filter(categoria_id=categoria_id)
     saldo_deudas = deudas_activas.aggregate(total=Sum("saldo_actual"))["total"] or Decimal("0")
-    _, cuotas_deuda_periodo = cuotas_deudas_programadas(
-        request.user,
-        fecha_inicio,
-        fecha_fin,
-        categoria_id=categoria_id,
-    )
+    if periodo == "todo":
+        cuotas_deuda_periodo = saldo_deudas
+        etiqueta_deudas_balance = "Deudas activas"
+    else:
+        _, cuotas_deuda_periodo = cuotas_deudas_programadas(
+            request.user,
+            fecha_inicio,
+            fecha_fin,
+            categoria_id=categoria_id,
+        )
+        etiqueta_deudas_balance = "Cuotas del periodo"
     pagos_periodo = PagoDeuda.objects.filter(
         deuda__usuario=request.user,
         fecha__range=(fecha_inicio, fecha_fin),
@@ -940,33 +975,40 @@ def analisis_financiero(request):
             rounding=ROUND_HALF_UP,
         )
 
-    meses = []
-    cursor = fecha_inicio.replace(day=1)
-    limite = fecha_fin.replace(day=1)
-    while cursor <= limite:
-        meses.append(cursor)
-        cursor = add_months(cursor, 1)
+    agrupar_por_dia = (fecha_fin - fecha_inicio).days <= 31
+    periodos_flujo = []
+    if agrupar_por_dia:
+        cursor = fecha_inicio
+        while cursor <= fecha_fin:
+            periodos_flujo.append((cursor, cursor + timedelta(days=1), cursor.strftime("%d/%m")))
+            cursor += timedelta(days=1)
+    else:
+        cursor = fecha_inicio.replace(day=1)
+        limite = fecha_fin.replace(day=1)
+        while cursor <= limite:
+            siguiente = add_months(cursor, 1)
+            periodos_flujo.append((cursor, siguiente, cursor.strftime("%m/%Y")))
+            cursor = siguiente
 
     flujo_mensual = []
-    for mes in meses:
-        siguiente = add_months(mes, 1)
-        movimientos_mes = movimientos.filter(fecha__gte=mes, fecha__lt=siguiente)
-        ingresos_mes = movimientos_mes.filter(
+    for inicio_periodo, fin_periodo, etiqueta_periodo in periodos_flujo:
+        movimientos_periodo = movimientos.filter(fecha__gte=inicio_periodo, fecha__lt=fin_periodo)
+        ingresos_periodo = movimientos_periodo.filter(
             tipo=MovimientoFinanciero.Tipo.INGRESO,
         ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
-        gastos_mes = movimientos_mes.filter(
+        gastos_periodo = movimientos_periodo.filter(
             tipo=MovimientoFinanciero.Tipo.GASTO,
         ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
-        pagos_mes = pagos_periodo.filter(fecha__gte=mes, fecha__lt=siguiente).aggregate(
+        pagos_periodo_segmento = pagos_periodo.filter(fecha__gte=inicio_periodo, fecha__lt=fin_periodo).aggregate(
             total=Sum("monto")
         )["total"] or Decimal("0")
         flujo_mensual.append(
             {
-                "mes": mes.strftime("%m/%Y"),
-                "ingresos": float(ingresos_mes),
-                "gastos": float(gastos_mes),
-                "deudas": float(pagos_mes),
-                "margen": float(ingresos_mes - gastos_mes - pagos_mes),
+                "mes": etiqueta_periodo,
+                "ingresos": float(ingresos_periodo),
+                "gastos": float(gastos_periodo),
+                "deudas": float(pagos_periodo_segmento),
+                "margen": float(ingresos_periodo - gastos_periodo - pagos_periodo_segmento),
             }
         )
 
@@ -1016,7 +1058,7 @@ def analisis_financiero(request):
             "colors": [item["color"] for item in gastos_categoria],
         },
         "balance": {
-            "labels": ["Ingresos", "Gastos", "Cuotas del periodo", "Posición neta"],
+            "labels": ["Ingresos", "Gastos", etiqueta_deudas_balance, "Posición neta"],
             "values": [float(ingresos), float(gastos), float(cuotas_deuda_periodo), float(posicion_neta)],
         },
         "proyeccion": {
@@ -1034,6 +1076,7 @@ def analisis_financiero(request):
         {
             "fecha_inicio": fecha_inicio,
             "fecha_fin": fecha_fin,
+            "periodo": periodo,
             "tipo": tipo,
             "categoria_id": categoria_id,
             "categorias": categorias,
@@ -1042,6 +1085,7 @@ def analisis_financiero(request):
             "margen": margen,
             "saldo_deudas": saldo_deudas,
             "cuotas_deuda_periodo": cuotas_deuda_periodo,
+            "etiqueta_deudas_balance": etiqueta_deudas_balance,
             "pagos_total": pagos_total,
             "posicion_neta": posicion_neta,
             "uso_ingresos": uso_ingresos,

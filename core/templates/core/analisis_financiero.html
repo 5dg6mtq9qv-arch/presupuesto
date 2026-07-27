@@ -9,10 +9,21 @@
 <section class="panel">
   <form class="row g-3 align-items-end" method="get">
     <div class="col-md-2">
+      <label for="periodo">Periodo</label>
+      <select class="form-select" id="periodo" name="periodo">
+        <option value="semana"{% if periodo == "semana" %} selected{% endif %}>Semana</option>
+        <option value="mes"{% if periodo == "mes" %} selected{% endif %}>Mes</option>
+        <option value="semestre"{% if periodo == "semestre" %} selected{% endif %}>Semestre</option>
+        <option value="anio"{% if periodo == "anio" %} selected{% endif %}>Año</option>
+        <option value="todo"{% if periodo == "todo" %} selected{% endif %}>Todo</option>
+        <option value="personalizado"{% if periodo == "personalizado" %} selected{% endif %}>Fechas exactas</option>
+      </select>
+    </div>
+    <div class="col-md-2">
       <label for="desde">Desde</label>
       <input class="form-control" id="desde" name="desde" type="date" value="{{ fecha_inicio|date:'Y-m-d' }}">
     </div>
-    <div class="col-md-3">
+    <div class="col-md-2">
       <label for="hasta">Hasta</label>
       <input class="form-control" id="hasta" name="hasta" type="date" value="{{ fecha_fin|date:'Y-m-d' }}">
     </div>
@@ -68,7 +79,7 @@
     <div class="metric-value">{{ uso_ingresos }}%</div>
   </section>
   <section class="panel metric gray">
-    <div class="metric-label">Cuotas del periodo</div>
+    <div class="metric-label">{{ etiqueta_deudas_balance }}</div>
     <div class="metric-value">{{ cuotas_deuda_periodo }}</div>
   </section>
 </div>
@@ -82,7 +93,7 @@
   </div>
   <div class="status-list">
     <span><strong>{{ margen }}</strong> margen antes de deudas</span>
-    <span><strong>{{ cuotas_deuda_periodo }}</strong> cuotas de deudas del periodo</span>
+    <span><strong>{{ cuotas_deuda_periodo }}</strong> {{ etiqueta_deudas_balance|lower }}</span>
     <span><strong>{{ pagos_total }}</strong> pagado a deudas en el periodo</span>
     <span><strong>{{ saldo_deudas }}</strong> saldo pendiente activo</span>
     {% if top_categoria %}
@@ -148,6 +159,20 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <script>
   (() => {
+    const periodSelect = document.getElementById("periodo");
+    const desdeInput = document.getElementById("desde");
+    const hastaInput = document.getElementById("hasta");
+    const toggleDateInputs = () => {
+      const exacto = periodSelect.value === "personalizado";
+      desdeInput.disabled = !exacto;
+      hastaInput.disabled = !exacto;
+    };
+    periodSelect.addEventListener("change", () => {
+      toggleDateInputs();
+      periodSelect.form.requestSubmit();
+    });
+    toggleDateInputs();
+
     const data = JSON.parse(document.getElementById("analysis-data").textContent);
     const moneyOptions = {
       responsive: true,
