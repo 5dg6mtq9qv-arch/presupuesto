@@ -154,8 +154,8 @@ LOGOUT_REDIRECT_URL = 'login'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 UNFOLD = {
-    "SITE_TITLE": "TaskBudget",
-    "SITE_HEADER": "TaskBudget",
+    "SITE_TITLE": "Gestor de Finanzas Personales",
+    "SITE_HEADER": "Gestor de Finanzas Personales",
     "SITE_SYMBOL": "account_balance_wallet",
     "SHOW_HISTORY": True,
     "SHOW_VIEW_ON_SITE": False,
