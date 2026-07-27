@@ -7,7 +7,7 @@
 {{ chart_data|json_script:"analysis-data" }}
 
 <section class="panel">
-  <form class="row g-3 align-items-end" method="get">
+  <form class="row g-3 align-items-end" id="analysis-filter-form" method="get">
     <div class="col-md-2">
       <label for="periodo">Periodo</label>
       <select class="form-select" id="periodo" name="periodo">
@@ -176,6 +176,7 @@
 <script>
   (() => {
     const periodSelect = document.getElementById("periodo");
+    const filterForm = document.getElementById("analysis-filter-form");
     const monthSelect = document.getElementById("mes");
     const yearSelect = document.getElementById("anio");
     const desdeInput = document.getElementById("desde");
@@ -186,12 +187,12 @@
     const yearFilterGroups = document.querySelectorAll("[data-year-filter]");
     const dateFilterGroups = document.querySelectorAll("[data-date-filter]");
     const submitFilterGroups = document.querySelectorAll("[data-submit-filter]");
+    let submitTimer = null;
     const submitFilters = () => {
-      if (periodSelect.form.requestSubmit) {
-        periodSelect.form.requestSubmit();
-      } else {
-        periodSelect.form.submit();
-      }
+      window.clearTimeout(submitTimer);
+      submitTimer = window.setTimeout(() => {
+        filterForm.submit();
+      }, 80);
     };
     const toggleDateInputs = () => {
       const exacto = periodSelect.value === "personalizado";
@@ -218,12 +219,14 @@
       toggleDateInputs();
       submitFilters();
     });
-    monthSelect.addEventListener("change", submitFilters);
-    yearSelect.addEventListener("change", submitFilters);
-    desdeInput.addEventListener("change", submitFilters);
-    hastaInput.addEventListener("change", submitFilters);
-    typeSelect.addEventListener("change", submitFilters);
-    categorySelect.addEventListener("change", submitFilters);
+    filterForm.addEventListener("change", (event) => {
+      if (event.target === periodSelect) {
+        return;
+      }
+      if (event.target.matches("select, input[type='date']")) {
+        submitFilters();
+      }
+    });
     toggleDateInputs();
 
     const data = JSON.parse(document.getElementById("analysis-data").textContent);
