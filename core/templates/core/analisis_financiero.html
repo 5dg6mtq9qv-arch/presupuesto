@@ -27,7 +27,7 @@
         {% endfor %}
       </select>
     </div>
-    <div class="col-md-2" data-month-filter>
+    <div class="col-md-2" data-year-filter>
       <label for="anio">Año</label>
       <select class="form-select" id="anio" name="anio">
         {% for anio in anios_disponibles %}
@@ -35,11 +35,11 @@
         {% endfor %}
       </select>
     </div>
-    <div class="col-md-2">
+    <div class="col-md-2" data-date-filter>
       <label for="desde">Desde</label>
       <input class="form-control" id="desde" name="desde" type="date" value="{{ fecha_inicio|date:'Y-m-d' }}">
     </div>
-    <div class="col-md-2">
+    <div class="col-md-2" data-date-filter>
       <label for="hasta">Hasta</label>
       <input class="form-control" id="hasta" name="hasta" type="date" value="{{ fecha_fin|date:'Y-m-d' }}">
     </div>
@@ -181,15 +181,24 @@
     const desdeInput = document.getElementById("desde");
     const hastaInput = document.getElementById("hasta");
     const monthFilterGroups = document.querySelectorAll("[data-month-filter]");
+    const yearFilterGroups = document.querySelectorAll("[data-year-filter]");
+    const dateFilterGroups = document.querySelectorAll("[data-date-filter]");
     const toggleDateInputs = () => {
       const exacto = periodSelect.value === "personalizado";
       const mensual = periodSelect.value === "mes";
+      const anual = periodSelect.value === "anio";
       desdeInput.disabled = !exacto;
       hastaInput.disabled = !exacto;
       monthSelect.disabled = !mensual;
-      yearSelect.disabled = !mensual;
+      yearSelect.disabled = !(mensual || anual);
       monthFilterGroups.forEach((group) => {
         group.hidden = !mensual;
+      });
+      yearFilterGroups.forEach((group) => {
+        group.hidden = !(mensual || anual);
+      });
+      dateFilterGroups.forEach((group) => {
+        group.hidden = !exacto;
       });
     };
     periodSelect.addEventListener("change", () => {

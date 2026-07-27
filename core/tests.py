@@ -174,3 +174,61 @@ class MovimientoRecurrenteServiceTests(TestCase):
         self.assertEqual(response.context["fecha_fin"], datetime(2026, 6, 30).date())
         self.assertEqual(response.context["mes_seleccionado"], 6)
         self.assertEqual(response.context["anio_seleccionado"], 2026)
+
+    def test_analisis_incluye_recurrentes_activos_sin_duplicar_generados(self):
+        ingreso_recurrente = MovimientoRecurrente.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.INGRESO,
+            concepto="Nomina",
+            monto="1000.00",
+            dia_mes=5,
+        )
+        gasto_recurrente = MovimientoRecurrente.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+            concepto="Internet",
+            monto="30.00",
+            dia_mes=5,
+        )
+        gasto_inactivo = MovimientoRecurrente.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+            concepto="Suscripcion cancelada",
+            monto="15.00",
+            dia_mes=5,
+            activo=False,
+        )
+        self.set_creado(ingreso_recurrente, 2026, 7, 4)
+        self.set_creado(gasto_recurrente, 2026, 7, 4)
+        self.set_creado(gasto_inactivo, 2026, 7, 4)
+        MovimientoFinanciero.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.INGRESO,
+            recurrente=ingreso_recurrente,
+            concepto="Nomina",
+            monto="1000.00",
+            fecha=datetime(2026, 7, 5).date(),
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(
+            reverse("analisis_financiero"),
+            {"periodo": "mes", "mes": "7", "anio": "2026"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["ingresos"], Decimal("1000.00"))
+        self.assertEqual(response.context["gastos"], Decimal("30.00"))
+        self.assertEqual(response.context["margen"], Decimal("970.00"))
+
+    def test_analisis_anio_usa_anio_seleccionado(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(
+            reverse("analisis_financiero"),
+            {"periodo": "anio", "anio": "2025"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["fecha_inicio"], datetime(2025, 1, 1).date())
+        self.assertEqual(response.context["fecha_fin"], datetime(2025, 12, 31).date())

@@ -50,7 +50,7 @@ from .models import (
     PresupuestoMensual,
     Tarea,
 )
-from .services import cuotas_deudas_programadas
+from .services import cuotas_deudas_programadas, movimientos_recurrentes_programados
 
 User = get_user_model()
 
@@ -219,13 +219,18 @@ def categoria_grafica(categoria):
     return principal.nombre, principal.color or "#f79009"
 
 
-def gastos_por_categoria(queryset, limit):
+def gastos_por_categoria(queryset, limit, extras=None):
     acumulado = {}
     for movimiento in queryset.select_related("categoria__parent"):
         nombre, color = categoria_grafica(movimiento.categoria)
         if nombre not in acumulado:
             acumulado[nombre] = {"categoria": nombre, "color": color, "total": Decimal("0")}
         acumulado[nombre]["total"] += movimiento.monto
+    for movimiento in extras or []:
+        nombre, color = categoria_grafica(movimiento["categoria"])
+        if nombre not in acumulado:
+            acumulado[nombre] = {"categoria": nombre, "color": color, "total": Decimal("0")}
+        acumulado[nombre]["total"] += movimiento["monto"]
 
     return [
         {**item, "total": float(item["total"])}
@@ -898,8 +903,9 @@ def analisis_financiero(request):
         MovimientoFinanciero.objects.filter(usuario=request.user).aggregate(fecha=Min("fecha"))["fecha"],
         PagoDeuda.objects.filter(deuda__usuario=request.user).aggregate(fecha=Min("fecha"))["fecha"],
         Deuda.objects.filter(usuario=request.user).aggregate(fecha=Min("fecha_inicio"))["fecha"],
+        MovimientoRecurrente.objects.filter(usuario=request.user, activo=True).aggregate(fecha=Min("creado"))["fecha"],
     ]
-    primera_fecha = min([fecha for fecha in primeras_fechas if fecha] or [hoy])
+    primera_fecha = min([fecha.date() if hasattr(fecha, "date") else fecha for fecha in primeras_fechas if fecha] or [hoy])
 
     if periodo == "semana":
         fecha_inicio = hoy - timedelta(days=hoy.weekday())
@@ -918,8 +924,10 @@ def analisis_financiero(request):
         fecha_inicio = add_months(hoy.replace(day=1), -5)
         fecha_fin = hoy
     elif periodo == "anio":
-        fecha_inicio = hoy.replace(month=1, day=1)
-        fecha_fin = hoy
+        fecha_inicio = hoy.replace(year=anio_seleccionado, month=1, day=1)
+        fecha_fin = hoy.replace(year=anio_seleccionado, month=12, day=31)
+        if anio_seleccionado == hoy.year:
+            fecha_fin = hoy
     elif periodo == "todo":
         fecha_inicio = primera_fecha
         fecha_fin = hoy
@@ -967,13 +975,28 @@ def analisis_financiero(request):
         movimientos = movimientos.filter(tipo=tipo)
     if categoria_id:
         movimientos = movimientos.filter(categoria_id=categoria_id)
+    recurrentes_programados = movimientos_recurrentes_programados(
+        request.user,
+        fecha_inicio,
+        fecha_fin,
+        tipo=tipo,
+        categoria_id=categoria_id,
+    )
 
     ingresos = movimientos.filter(
         tipo=MovimientoFinanciero.Tipo.INGRESO,
     ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    ingresos += sum(
+        (movimiento["monto"] for movimiento in recurrentes_programados if movimiento["tipo"] == MovimientoFinanciero.Tipo.INGRESO),
+        Decimal("0"),
+    )
     gastos = movimientos.filter(
         tipo=MovimientoFinanciero.Tipo.GASTO,
     ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    gastos += sum(
+        (movimiento["monto"] for movimiento in recurrentes_programados if movimiento["tipo"] == MovimientoFinanciero.Tipo.GASTO),
+        Decimal("0"),
+    )
     margen = ingresos - gastos
 
     deudas_activas = Deuda.objects.filter(
@@ -1028,12 +1051,24 @@ def analisis_financiero(request):
     flujo_mensual = []
     for inicio_periodo, fin_periodo, etiqueta_periodo in periodos_flujo:
         movimientos_periodo = movimientos.filter(fecha__gte=inicio_periodo, fecha__lt=fin_periodo)
+        recurrentes_periodo = [
+            movimiento for movimiento in recurrentes_programados
+            if inicio_periodo <= movimiento["fecha"] < fin_periodo
+        ]
         ingresos_periodo = movimientos_periodo.filter(
             tipo=MovimientoFinanciero.Tipo.INGRESO,
         ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+        ingresos_periodo += sum(
+            (movimiento["monto"] for movimiento in recurrentes_periodo if movimiento["tipo"] == MovimientoFinanciero.Tipo.INGRESO),
+            Decimal("0"),
+        )
         gastos_periodo = movimientos_periodo.filter(
             tipo=MovimientoFinanciero.Tipo.GASTO,
         ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+        gastos_periodo += sum(
+            (movimiento["monto"] for movimiento in recurrentes_periodo if movimiento["tipo"] == MovimientoFinanciero.Tipo.GASTO),
+            Decimal("0"),
+        )
         pagos_periodo_segmento = pagos_periodo.filter(fecha__gte=inicio_periodo, fecha__lt=fin_periodo).aggregate(
             total=Sum("monto")
         )["total"] or Decimal("0")
@@ -1067,6 +1102,10 @@ def analisis_financiero(request):
     gastos_categoria = gastos_por_categoria(
         movimientos.filter(tipo=MovimientoFinanciero.Tipo.GASTO),
         10,
+        extras=[
+            movimiento for movimiento in recurrentes_programados
+            if movimiento["tipo"] == MovimientoFinanciero.Tipo.GASTO
+        ],
     )
 
     top_categoria = gastos_categoria[0] if gastos_categoria else None

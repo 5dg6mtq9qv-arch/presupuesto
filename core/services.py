@@ -48,6 +48,42 @@ def iter_fechas_recurrentes_vencidas(recurrente, hasta_fecha):
         anio, mes = siguiente_mes(anio, mes)
 
 
+def movimientos_recurrentes_programados(usuario, fecha_inicio, fecha_fin, tipo=None, categoria_id=None):
+    recurrentes = MovimientoRecurrente.objects.filter(
+        usuario=usuario,
+        activo=True,
+    ).select_related("categoria__parent", "cuenta", "metodo_pago")
+    if tipo in {MovimientoFinanciero.Tipo.INGRESO, MovimientoFinanciero.Tipo.GASTO}:
+        recurrentes = recurrentes.filter(tipo=tipo)
+    if categoria_id:
+        recurrentes = recurrentes.filter(categoria_id=categoria_id)
+
+    programados = []
+    for recurrente in recurrentes:
+        fechas_confirmadas = set(
+            MovimientoFinanciero.objects.filter(
+                usuario=usuario,
+                estado=MovimientoFinanciero.Estado.CONFIRMADO,
+                recurrente=recurrente,
+                fecha__range=(fecha_inicio, fecha_fin),
+            ).values_list("fecha", flat=True)
+        )
+        for fecha in iter_fechas_recurrentes_vencidas(recurrente, fecha_fin):
+            if fecha < fecha_inicio or fecha in fechas_confirmadas:
+                continue
+            programados.append(
+                {
+                    "recurrente": recurrente,
+                    "tipo": recurrente.tipo,
+                    "categoria": recurrente.categoria,
+                    "monto": recurrente.monto,
+                    "fecha": fecha,
+                }
+            )
+
+    return programados
+
+
 def generar_movimientos_recurrentes(hasta_fecha=None, usuario=None):
     hasta_fecha = hasta_fecha or timezone.localdate()
     recurrentes = MovimientoRecurrente.objects.filter(activo=True).select_related(
