@@ -10,7 +10,7 @@
   <form class="row g-3 align-items-end" id="analysis-filter-form" method="get">
     <div class="col-md-2">
       <label for="periodo">Periodo</label>
-      <select class="form-select" id="periodo" name="periodo">
+      <select class="form-select" id="periodo" name="periodo" onchange="window.submitAnalysisFilters && window.submitAnalysisFilters()">
         <option value="semana"{% if periodo == "semana" %} selected{% endif %}>Semana</option>
         <option value="mes"{% if periodo == "mes" %} selected{% endif %}>Mes</option>
         <option value="semestre"{% if periodo == "semestre" %} selected{% endif %}>Semestre</option>
@@ -21,7 +21,7 @@
     </div>
     <div class="col-md-2" data-month-filter>
       <label for="mes">Mes</label>
-      <select class="form-select" id="mes" name="mes">
+      <select class="form-select" id="mes" name="mes" onchange="window.submitAnalysisFilters && window.submitAnalysisFilters()">
         {% for numero_mes, nombre_mes in meses_disponibles %}
           <option value="{{ numero_mes }}"{% if mes_seleccionado == numero_mes %} selected{% endif %}>{{ nombre_mes }}</option>
         {% endfor %}
@@ -29,7 +29,7 @@
     </div>
     <div class="col-md-2" data-year-filter>
       <label for="anio">Año</label>
-      <select class="form-select" id="anio" name="anio">
+      <select class="form-select" id="anio" name="anio" onchange="window.submitAnalysisFilters && window.submitAnalysisFilters()">
         {% for anio in anios_disponibles %}
           <option value="{{ anio }}"{% if anio_seleccionado == anio %} selected{% endif %}>{{ anio }}</option>
         {% endfor %}
@@ -37,15 +37,15 @@
     </div>
     <div class="col-md-2" data-date-filter>
       <label for="desde">Desde</label>
-      <input class="form-control" id="desde" name="desde" type="date" value="{{ fecha_inicio|date:'Y-m-d' }}">
+      <input class="form-control" id="desde" name="desde" type="date" value="{{ fecha_inicio|date:'Y-m-d' }}" onchange="window.submitAnalysisFilters && window.submitAnalysisFilters()">
     </div>
     <div class="col-md-2" data-date-filter>
       <label for="hasta">Hasta</label>
-      <input class="form-control" id="hasta" name="hasta" type="date" value="{{ fecha_fin|date:'Y-m-d' }}">
+      <input class="form-control" id="hasta" name="hasta" type="date" value="{{ fecha_fin|date:'Y-m-d' }}" onchange="window.submitAnalysisFilters && window.submitAnalysisFilters()">
     </div>
     <div class="col-md-2">
       <label for="tipo">Tipo</label>
-      <select class="form-select" id="tipo" name="tipo">
+      <select class="form-select" id="tipo" name="tipo" onchange="window.submitAnalysisFilters && window.submitAnalysisFilters()">
         <option value="todos"{% if tipo == "todos" %} selected{% endif %}>Todos</option>
         <option value="ingreso"{% if tipo == "ingreso" %} selected{% endif %}>Ingresos</option>
         <option value="gasto"{% if tipo == "gasto" %} selected{% endif %}>Gastos</option>
@@ -53,7 +53,7 @@
     </div>
     <div class="col-md-3">
       <label for="categoria">Categoría</label>
-      <select class="form-select" id="categoria" name="categoria">
+      <select class="form-select" id="categoria" name="categoria" onchange="window.submitAnalysisFilters && window.submitAnalysisFilters()">
         <option value="">Todas</option>
         {% for categoria in categorias %}
           <option value="{{ categoria.pk }}"{% if categoria_id == categoria.pk|stringformat:"s" %} selected{% endif %}>{% if categoria.parent %}{{ categoria.parent.nombre }} > {% endif %}{{ categoria.nombre }} ({{ categoria.get_tipo_display }})</option>
@@ -188,12 +188,21 @@
     const dateFilterGroups = document.querySelectorAll("[data-date-filter]");
     const submitFilterGroups = document.querySelectorAll("[data-submit-filter]");
     let submitTimer = null;
+    let filtersReady = false;
     const submitFilters = () => {
+      if (!filtersReady) {
+        return;
+      }
+      toggleDateInputs();
       window.clearTimeout(submitTimer);
       submitTimer = window.setTimeout(() => {
-        filterForm.submit();
+        const targetUrl = new URL(filterForm.action || window.location.href, window.location.href);
+        const params = new URLSearchParams(new FormData(filterForm));
+        targetUrl.search = params.toString();
+        window.location.assign(targetUrl.toString());
       }, 80);
     };
+    window.submitAnalysisFilters = submitFilters;
     const toggleDateInputs = () => {
       const exacto = periodSelect.value === "personalizado";
       const mensual = periodSelect.value === "mes";
@@ -215,19 +224,17 @@
         group.hidden = true;
       });
     };
-    periodSelect.addEventListener("change", () => {
-      toggleDateInputs();
-      submitFilters();
-    });
+    toggleDateInputs();
+    filtersReady = true;
+    periodSelect.addEventListener("change", toggleDateInputs);
     filterForm.addEventListener("change", (event) => {
-      if (event.target === periodSelect) {
-        return;
-      }
       if (event.target.matches("select, input[type='date']")) {
         submitFilters();
       }
-    });
-    toggleDateInputs();
+    }, true);
+    if (window.jQuery) {
+      jQuery(filterForm).find("select").on("select2:select select2:clear change", submitFilters);
+    }
 
     const data = JSON.parse(document.getElementById("analysis-data").textContent);
     const moneyOptions = {
