@@ -358,9 +358,11 @@ class MovimientoFinancieroForm(UserScopedModelForm):
             "concepto": "Descripción",
             "comprobante": "Comprobante",
             "metodo_pago": "Método de pago",
+            "fecha": "Fecha",
         }
         help_texts = {
             "comprobante": "Opcional: sube una captura, foto o archivo del pago.",
+            "fecha": "Si es crédito, usa el día en que toca pagarlo para que entre al balance correcto.",
         }
         widgets = {
             "fecha": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),

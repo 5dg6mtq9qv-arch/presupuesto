@@ -10,7 +10,7 @@
   <div>
     <span class="badge rounded-pill {% if margen >= 0 %}text-bg-success{% else %}text-bg-warning{% endif %} mb-2">{{ estado_presupuesto }}</span>
     <h2>Posición neta: <span class="{% if posicion_neta >= 0 %}text-success{% else %}text-warning{% endif %}">{{ posicion_neta }}</span></h2>
-    <p class="mb-0 text-muted">Ingresos menos gastos y cuotas del mes.</p>
+    <p class="mb-0 text-muted">Ingresos menos gastos reales y cuotas del mes.</p>
   </div>
   <div class="wallet-actions">
     <a class="btn btn-light btn-icon" href="{% url 'reporte_financiero_csv' %}" title="Descargar reporte CSV" aria-label="Descargar reporte CSV">
@@ -28,7 +28,7 @@
     <div class="metric-value">{{ ingresos }}</div>
   </section>
   <section class="panel metric orange">
-    <div class="metric-label">Gastos del mes</div>
+    <div class="metric-label">Gastos reales del mes</div>
     <div class="metric-value">{{ gastos }}</div>
   </section>
   <section class="panel metric blue">
@@ -54,7 +54,7 @@
   </div>
   <div class="status-list">
     <span><strong>{{ ingresos }}</strong> ingresos registrados</span>
-    <span><strong>{{ gastos }}</strong> gastos acumulados</span>
+    <span><strong>{{ gastos }}</strong> gastos reales acumulados</span>
     <span><strong>{{ margen }}</strong> margen antes de deudas</span>
     <span><strong>{{ cuotas_deuda_mes }}</strong> cuotas de deudas del mes</span>
     <span><strong>{{ pagos_mes }}</strong> pagado a deudas este mes</span>
@@ -69,7 +69,7 @@
     <div class="panel-heading">
       <div>
         <h2>Flujo de dinero</h2>
-        <p class="muted mb-0">Ingresos, gastos y margen de los últimos 6 meses.</p>
+        <p class="muted mb-0">Ingresos, gastos reales y margen de los últimos 6 meses.</p>
       </div>
     </div>
     <div class="chart-box">
@@ -81,7 +81,7 @@
     <div class="panel-heading">
       <div>
         <h2>Balance del mes</h2>
-        <p class="muted mb-0">Ingresos, gastos, cuotas del mes y posición neta.</p>
+        <p class="muted mb-0">Ingresos, gastos reales, cuotas del mes y posición neta.</p>
       </div>
     </div>
     <div class="chart-box chart-box-small">
@@ -164,7 +164,7 @@
     <div class="panel-heading">
       <div>
         <h2>Gastos por categoría</h2>
-        <p class="muted mb-0">Distribución del mes actual.</p>
+        <p class="muted mb-0">Distribución real del mes actual.</p>
       </div>
     </div>
     <div class="chart-box chart-box-small">

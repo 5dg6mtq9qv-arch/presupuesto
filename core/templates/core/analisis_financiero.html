@@ -87,7 +87,7 @@
     <div class="metric-value">{{ ingresos }}</div>
   </section>
   <section class="panel metric orange">
-    <div class="metric-label">Gastos</div>
+    <div class="metric-label">Gastos reales</div>
     <div class="metric-value">{{ gastos }}</div>
   </section>
   <section class="panel metric blue">
@@ -115,7 +115,7 @@
     {% if top_categoria %}
       <span><strong>{{ top_categoria.categoria }}</strong> categoría con más gasto</span>
     {% else %}
-      <span><strong>Sin gastos</strong> por categoría en el periodo</span>
+      <span><strong>Sin gastos reales</strong> por categoría en el periodo</span>
     {% endif %}
   </div>
 </section>
@@ -136,7 +136,7 @@
   <div class="panel-heading">
     <div>
       <h2>Balance general</h2>
-      <p class="muted mb-0">Foto a la fecha de corte: ingresos, gastos, cuotas de deudas y posición neta.</p>
+      <p class="muted mb-0">Foto a la fecha de corte: ingresos, gastos reales, cuotas de deudas y posición neta.</p>
     </div>
   </div>
   <div class="chart-box chart-box-balance">
@@ -160,8 +160,8 @@
   <section class="panel chart-panel">
     <div class="panel-heading">
       <div>
-        <h2>Gastos por categoría</h2>
-        <p class="muted mb-0">Dónde se concentra el gasto.</p>
+        <h2>Gastos reales por categoría</h2>
+        <p class="muted mb-0">Dónde se concentra el gasto por fecha efectiva de pago.</p>
       </div>
     </div>
     <div class="chart-box chart-box-small">
