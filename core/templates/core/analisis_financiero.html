@@ -103,6 +103,59 @@
 <section class="panel">
   <div class="panel-heading">
     <div>
+      <h2>Cómo se calcula</h2>
+      <p class="muted mb-0">Origen de los valores mostrados para el periodo seleccionado.</p>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table class="table table-hover align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Valor</th>
+          <th>Cálculo</th>
+          <th>Resultado</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Ingresos</td>
+          <td>Confirmados hasta {{ fecha_fin }}: {{ calculo_balance.ingresos_confirmados }} + recurrentes programados: {{ calculo_balance.ingresos_recurrentes }}</td>
+          <td class="amount">{{ calculo_balance.ingresos }}</td>
+        </tr>
+        <tr>
+          <td>Gastos reales</td>
+          <td>Confirmados hasta {{ fecha_fin }}: {{ calculo_balance.gastos_confirmados }} + recurrentes programados: {{ calculo_balance.gastos_recurrentes }}</td>
+          <td class="amount">{{ calculo_balance.gastos }}</td>
+        </tr>
+        <tr>
+          <td>Margen antes de deudas</td>
+          <td>Ingresos {{ calculo_balance.ingresos }} - gastos {{ calculo_balance.gastos }}</td>
+          <td class="amount">{{ calculo_balance.margen }}</td>
+        </tr>
+        <tr>
+          <td>{{ calculo_balance.obligaciones_label }}</td>
+          <td>
+            {% if calculo_balance.usa_saldo_total_deudas %}
+              Saldo actual de {{ calculo_balance.cuotas_deuda_count }} deudas activas.
+            {% else %}
+              {{ calculo_balance.cuotas_deuda_count }} cuotas programadas entre {{ fecha_inicio }} y {{ fecha_fin }}.
+            {% endif %}
+          </td>
+          <td class="amount">{{ calculo_balance.obligaciones }}</td>
+        </tr>
+        <tr>
+          <td><strong>Posición neta</strong></td>
+          <td>Margen {{ calculo_balance.margen }} - {{ calculo_balance.obligaciones_label|lower }} {{ calculo_balance.obligaciones }}</td>
+          <td class="amount"><strong>{{ calculo_balance.posicion_neta }}</strong></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
       <h2>Hallazgos</h2>
       <p class="muted mb-0">Señales rápidas para decidir dónde revisar.</p>
     </div>

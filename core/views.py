@@ -706,13 +706,25 @@ def dashboard(request):
         estado=Deuda.Estado.ACTIVA,
     )
     saldo_deudas = deudas_activas.aggregate(total=Sum("saldo_actual"))["total"] or Decimal("0")
-    _, cuotas_deuda_mes = cuotas_deudas_programadas(request.user, inicio_mes, hoy.replace(day=calendar.monthrange(hoy.year, hoy.month)[1]))
+    cuotas_deuda_detalle, cuotas_deuda_mes = cuotas_deudas_programadas(
+        request.user,
+        inicio_mes,
+        hoy.replace(day=calendar.monthrange(hoy.year, hoy.month)[1]),
+    )
     pagos_mes = PagoDeuda.objects.filter(
         deuda__usuario=request.user,
         fecha__year=hoy.year,
         fecha__month=hoy.month,
     ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
     posicion_neta = margen - cuotas_deuda_mes
+    calculo_balance = {
+        "ingresos": ingresos,
+        "gastos": gastos,
+        "margen": margen,
+        "cuotas_deuda": cuotas_deuda_mes,
+        "posicion_neta": posicion_neta,
+        "cuotas_deuda_count": len(cuotas_deuda_detalle),
+    }
     uso_ingresos = Decimal("0")
     if ingresos:
         uso_ingresos = (gastos / ingresos * Decimal("100")).quantize(
@@ -860,6 +872,7 @@ def dashboard(request):
             "posicion_neta": posicion_neta,
             "uso_ingresos": uso_ingresos,
             "estado_presupuesto": estado_presupuesto,
+            "calculo_balance": calculo_balance,
             "tarea_resumen": tarea_resumen,
             "ingresos_categoria": ingresos_categoria,
             "gastos_categoria": gastos_categoria,
@@ -983,20 +996,22 @@ def analisis_financiero(request):
         categoria_id=categoria_id,
     )
 
-    ingresos = movimientos.filter(
+    ingresos_confirmados = movimientos.filter(
         tipo=MovimientoFinanciero.Tipo.INGRESO,
     ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
-    ingresos += sum(
+    ingresos_recurrentes = sum(
         (movimiento["monto"] for movimiento in recurrentes_programados if movimiento["tipo"] == MovimientoFinanciero.Tipo.INGRESO),
         Decimal("0"),
     )
-    gastos = movimientos.filter(
+    ingresos = ingresos_confirmados + ingresos_recurrentes
+    gastos_confirmados = movimientos.filter(
         tipo=MovimientoFinanciero.Tipo.GASTO,
     ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
-    gastos += sum(
+    gastos_recurrentes = sum(
         (movimiento["monto"] for movimiento in recurrentes_programados if movimiento["tipo"] == MovimientoFinanciero.Tipo.GASTO),
         Decimal("0"),
     )
+    gastos = gastos_confirmados + gastos_recurrentes
     margen = ingresos - gastos
 
     deudas_activas = Deuda.objects.filter(
@@ -1010,7 +1025,7 @@ def analisis_financiero(request):
         cuotas_deuda_periodo = saldo_deudas
         etiqueta_deudas_balance = "Deudas activas"
     else:
-        _, cuotas_deuda_periodo = cuotas_deudas_programadas(
+        cuotas_deuda_detalle, cuotas_deuda_periodo = cuotas_deudas_programadas(
             request.user,
             fecha_inicio,
             fecha_fin,
@@ -1025,6 +1040,24 @@ def analisis_financiero(request):
         pagos_periodo = pagos_periodo.filter(deuda__categoria_id=categoria_id)
     pagos_total = pagos_periodo.aggregate(total=Sum("monto"))["total"] or Decimal("0")
     posicion_neta = margen - cuotas_deuda_periodo
+    calculo_balance = {
+        "fecha_inicio": fecha_inicio,
+        "fecha_fin": fecha_fin,
+        "ingresos_confirmados": ingresos_confirmados,
+        "ingresos_recurrentes": ingresos_recurrentes,
+        "ingresos": ingresos,
+        "gastos_confirmados": gastos_confirmados,
+        "gastos_recurrentes": gastos_recurrentes,
+        "gastos": gastos,
+        "margen": margen,
+        "obligaciones": cuotas_deuda_periodo,
+        "obligaciones_label": etiqueta_deudas_balance,
+        "posicion_neta": posicion_neta,
+        "pagos_deuda": pagos_total,
+        "saldo_deudas": saldo_deudas,
+        "cuotas_deuda_count": len(cuotas_deuda_detalle) if periodo != "todo" else deudas_activas.count(),
+        "usa_saldo_total_deudas": periodo == "todo",
+    }
 
     uso_ingresos = Decimal("0")
     if ingresos:
@@ -1167,6 +1200,7 @@ def analisis_financiero(request):
             "pagos_total": pagos_total,
             "posicion_neta": posicion_neta,
             "uso_ingresos": uso_ingresos,
+            "calculo_balance": calculo_balance,
             "top_categoria": top_categoria,
             "estado": estado,
             "chart_data": chart_data,

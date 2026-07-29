@@ -48,6 +48,43 @@
 <section class="panel">
   <div class="panel-heading">
     <div>
+      <h2>Cómo se calcula</h2>
+      <p class="muted mb-0">Desglose del balance general del mes.</p>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table class="table table-hover align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Valor</th>
+          <th>Cálculo</th>
+          <th>Resultado</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Margen antes de deudas</td>
+          <td>Ingresos {{ calculo_balance.ingresos }} - gastos reales {{ calculo_balance.gastos }}</td>
+          <td class="amount">{{ calculo_balance.margen }}</td>
+        </tr>
+        <tr>
+          <td>Cuotas de deudas del mes</td>
+          <td>{{ calculo_balance.cuotas_deuda_count }} cuotas programadas para este mes</td>
+          <td class="amount">{{ calculo_balance.cuotas_deuda }}</td>
+        </tr>
+        <tr>
+          <td><strong>Posición neta</strong></td>
+          <td>Margen {{ calculo_balance.margen }} - cuotas {{ calculo_balance.cuotas_deuda }}</td>
+          <td class="amount"><strong>{{ calculo_balance.posicion_neta }}</strong></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
       <h2>Lectura rápida</h2>
       <p class="muted mb-0">Indicadores para entender si el mes se mantiene dentro del presupuesto.</p>
     </div>
