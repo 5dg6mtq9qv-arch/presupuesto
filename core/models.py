@@ -288,6 +288,7 @@ class MovimientoFinanciero(models.Model):
     concepto = models.CharField(max_length=160)
     monto = models.DecimalField(max_digits=12, decimal_places=2)
     fecha = models.DateField()
+    fecha_pago = models.DateField(null=True, blank=True)
     comprobante = models.FileField(upload_to=movimiento_comprobante_path, blank=True)
     nota = models.TextField(blank=True)
     creado = models.DateTimeField(auto_now_add=True)

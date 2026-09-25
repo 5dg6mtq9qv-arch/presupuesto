@@ -922,6 +922,13 @@ def dashboard(request):
     ensure_user_finance_setup(request.user)
     hoy = timezone.localdate()
     inicio_mes = hoy.replace(day=1)
+    if hoy.month == 12:
+        inicio_mes_siguiente = hoy.replace(year=hoy.year + 1, month=1, day=1)
+    else:
+        inicio_mes_siguiente = hoy.replace(month=hoy.month + 1, day=1)
+    fin_mes_siguiente = inicio_mes_siguiente.replace(
+        day=calendar.monthrange(inicio_mes_siguiente.year, inicio_mes_siguiente.month)[1]
+    )
     tareas_hoy = Tarea.objects.none()
     tareas = Tarea.objects.none()
     if request.user.is_staff:
@@ -939,6 +946,28 @@ def dashboard(request):
     gastos = movimientos_mes.filter(
         tipo=MovimientoFinanciero.Tipo.GASTO,
     ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    compras_credito = MovimientoFinanciero.objects.filter(
+        usuario=request.user,
+        estado=MovimientoFinanciero.Estado.CONFIRMADO,
+        tipo=MovimientoFinanciero.Tipo.GASTO,
+        metodo_pago__tipo=MetodoPago.Tipo.CREDITO,
+        fecha_pago__isnull=False,
+    )
+    tarjeta_vence_mes = compras_credito.filter(
+        fecha_pago__year=hoy.year,
+        fecha_pago__month=hoy.month,
+    ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    tarjeta_vence_mes_siguiente = compras_credito.filter(
+        fecha_pago__year=inicio_mes_siguiente.year,
+        fecha_pago__month=inicio_mes_siguiente.month,
+    ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    tarjeta_pendiente_futuro = compras_credito.filter(
+        fecha_pago__gte=hoy,
+    ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    proximos_pagos_tarjeta = compras_credito.filter(
+        fecha_pago__gte=hoy,
+        fecha_pago__lte=fin_mes_siguiente,
+    ).select_related("metodo_pago", "cuenta").order_by("fecha_pago", "concepto")
     margen = ingresos - gastos
     deudas_activas = Deuda.objects.filter(
         usuario=request.user,
@@ -1157,6 +1186,11 @@ def dashboard(request):
             "saldo_disponible": saldo_disponible,
             "patrimonio_neto": patrimonio_neto,
             "cuotas_deuda_mes": cuotas_deuda_mes,
+            "tarjeta_vence_mes": tarjeta_vence_mes,
+            "tarjeta_vence_mes_siguiente": tarjeta_vence_mes_siguiente,
+            "tarjeta_pendiente_futuro": tarjeta_pendiente_futuro,
+            "inicio_mes_siguiente": inicio_mes_siguiente,
+            "proximos_pagos_tarjeta": proximos_pagos_tarjeta,
             "pagos_mes": pagos_mes,
             "posicion_neta": posicion_neta,
             "uso_ingresos": uso_ingresos,

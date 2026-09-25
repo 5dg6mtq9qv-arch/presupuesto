@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
@@ -6,6 +6,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
+from .forms import MovimientoFinancieroForm
 from .models import (
     Categoria,
     CuentaFinanciera,
@@ -71,6 +72,71 @@ class PrimerUsoTests(TestCase):
         self.assertContains(dashboard, "Primeros pasos · 0 de 3")
         self.assertContains(dashboard, "Registrar ingreso")
         self.assertContains(dashboard, "Registrar gasto")
+
+
+class GastoTarjetaCreditoTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="tarjeta", password="test")
+        ensure_user_finance_setup(self.user)
+        self.categoria = Categoria.objects.filter(
+            usuario=self.user,
+            tipo=Categoria.Tipo.FINANZAS,
+            parent__isnull=False,
+        ).first()
+        self.cuenta = CuentaFinanciera.objects.filter(usuario=self.user).first()
+        self.credito = MetodoPago.objects.get(usuario=self.user, tipo=MetodoPago.Tipo.CREDITO)
+
+    def datos(self, **overrides):
+        data = {
+            "categoria": self.categoria.pk,
+            "cuenta": self.cuenta.pk,
+            "metodo_pago": self.credito.pk,
+            "monto": "125.50",
+            "fecha": "2026-09-25",
+            "concepto": "Compra con tarjeta",
+        }
+        data.update(overrides)
+        return data
+
+    def test_credito_exige_fecha_maxima_de_pago(self):
+        form = MovimientoFinancieroForm(
+            self.datos(),
+            user=self.user,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("fecha_pago", form.errors)
+
+    def test_fecha_pago_no_puede_ser_anterior_a_compra(self):
+        form = MovimientoFinancieroForm(
+            self.datos(fecha_pago="2026-09-24"),
+            user=self.user,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("fecha_pago", form.errors)
+
+    def test_dashboard_muestra_deuda_de_tarjeta_del_mes_siguiente(self):
+        MovimientoFinanciero.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+            categoria=self.categoria,
+            cuenta=self.cuenta,
+            metodo_pago=self.credito,
+            concepto="Compra con tarjeta",
+            monto="125.50",
+            fecha=timezone.localdate(),
+            fecha_pago=(timezone.localdate().replace(day=1) + timedelta(days=40)).replace(day=15),
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["tarjeta_vence_mes_siguiente"], Decimal("125.50"))
+        self.assertContains(response, "Próximos pagos de tarjeta")
 
 
 class PasswordPermissionTests(TestCase):

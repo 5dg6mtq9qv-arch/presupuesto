@@ -33,3 +33,24 @@
   </form>
 </section>
 {% endblock %}
+
+{% block scripts %}
+{% if tipo == "gasto" %}
+<script>
+  (() => {
+    const metodo = document.getElementById("id_metodo_pago");
+    const fechaPago = document.getElementById("id_fecha_pago");
+    if (!metodo || !fechaPago) return;
+    const container = fechaPago.closest(".unfold-field");
+    const actualizar = () => {
+      const esCredito = metodo.selectedOptions[0]?.dataset.tipo === "credito";
+      const visible = esCredito || Boolean(fechaPago.value);
+      container.hidden = !visible;
+      fechaPago.required = esCredito;
+    };
+    metodo.addEventListener("change", actualizar);
+    actualizar();
+  })();
+</script>
+{% endif %}
+{% endblock %}

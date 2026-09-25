@@ -101,6 +101,15 @@ class ParentCategorySelect(forms.Select):
         return option
 
 
+class MetodoPagoSelect(forms.Select):
+    def create_option(self, name, value, label, selected, index, subindex=None, attrs=None):
+        option = super().create_option(name, value, label, selected, index, subindex=subindex, attrs=attrs)
+        instance = getattr(value, "instance", None)
+        if instance:
+            option["attrs"]["data-tipo"] = instance.tipo
+        return option
+
+
 class BootstrapFormMixin:
     def apply_bootstrap_classes(self):
         for field in self.fields.values():
@@ -377,19 +386,22 @@ class TareaForm(UserScopedModelForm):
 class MovimientoFinancieroForm(UserScopedModelForm):
     class Meta:
         model = MovimientoFinanciero
-        fields = ["categoria", "cuenta", "metodo_pago", "etiquetas", "monto", "fecha", "concepto", "comprobante"]
+        fields = ["categoria", "cuenta", "metodo_pago", "etiquetas", "monto", "fecha", "fecha_pago", "concepto", "comprobante"]
         labels = {
             "concepto": "Descripción",
             "comprobante": "Comprobante",
             "metodo_pago": "Método de pago",
-            "fecha": "Fecha",
+            "fecha": "Fecha de compra",
+            "fecha_pago": "Fecha máxima de pago",
         }
         help_texts = {
             "comprobante": "Opcional: sube una captura, foto o archivo del pago.",
-            "fecha": "Si es crédito, usa el día en que toca pagarlo para que entre al balance correcto.",
+            "fecha": "Día en que realizaste la compra.",
+            "fecha_pago": "Obligatoria si el método de pago es crédito. Se usa para proyectar tus compromisos futuros.",
         }
         widgets = {
             "fecha": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
+            "fecha_pago": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
             "monto": forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
             "comprobante": forms.ClearableFileInput(attrs={"accept": "image/*,.pdf"}),
             "etiquetas": forms.SelectMultiple(attrs={"size": "1", "data-compact-multiple": "true"}),
@@ -410,8 +422,11 @@ class MovimientoFinancieroForm(UserScopedModelForm):
         self.fields["cuenta"].queryset = CuentaFinanciera.objects.filter(usuario=user, activa=True).order_by("nombre")
         self.fields["cuenta"].empty_label = None
         self.fields["metodo_pago"].queryset = MetodoPago.objects.filter(usuario=user, activo=True).order_by("nombre")
+        self.fields["metodo_pago"].widget = MetodoPagoSelect(attrs=self.fields["metodo_pago"].widget.attrs)
         self.fields["metodo_pago"].empty_label = "Sin método"
         self.fields["etiquetas"].queryset = Etiqueta.objects.filter(usuario=user).order_by("nombre")
+        if self.tipo != MovimientoFinanciero.Tipo.GASTO:
+            self.fields.pop("fecha_pago", None)
         if not self.is_bound and not self.instance.pk:
             self.fields["fecha"].initial = timezone.localdate().isoformat()
             self.fields["cuenta"].initial = get_general_account(user)
@@ -419,9 +434,20 @@ class MovimientoFinancieroForm(UserScopedModelForm):
     def clean(self):
         cleaned_data = super().clean()
         categoria = cleaned_data.get("categoria")
+        metodo_pago = cleaned_data.get("metodo_pago")
+        fecha = cleaned_data.get("fecha")
+        fecha_pago = cleaned_data.get("fecha_pago")
 
         if self.tipo == MovimientoFinanciero.Tipo.GASTO and not categoria:
             self.add_error("categoria", "Selecciona una categoria para que el gasto aparezca bien en las graficas.")
+
+        es_credito = metodo_pago and metodo_pago.tipo == MetodoPago.Tipo.CREDITO
+        if self.tipo == MovimientoFinanciero.Tipo.GASTO and es_credito and not fecha_pago:
+            self.add_error("fecha_pago", "Indica la fecha máxima de pago de la tarjeta.")
+        if fecha and fecha_pago and fecha_pago < fecha:
+            self.add_error("fecha_pago", "La fecha máxima de pago no puede ser anterior a la fecha de compra.")
+        if self.tipo == MovimientoFinanciero.Tipo.GASTO and not es_credito:
+            cleaned_data["fecha_pago"] = None
 
         return cleaned_data
 
