@@ -64,6 +64,7 @@ from .services import (
     cuotas_deudas_programadas,
     ensure_user_finance_setup,
     movimientos_recurrentes_programados,
+    reprogramar_fechas_cuotas,
 )
 
 User = get_user_model()
@@ -2030,12 +2031,17 @@ def deuda_create(request):
 def deuda_update(request, pk):
     deuda = get_object_or_404(Deuda, pk=pk, usuario=request.user)
     if request.method == "POST":
+        fecha_inicio_anterior = deuda.fecha_inicio
+        fecha_vencimiento_anterior = deuda.fecha_vencimiento
+        saldo_anterior = deuda.saldo_actual
         form = DeudaForm(request.POST, instance=deuda, user=request.user)
         if form.is_valid():
-            saldo_anterior = deuda.saldo_actual
             tenia_pagos = deuda.pagos.exists()
             form.save()
             pagos_historicos = [] if tenia_pagos else crear_historial_inicial_deuda(deuda)
+            pagos_reprogramados = []
+            if fecha_inicio_anterior != deuda.fecha_inicio:
+                pagos_reprogramados = reprogramar_fechas_cuotas(deuda)
             registrar_auditoria(
                 request,
                 RegistroAuditoria.Accion.ACTUALIZAR,
@@ -2043,10 +2049,18 @@ def deuda_update(request, pk):
                 cambios={
                     "saldo_anterior": str(saldo_anterior),
                     "saldo_actual": str(deuda.saldo_actual),
+                    "fecha_inicio_anterior": str(fecha_inicio_anterior),
+                    "fecha_inicio_nueva": str(deuda.fecha_inicio),
+                    "fecha_vencimiento_anterior": str(fecha_vencimiento_anterior),
+                    "fecha_vencimiento_nueva": str(deuda.fecha_vencimiento),
                     "cuotas_historicas_reconstruidas": len(pagos_historicos),
+                    "cuotas_reprogramadas": len(pagos_reprogramados),
                 },
             )
-            messages.success(request, "Deuda actualizada.")
+            if pagos_reprogramados:
+                messages.success(request, f"Deuda actualizada y {len(pagos_reprogramados)} cuotas reprogramadas.")
+            else:
+                messages.success(request, "Deuda actualizada.")
             return redirect("deuda_list")
     else:
         form = DeudaForm(instance=deuda, user=request.user)

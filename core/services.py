@@ -144,6 +144,21 @@ def crear_historial_inicial_deuda(deuda, hasta_fecha=None):
     return creados
 
 
+@transaction.atomic
+def reprogramar_fechas_cuotas(deuda):
+    """Align every numbered payment with the debt's current start date."""
+    deuda = Deuda.objects.select_for_update().get(pk=deuda.pk)
+    actualizados = []
+    for pago in deuda.pagos.filter(cuota_numero__isnull=False):
+        nueva_fecha = sumar_meses(deuda.fecha_inicio, pago.cuota_numero)
+        if pago.fecha == nueva_fecha:
+            continue
+        pago.fecha = nueva_fecha
+        pago.save(update_fields=["fecha"])
+        actualizados.append(pago)
+    return actualizados
+
+
 def iter_fechas_recurrentes_vencidas(recurrente, hasta_fecha):
     creado_local = timezone.localtime(recurrente.creado)
     anio = creado_local.year

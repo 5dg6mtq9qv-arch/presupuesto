@@ -726,6 +726,28 @@
     .debt-payment-meta { margin-top: 3px; color: var(--muted); font-size: 12px; }
     .debt-payment-actions { display: flex; align-items: center; gap: 6px; }
     .debt-payment-actions form { margin: 0; }
+    .paid-installments { display: grid; gap: 8px; }
+    .paid-installments summary {
+      cursor: pointer;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      min-height: 36px;
+      padding: 7px 12px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      color: var(--primary);
+      background: var(--surface);
+      font-weight: 700;
+      user-select: none;
+    }
+    .paid-installments summary::-webkit-details-marker { display: none; }
+    .paid-installments summary:hover { border-color: #9dd8d1; background: var(--primary-soft); }
+    .paid-installments summary .collapse-icon { transition: transform .18s ease; }
+    .paid-installments[open] summary .collapse-icon { transform: rotate(180deg); }
+    .paid-installments-list { display: grid; gap: 8px; }
     .debt-actions { display: flex; justify-content: flex-end; gap: 6px; }
 
     .row {

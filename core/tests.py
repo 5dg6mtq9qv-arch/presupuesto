@@ -21,6 +21,7 @@ from .services import (
     ensure_user_finance_setup,
     generar_movimientos_recurrentes,
     generar_pagos_deudas,
+    reprogramar_fechas_cuotas,
 )
 
 
@@ -181,6 +182,21 @@ class MovimientoRecurrenteServiceTests(TestCase):
         ])
         self.assertEqual(sum((pago.monto for pago in pagos), Decimal("0")), Decimal("117.04"))
         self.assertEqual(deuda.saldo_actual, Decimal("585.26"))
+
+        deuda.fecha_inicio = datetime(2026, 5, 4).date()
+        deuda.save(update_fields=["fecha_inicio"])
+        actualizados = reprogramar_fechas_cuotas(deuda)
+
+        self.assertEqual(len(actualizados), 4)
+        self.assertEqual(
+            list(deuda.pagos.order_by("cuota_numero").values_list("fecha", flat=True)),
+            [
+                datetime(2026, 6, 4).date(),
+                datetime(2026, 7, 4).date(),
+                datetime(2026, 8, 4).date(),
+                datetime(2026, 9, 4).date(),
+            ],
+        )
 
     def test_generacion_de_pagos_de_deuda_es_idempotente(self):
         deuda = Deuda.objects.create(
