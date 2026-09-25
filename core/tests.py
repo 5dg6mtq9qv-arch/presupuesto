@@ -108,6 +108,31 @@ class GastoTarjetaCreditoTests(TestCase):
         self.assertFalse(form.is_valid())
         self.assertIn("fecha_pago", form.errors)
 
+    def test_selector_muestra_los_metodos_de_pago(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("movimiento_gasto_create"))
+
+        self.assertContains(response, "Crédito")
+        self.assertContains(response, 'data-tipo="credito"')
+
+    def test_compra_credito_crea_deuda_y_pago_pendiente(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("movimiento_gasto_create"),
+            self.datos(fecha_pago="2026-10-15", nuevo_acreedor_credito="Visa Pichincha"),
+        )
+
+        self.assertRedirects(response, f"{reverse('movimiento_list')}?tipo=gasto")
+        movimiento = MovimientoFinanciero.objects.get(concepto="Compra con tarjeta")
+        deuda = Deuda.objects.get(movimiento_origen=movimiento)
+        self.assertEqual(deuda.acreedor, "Visa Pichincha")
+        self.assertEqual(deuda.saldo_actual, Decimal("125.50"))
+        pago = deuda.pagos.get(cuota_numero=1)
+        self.assertEqual(pago.fecha, datetime(2026, 10, 15).date())
+        self.assertEqual(pago.estado, PagoDeuda.Estado.PENDIENTE)
+
     def test_fecha_pago_no_puede_ser_anterior_a_compra(self):
         form = MovimientoFinancieroForm(
             self.datos(fecha_pago="2026-09-24"),

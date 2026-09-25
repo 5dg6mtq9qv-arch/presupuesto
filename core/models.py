@@ -278,6 +278,13 @@ class MovimientoFinanciero(models.Model):
         null=True,
         blank=True,
     )
+    acreedor_credito = models.ForeignKey(
+        "Acreedor",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="compras_credito",
+    )
     recurrente = models.ForeignKey(
         "MovimientoRecurrente",
         on_delete=models.SET_NULL,
@@ -382,6 +389,13 @@ class Deuda(models.Model):
         CANCELADA = "cancelada", "Cancelada"
 
     usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    movimiento_origen = models.OneToOneField(
+        MovimientoFinanciero,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="deuda_generada",
+    )
     categoria = models.ForeignKey(
         Categoria,
         on_delete=models.SET_NULL,

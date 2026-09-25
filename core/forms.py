@@ -384,15 +384,23 @@ class TareaForm(UserScopedModelForm):
 
 
 class MovimientoFinancieroForm(UserScopedModelForm):
+    nuevo_acreedor_credito = forms.CharField(
+        label="Nuevo acreedor",
+        max_length=120,
+        required=False,
+        help_text="Ej.: Visa Pichincha, Mastercard Pacífico o la tienda que te dio el crédito.",
+    )
+
     class Meta:
         model = MovimientoFinanciero
-        fields = ["categoria", "cuenta", "metodo_pago", "etiquetas", "monto", "fecha", "fecha_pago", "concepto", "comprobante"]
+        fields = ["categoria", "cuenta", "metodo_pago", "acreedor_credito", "nuevo_acreedor_credito", "etiquetas", "monto", "fecha", "fecha_pago", "concepto", "comprobante"]
         labels = {
             "concepto": "Descripción",
             "comprobante": "Comprobante",
             "metodo_pago": "Método de pago",
             "fecha": "Fecha de compra",
             "fecha_pago": "Fecha máxima de pago",
+            "acreedor_credito": "Acreedor",
         }
         help_texts = {
             "comprobante": "Opcional: sube una captura, foto o archivo del pago.",
@@ -405,6 +413,7 @@ class MovimientoFinancieroForm(UserScopedModelForm):
             "monto": forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
             "comprobante": forms.ClearableFileInput(attrs={"accept": "image/*,.pdf"}),
             "etiquetas": forms.SelectMultiple(attrs={"size": "1", "data-compact-multiple": "true"}),
+            "metodo_pago": MetodoPagoSelect(),
         }
 
     def __init__(self, *args, user=None, tipo=None, **kwargs):
@@ -422,11 +431,14 @@ class MovimientoFinancieroForm(UserScopedModelForm):
         self.fields["cuenta"].queryset = CuentaFinanciera.objects.filter(usuario=user, activa=True).order_by("nombre")
         self.fields["cuenta"].empty_label = None
         self.fields["metodo_pago"].queryset = MetodoPago.objects.filter(usuario=user, activo=True).order_by("nombre")
-        self.fields["metodo_pago"].widget = MetodoPagoSelect(attrs=self.fields["metodo_pago"].widget.attrs)
         self.fields["metodo_pago"].empty_label = "Sin método"
+        self.fields["acreedor_credito"].queryset = Acreedor.objects.filter(usuario=user, activo=True).order_by("nombre")
+        self.fields["acreedor_credito"].empty_label = "Selecciona un acreedor"
         self.fields["etiquetas"].queryset = Etiqueta.objects.filter(usuario=user).order_by("nombre")
         if self.tipo != MovimientoFinanciero.Tipo.GASTO:
             self.fields.pop("fecha_pago", None)
+            self.fields.pop("acreedor_credito", None)
+            self.fields.pop("nuevo_acreedor_credito", None)
         if not self.is_bound and not self.instance.pk:
             self.fields["fecha"].initial = timezone.localdate().isoformat()
             self.fields["cuenta"].initial = get_general_account(user)
@@ -435,6 +447,9 @@ class MovimientoFinancieroForm(UserScopedModelForm):
         cleaned_data = super().clean()
         categoria = cleaned_data.get("categoria")
         metodo_pago = cleaned_data.get("metodo_pago")
+        cuenta = cleaned_data.get("cuenta")
+        acreedor_credito = cleaned_data.get("acreedor_credito")
+        nuevo_acreedor = (cleaned_data.get("nuevo_acreedor_credito") or "").strip()
         fecha = cleaned_data.get("fecha")
         fecha_pago = cleaned_data.get("fecha_pago")
 
@@ -444,15 +459,28 @@ class MovimientoFinancieroForm(UserScopedModelForm):
         es_credito = metodo_pago and metodo_pago.tipo == MetodoPago.Tipo.CREDITO
         if self.tipo == MovimientoFinanciero.Tipo.GASTO and es_credito and not fecha_pago:
             self.add_error("fecha_pago", "Indica la fecha máxima de pago de la tarjeta.")
+        if self.tipo == MovimientoFinanciero.Tipo.GASTO and es_credito:
+            if acreedor_credito and nuevo_acreedor:
+                self.add_error("nuevo_acreedor_credito", "Selecciona un acreedor o crea uno nuevo, no ambos.")
+            elif not acreedor_credito and not nuevo_acreedor:
+                self.add_error("acreedor_credito", "Selecciona un acreedor o escribe uno nuevo para la compra a crédito.")
         if fecha and fecha_pago and fecha_pago < fecha:
             self.add_error("fecha_pago", "La fecha máxima de pago no puede ser anterior a la fecha de compra.")
         if self.tipo == MovimientoFinanciero.Tipo.GASTO and not es_credito:
             cleaned_data["fecha_pago"] = None
+            cleaned_data["acreedor_credito"] = None
+            cleaned_data["nuevo_acreedor_credito"] = ""
 
         return cleaned_data
 
     def save(self, commit=True):
         instance = super().save(commit=False)
+        nombre_nuevo = (self.cleaned_data.get("nuevo_acreedor_credito") or "").strip()
+        if nombre_nuevo:
+            acreedor = Acreedor.objects.filter(usuario=self.user, nombre__iexact=nombre_nuevo).first()
+            if not acreedor:
+                acreedor = Acreedor.objects.create(usuario=self.user, nombre=nombre_nuevo)
+            instance.acreedor_credito = acreedor
         if instance.categoria_id and not instance.categoria.parent_id:
             instance.categoria = get_general_subcategory(instance.categoria)
         if not instance.cuenta_id:

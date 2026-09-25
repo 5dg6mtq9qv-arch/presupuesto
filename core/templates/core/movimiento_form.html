@@ -40,12 +40,14 @@
   (() => {
     const metodo = document.getElementById("id_metodo_pago");
     const fechaPago = document.getElementById("id_fecha_pago");
+    const acreedor = document.getElementById("id_acreedor_credito");
+    const nuevoAcreedor = document.getElementById("id_nuevo_acreedor_credito");
     if (!metodo || !fechaPago) return;
-    const container = fechaPago.closest(".unfold-field");
+    const camposCredito = [fechaPago, acreedor, nuevoAcreedor].filter(Boolean);
     const actualizar = () => {
       const esCredito = metodo.selectedOptions[0]?.dataset.tipo === "credito";
-      const visible = esCredito || Boolean(fechaPago.value);
-      container.hidden = !visible;
+      const visible = esCredito || camposCredito.some(campo => Boolean(campo.value));
+      camposCredito.forEach(campo => { campo.closest(".unfold-field").hidden = !visible; });
       fechaPago.required = esCredito;
     };
     metodo.addEventListener("change", actualizar);

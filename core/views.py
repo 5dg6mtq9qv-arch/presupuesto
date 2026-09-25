@@ -66,16 +66,20 @@ from .services import (
     ensure_user_finance_setup,
     movimientos_recurrentes_programados,
     reprogramar_fechas_cuotas,
+    sincronizar_deuda_compra_credito,
 )
 
 User = get_user_model()
 
 
+@transaction.atomic
 def assign_user_and_save(form, user):
     instance = form.save(commit=False)
     instance.usuario = user
     instance.save()
     form.save_m2m()
+    if isinstance(instance, MovimientoFinanciero):
+        sincronizar_deuda_compra_credito(instance)
     return instance
 
 
@@ -1996,7 +2000,8 @@ def movimiento_update(request, pk):
         )
         if form.is_valid():
             monto_anterior = movimiento.monto
-            form.save()
+            movimiento = form.save()
+            sincronizar_deuda_compra_credito(movimiento)
             registrar_auditoria(
                 request,
                 RegistroAuditoria.Accion.ACTUALIZAR,
@@ -2032,6 +2037,7 @@ def movimiento_delete(request, pk):
     registrar_eliminacion(request, movimiento)
     movimiento.estado = MovimientoFinanciero.Estado.ELIMINADO
     movimiento.save(update_fields=["estado"])
+    sincronizar_deuda_compra_credito(movimiento)
     messages.success(request, "Movimiento eliminado.")
     return redirect(f"{reverse('movimiento_list')}?tipo={tipo}")
 
