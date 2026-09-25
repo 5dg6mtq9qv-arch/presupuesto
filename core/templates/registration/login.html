@@ -117,7 +117,9 @@
       margin-bottom: 14px;
       padding: 10px 12px;
     }
-    .actions { display: flex; justify-content: flex-end; }
+    .actions { display: grid; gap: 12px; }
+    .btn { width: 100%; font-weight: 700; gap: 8px; }
+    .register-link { color: var(--primary); text-align: center; text-decoration: none; }
   </style>
 </head>
 <body>
@@ -139,9 +141,11 @@
         {% csrf_token %}
         {% include "core/includes/unfold_form_fields.html" %}
         <div class="actions">
-          <button class="btn" type="submit" title="Entrar" aria-label="Entrar">
+          <button class="btn" type="submit">
             <span class="material-symbols-outlined">login</span>
+            <span>Entrar</span>
           </button>
+          <a class="register-link" href="{% url 'registro' %}">Crear una cuenta nueva</a>
         </div>
       </form>
     </section>

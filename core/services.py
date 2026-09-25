@@ -6,7 +6,70 @@ from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from .models import Deuda, MovimientoFinanciero, MovimientoRecurrente, PagoDeuda
+from .models import (
+    Categoria,
+    CuentaFinanciera,
+    Deuda,
+    MetodoPago,
+    MovimientoFinanciero,
+    MovimientoRecurrente,
+    PagoDeuda,
+)
+
+
+DEFAULT_FINANCIAL_CATEGORIES = [
+    ("Comida", "#ef4444", ["Almuerzo", "Merienda", "Cena", "Restaurante", "Supermercado", "Café"]),
+    ("Compras", "#38bdf8", ["Ropa", "Tecnología", "Hogar", "Regalos"]),
+    ("Vivienda", "#f59e0b", ["Arriendo", "Servicios básicos", "Mantenimiento"]),
+    ("Transporte", "#64748b", ["Bus", "Taxi", "Combustible", "Peaje"]),
+    ("Vehículo", "#a855f7", ["Mantenimiento", "Parqueadero", "Seguro"]),
+    ("Vida y entretenimiento", "#22c55e", ["Salud", "Deporte", "Ocio", "Suscripciones"]),
+    ("Comunicación, PC", "#6366f1", ["Internet", "Celular", "Software", "Equipos"]),
+    ("Ingresos", "#10b981", ["Salario", "Venta", "Freelance", "Intereses"]),
+]
+
+
+@transaction.atomic
+def ensure_user_finance_setup(user):
+    """Provision the minimum useful workspace for every new or existing user."""
+    for name, category_type, color in [
+        ("General", CuentaFinanciera.Tipo.OTRO, "#64748b"),
+        ("Efectivo", CuentaFinanciera.Tipo.EFECTIVO, "#22c55e"),
+    ]:
+        CuentaFinanciera.objects.get_or_create(
+            usuario=user,
+            nombre=name,
+            defaults={"tipo": category_type, "color": color},
+        )
+
+    for name, payment_type in [
+        ("Efectivo", MetodoPago.Tipo.EFECTIVO),
+        ("Transferencia", MetodoPago.Tipo.TRANSFERENCIA),
+        ("Débito", MetodoPago.Tipo.DEBITO),
+        ("Crédito", MetodoPago.Tipo.CREDITO),
+    ]:
+        MetodoPago.objects.get_or_create(
+            usuario=user,
+            nombre=name,
+            defaults={"tipo": payment_type},
+        )
+
+    for name, color, children in DEFAULT_FINANCIAL_CATEGORIES:
+        parent, _ = Categoria.objects.get_or_create(
+            usuario=user,
+            tipo=Categoria.Tipo.FINANZAS,
+            parent=None,
+            nombre=name,
+            defaults={"color": color},
+        )
+        for child_name in ["General", *children]:
+            Categoria.objects.get_or_create(
+                usuario=user,
+                tipo=Categoria.Tipo.FINANZAS,
+                parent=parent,
+                nombre=child_name,
+                defaults={"color": parent.color or color},
+            )
 
 
 def fecha_recurrente_para_mes(anio, mes, dia_mes):

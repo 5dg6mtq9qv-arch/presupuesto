@@ -4,6 +4,7 @@ from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.contrib import messages
+from django.contrib.auth import login
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.decorators import user_passes_test
@@ -29,6 +30,7 @@ from .forms import (
     PerfilCuentaForm,
     PerfilUsuarioForm,
     PresupuestoMensualForm,
+    RegistroUsuarioForm,
     CategoriaPrincipalForm,
     SubcategoriaForm,
     TareaForm,
@@ -50,7 +52,11 @@ from .models import (
     PresupuestoMensual,
     Tarea,
 )
-from .services import cuotas_deudas_programadas, movimientos_recurrentes_programados
+from .services import (
+    cuotas_deudas_programadas,
+    ensure_user_finance_setup,
+    movimientos_recurrentes_programados,
+)
 
 User = get_user_model()
 
@@ -341,6 +347,21 @@ def admin_required(view_func):
     return login_required(
         user_passes_test(lambda user: user.is_staff, login_url="dashboard")(view_func)
     )
+
+
+def registro(request):
+    if request.user.is_authenticated:
+        return redirect("dashboard")
+
+    form = RegistroUsuarioForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        user = form.save()
+        ensure_user_finance_setup(user)
+        login(request, user)
+        messages.success(request, "Tu espacio está listo. Completa estos tres pasos para comenzar.")
+        return redirect("dashboard")
+
+    return render(request, "registration/registro.html", {"form": form})
 
 
 @login_required
@@ -681,6 +702,7 @@ def usuario_password(request, pk):
 
 @login_required
 def dashboard(request):
+    ensure_user_finance_setup(request.user)
     hoy = timezone.localdate()
     inicio_mes = hoy.replace(day=1)
     tareas_hoy = Tarea.objects.none()
@@ -857,6 +879,35 @@ def dashboard(request):
         estado=MovimientoFinanciero.Estado.CONFIRMADO,
     )[:6]
 
+    onboarding_steps = [
+        {
+            "title": "Revisa tus cuentas",
+            "description": "Ajusta el saldo inicial de General, Efectivo o agrega tu banco.",
+            "url": reverse("cuenta_list"),
+            "done": CuentaFinanciera.objects.filter(usuario=request.user).exclude(saldo_inicial=0).exists(),
+        },
+        {
+            "title": "Registra un ingreso",
+            "description": "Empieza con salario, venta u otro dinero que hayas recibido.",
+            "url": reverse("movimiento_ingreso_create"),
+            "done": MovimientoFinanciero.objects.filter(
+                usuario=request.user,
+                estado=MovimientoFinanciero.Estado.CONFIRMADO,
+                tipo=MovimientoFinanciero.Tipo.INGRESO,
+            ).exists(),
+        },
+        {
+            "title": "Registra un gasto",
+            "description": "Clasifica una compra para activar el análisis por categorías.",
+            "url": reverse("movimiento_gasto_create"),
+            "done": MovimientoFinanciero.objects.filter(
+                usuario=request.user,
+                estado=MovimientoFinanciero.Estado.CONFIRMADO,
+                tipo=MovimientoFinanciero.Tipo.GASTO,
+            ).exists(),
+        },
+    ]
+
     return render(
         request,
         "core/dashboard.html",
@@ -881,6 +932,8 @@ def dashboard(request):
             "top_gastos": top_gastos,
             "chart_data": chart_data,
             "ultimos_movimientos": ultimos_movimientos,
+            "onboarding_steps": onboarding_steps,
+            "onboarding_done": sum(step["done"] for step in onboarding_steps),
         },
     )
 

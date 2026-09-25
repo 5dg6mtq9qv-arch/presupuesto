@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Crear cuenta · Gestor de Finanzas Personales</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+  <style>
+    :root { --bg:#f8fafc; --surface:#fff; --text:#111827; --muted:#6b7280; --line:#e5e7eb; --primary:#2563eb; --danger:#dc2626; }
+    * { box-sizing:border-box; }
+    body { min-height:100vh; margin:0; padding:32px 16px; display:grid; place-items:center; background:var(--bg); color:var(--text); font:14px Inter, sans-serif; }
+    .register-box { width:min(100%, 560px); }
+    .brand { display:flex; align-items:center; justify-content:center; gap:12px; margin-bottom:18px; color:var(--text); font-size:18px; font-weight:800; text-decoration:none; }
+    .brand-mark { width:40px; height:40px; display:grid; place-items:center; border-radius:11px; background:var(--primary); color:#fff; }
+    .panel { padding:28px; border:1px solid var(--line); border-top:3px solid var(--primary); border-radius:14px; background:var(--surface); box-shadow:0 18px 50px rgba(15,23,42,.08); }
+    h1 { margin:0 0 8px; font-size:24px; text-align:center; }
+    .intro { margin:0 0 22px; color:var(--muted); text-align:center; }
+    form { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+    .unfold-field { display:grid; gap:6px; }
+    .unfold-field:nth-last-child(-n+2), .actions { grid-column:1 / -1; }
+    label { font-weight:700; }
+    input { width:100%; min-height:44px; padding:10px 12px; border:1px solid #d1d5db; border-radius:9px; font:inherit; }
+    input:focus { outline:0; border-color:var(--primary); box-shadow:0 0 0 3px rgba(37,99,235,.12); }
+    .form-text { color:var(--muted); font-size:12px; }
+    .text-danger { color:var(--danger); font-size:12px; }
+    .actions { display:grid; gap:12px; margin-top:6px; }
+    .btn { min-height:44px; border:1px solid var(--primary); border-radius:9px; background:var(--primary); color:#fff; cursor:pointer; font:700 14px Inter, sans-serif; }
+    .login-link { color:var(--primary); text-align:center; }
+    @media(max-width:600px) { form { grid-template-columns:1fr; } .unfold-field { grid-column:1; } .panel { padding:22px; } }
+  </style>
+</head>
+<body>
+  <div class="register-box">
+    <a class="brand" href="{% url 'login' %}"><span class="brand-mark">GFP</span><span>Gestor de Finanzas Personales</span></a>
+    <section class="panel">
+      <h1>Crea tu cuenta</h1>
+      <p class="intro">Prepararemos categorías, cuentas y métodos de pago para que puedas empezar de inmediato.</p>
+      <form method="post">
+        {% csrf_token %}
+        {% include "core/includes/unfold_form_fields.html" %}
+        <div class="actions">
+          <button class="btn" type="submit">Crear mi espacio</button>
+          <a class="login-link" href="{% url 'login' %}">Ya tengo cuenta</a>
+        </div>
+      </form>
+    </section>
+  </div>
+</body>
+</html>

@@ -2,7 +2,7 @@ import calendar
 
 from django import forms
 from django.contrib.auth import get_user_model
-from django.contrib.auth.forms import SetPasswordForm
+from django.contrib.auth.forms import SetPasswordForm, UserCreationForm
 from django.contrib.auth.password_validation import validate_password
 from django.utils import timezone
 
@@ -157,6 +157,23 @@ class UsuarioCreateForm(BootstrapFormMixin, forms.ModelForm):
         if commit:
             user.save()
         return user
+
+
+class RegistroUsuarioForm(BootstrapFormMixin, UserCreationForm):
+    class Meta(UserCreationForm.Meta):
+        model = User
+        fields = ("username", "first_name", "last_name", "email")
+        labels = {
+            "username": "Usuario",
+            "first_name": "Nombre",
+            "last_name": "Apellido",
+            "email": "Correo electrónico",
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["email"].required = True
+        self.apply_bootstrap_classes()
 
 
 class UsuarioUpdateForm(BootstrapFormMixin, forms.ModelForm):

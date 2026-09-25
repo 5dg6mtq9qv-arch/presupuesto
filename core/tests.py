@@ -6,8 +6,69 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
-from .models import Deuda, MovimientoFinanciero, MovimientoRecurrente, PagoDeuda
-from .services import cuotas_deudas_programadas, generar_movimientos_recurrentes, generar_pagos_deudas
+from .models import (
+    Categoria,
+    CuentaFinanciera,
+    Deuda,
+    MetodoPago,
+    MovimientoFinanciero,
+    MovimientoRecurrente,
+    PagoDeuda,
+)
+from .services import (
+    cuotas_deudas_programadas,
+    ensure_user_finance_setup,
+    generar_movimientos_recurrentes,
+    generar_pagos_deudas,
+)
+
+
+class PrimerUsoTests(TestCase):
+    def test_setup_financiero_es_completo_e_idempotente(self):
+        user = get_user_model().objects.create_user(username="nuevo", password="test")
+
+        ensure_user_finance_setup(user)
+        first_counts = (
+            Categoria.objects.filter(usuario=user).count(),
+            CuentaFinanciera.objects.filter(usuario=user).count(),
+            MetodoPago.objects.filter(usuario=user).count(),
+        )
+        ensure_user_finance_setup(user)
+
+        self.assertGreater(first_counts[0], 8)
+        self.assertEqual(first_counts[1:], (2, 4))
+        self.assertEqual(
+            first_counts,
+            (
+                Categoria.objects.filter(usuario=user).count(),
+                CuentaFinanciera.objects.filter(usuario=user).count(),
+                MetodoPago.objects.filter(usuario=user).count(),
+            ),
+        )
+
+    def test_registro_crea_espacio_e_inicia_sesion(self):
+        response = self.client.post(
+            reverse("registro"),
+            {
+                "username": "persona",
+                "first_name": "Ana",
+                "last_name": "Pérez",
+                "email": "ana@example.com",
+                "password1": "Clave-segura-2026!",
+                "password2": "Clave-segura-2026!",
+            },
+        )
+
+        user = get_user_model().objects.get(username="persona")
+        self.assertRedirects(response, reverse("dashboard"))
+        self.assertEqual(int(self.client.session["_auth_user_id"]), user.pk)
+        self.assertTrue(CuentaFinanciera.objects.filter(usuario=user, nombre="General").exists())
+        self.assertTrue(Categoria.objects.filter(usuario=user, nombre="Ingresos").exists())
+
+        dashboard = self.client.get(reverse("dashboard"))
+        self.assertContains(dashboard, "Primeros pasos · 0 de 3")
+        self.assertContains(dashboard, "Registrar ingreso")
+        self.assertContains(dashboard, "Registrar gasto")
 
 
 class MovimientoRecurrenteServiceTests(TestCase):

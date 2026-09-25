@@ -266,6 +266,16 @@
       flex-wrap: wrap;
     }
 
+    .onboarding-panel { border-top: 3px solid var(--primary); }
+    .eyebrow { display:block; margin-bottom:6px; color:var(--primary); font-size:11px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
+    .onboarding-grid { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:12px; }
+    .onboarding-step { display:flex; gap:10px; min-height:96px; padding:14px; border:1px solid #bfdbfe; border-radius:10px; background:var(--primary-soft); color:var(--text); }
+    .onboarding-step:hover { border-color:var(--primary); color:var(--text); }
+    .onboarding-step small { display:block; margin-top:5px; color:var(--muted); line-height:1.45; }
+    .onboarding-step .step-status { color:var(--primary); margin-top:2px; }
+    .onboarding-step.is-done { border-color:#bbf7d0; background:#f0fdf4; }
+    .onboarding-step.is-done .step-status { color:var(--success); }
+
     .actions {
       justify-content: space-between;
       margin-bottom: 16px;
@@ -832,6 +842,7 @@
       .topbar { padding: 0 14px; }
       .content { padding: 18px 14px; }
       .dashboard-grid, .form-grid, .status-list { grid-template-columns: 1fr; }
+      .onboarding-grid { grid-template-columns: 1fr; }
       .chart-panel-wide { grid-column: auto; }
       .row { grid-template-columns: 1fr; }
       .col-md-1, .col-md-2, .col-md-3, .col-md-12 { grid-column: auto; }
@@ -844,16 +855,19 @@
     <aside class="sidebar" id="sidebar">
       <a class="brand" href="{% url 'dashboard' %}">
         <span class="brand-mark">GFP</span>
-        <span>Gestor Finazas Personales</span>
+        <span>Gestor Finanzas Personales</span>
       </a>
       <button class="btn btn-light btn-icon sidebar-close" type="button" title="Cerrar menú" aria-label="Cerrar menú" data-sidebar-close>
         <span class="material-symbols-outlined">close</span>
       </button>
       {% if user.is_authenticated %}
-        <div class="nav-section">Principal</div>
+        <div class="nav-section">Resumen</div>
         <ul class="nav-list">
-          <li><a class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" href="{% url 'dashboard' %}"><span class="material-symbols-outlined">dashboard</span> Dashboard</a></li>
+          <li><a class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" href="{% url 'dashboard' %}"><span class="material-symbols-outlined">dashboard</span> Inicio</a></li>
           <li><a class="nav-link {% if request.resolver_match.url_name == 'analisis_financiero' %}active{% endif %}" href="{% url 'analisis_financiero' %}"><span class="material-symbols-outlined">monitoring</span> Análisis</a></li>
+        </ul>
+        <div class="nav-section">Mi dinero</div>
+        <ul class="nav-list">
           {% if user.is_staff %}
             <li><a class="nav-link {% if 'tarea' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'tarea_list' %}"><span class="material-symbols-outlined">task_alt</span> Tareas</a></li>
           {% endif %}
@@ -861,6 +875,9 @@
           <li><a class="nav-link {% if 'deuda' in request.resolver_match.url_name or 'pago' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'deuda_list' %}"><span class="material-symbols-outlined">receipt_long</span> Deudas</a></li>
           <li><a class="nav-link {% if 'presupuesto' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'presupuesto_list' %}"><span class="material-symbols-outlined">price_check</span> Presupuestos</a></li>
           <li><a class="nav-link {% if 'recurrente' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'recurrente_list' %}"><span class="material-symbols-outlined">event_repeat</span> Recurrentes</a></li>
+        </ul>
+        <div class="nav-section">Organizar</div>
+        <ul class="nav-list">
           <li><a class="nav-link {% if 'cuenta' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'cuenta_list' %}"><span class="material-symbols-outlined">account_balance_wallet</span> Cuentas</a></li>
           <li><a class="nav-link {% if 'metodo_pago' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'metodo_pago_list' %}"><span class="material-symbols-outlined">payments</span> Métodos</a></li>
           <li><a class="nav-link {% if 'etiqueta' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'etiqueta_list' %}"><span class="material-symbols-outlined">label</span> Etiquetas</a></li>

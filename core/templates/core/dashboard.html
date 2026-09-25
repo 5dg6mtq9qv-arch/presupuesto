@@ -6,6 +6,26 @@
 {% block content %}
 {{ chart_data|json_script:"dashboard-data" }}
 
+{% if onboarding_done < 3 %}
+<section class="panel onboarding-panel" aria-labelledby="onboarding-title">
+  <div class="panel-heading">
+    <div>
+      <span class="eyebrow">Primeros pasos · {{ onboarding_done }} de 3</span>
+      <h2 id="onboarding-title">Prepara tu panorama financiero</h2>
+      <p class="muted mb-0">Sigue esta ruta corta. Cada paso completado mejora automáticamente tu panel.</p>
+    </div>
+  </div>
+  <div class="onboarding-grid">
+    {% for step in onboarding_steps %}
+      <a class="onboarding-step{% if step.done %} is-done{% endif %}" href="{{ step.url }}">
+        <span class="step-status material-symbols-outlined">{% if step.done %}check_circle{% else %}arrow_circle_right{% endif %}</span>
+        <span><strong>{{ forloop.counter }}. {{ step.title }}</strong><small>{{ step.description }}</small></span>
+      </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
 <div class="wallet-hero">
   <div>
     <span class="badge rounded-pill {% if margen >= 0 %}text-bg-success{% else %}text-bg-warning{% endif %} mb-2">{{ estado_presupuesto }}</span>
@@ -13,12 +33,15 @@
     <p class="mb-0 text-muted">Ingresos menos gastos reales y cuotas del mes.</p>
   </div>
   <div class="wallet-actions">
-    <a class="btn btn-light btn-icon" href="{% url 'reporte_financiero_csv' %}" title="Descargar reporte CSV" aria-label="Descargar reporte CSV">
+    <a class="btn btn-light" href="{% url 'reporte_financiero_csv' %}">
       <span class="material-symbols-outlined">download</span>
+      <span>Descargar reporte</span>
     </a>
-    <a class="btn btn-primary btn-icon" href="{% url 'movimiento_ingreso_create' %}" title="Nuevo ingreso" aria-label="Nuevo ingreso">
+    <a class="btn btn-primary" href="{% url 'movimiento_ingreso_create' %}">
       <span class="material-symbols-outlined">add</span>
+      <span>Registrar ingreso</span>
     </a>
+    <a class="btn btn-outline-primary" href="{% url 'movimiento_gasto_create' %}"><span class="material-symbols-outlined">remove</span><span>Registrar gasto</span></a>
   </div>
 </div>
 
