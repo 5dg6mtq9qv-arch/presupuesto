@@ -73,6 +73,42 @@ class PrimerUsoTests(TestCase):
         self.assertContains(dashboard, "Registrar gasto")
 
 
+class PasswordPermissionTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="persona", password="Anterior-2026!")
+        self.admin = get_user_model().objects.create_user(username="admin", password="Admin-2026!", is_staff=True)
+
+    def test_usuario_cambia_su_password_y_conserva_la_sesion(self):
+        self.client.force_login(self.user)
+        response = self.client.post(
+            reverse("mi_password_update"),
+            {
+                "old_password": "Anterior-2026!",
+                "new_password1": "Nueva-clave-2026!",
+                "new_password2": "Nueva-clave-2026!",
+            },
+        )
+        self.user.refresh_from_db()
+        self.assertRedirects(response, reverse("perfil_update"))
+        self.assertTrue(self.user.check_password("Nueva-clave-2026!"))
+        self.assertEqual(int(self.client.session["_auth_user_id"]), self.user.pk)
+
+    def test_usuario_normal_no_puede_restablecer_password_ajeno(self):
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("usuario_password", args=[self.admin.pk]))
+        self.assertRedirects(response, reverse("dashboard"))
+
+    def test_admin_puede_restablecer_password_ajeno(self):
+        self.client.force_login(self.admin)
+        response = self.client.post(
+            reverse("usuario_password", args=[self.user.pk]),
+            {"new_password1": "Restablecida-2026!", "new_password2": "Restablecida-2026!"},
+        )
+        self.user.refresh_from_db()
+        self.assertRedirects(response, reverse("usuario_list"))
+        self.assertTrue(self.user.check_password("Restablecida-2026!"))
+
+
 class MovimientoRecurrenteServiceTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(

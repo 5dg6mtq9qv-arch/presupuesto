@@ -7,7 +7,7 @@ from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.contrib import messages
-from django.contrib.auth import login
+from django.contrib.auth import login, update_session_auth_hash
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.decorators import user_passes_test
@@ -28,6 +28,7 @@ from .forms import (
     EtiquetaForm,
     FINANCIAL_CATEGORY_TYPES,
     MetodoPagoForm,
+    MiPasswordChangeForm,
     MovimientoFinancieroForm,
     MovimientoRecurrenteForm,
     PagoDeudaForm,
@@ -429,6 +430,26 @@ def perfil_update(request):
             "perfil": perfil,
         },
     )
+
+
+@login_required
+def mi_password_update(request):
+    if request.method == "POST":
+        form = MiPasswordChangeForm(request.user, request.POST)
+        if form.is_valid():
+            usuario = form.save()
+            update_session_auth_hash(request, usuario)
+            registrar_auditoria(
+                request,
+                RegistroAuditoria.Accion.ACTUALIZAR,
+                usuario,
+                cambios={"campo": "password", "origen": "usuario"},
+            )
+            messages.success(request, "Tu contraseña fue actualizada. La sesión permanece activa.")
+            return redirect("perfil_update")
+    else:
+        form = MiPasswordChangeForm(request.user)
+    return render(request, "core/mi_password_form.html", {"form": form})
 
 
 def simple_finance_list(request, model, form_class, template, context_name, title, subtitle, success_message):
@@ -867,6 +888,9 @@ def usuario_update(request, pk):
 @admin_required
 def usuario_password(request, pk):
     usuario = get_object_or_404(User, pk=pk)
+    if usuario.pk == request.user.pk:
+        messages.info(request, "Para cambiar tu propia contraseña debes confirmar la contraseña actual.")
+        return redirect("mi_password_update")
     if usuario.is_superuser and not request.user.is_superuser:
         messages.error(request, "No puedes cambiar la contraseña de un superusuario.")
         return redirect("usuario_list")
@@ -875,7 +899,13 @@ def usuario_password(request, pk):
         form = UsuarioPasswordForm(usuario, request.POST)
         if form.is_valid():
             form.save()
-            messages.success(request, "Contraseña actualizada.")
+            registrar_auditoria(
+                request,
+                RegistroAuditoria.Accion.ACTUALIZAR,
+                usuario,
+                cambios={"campo": "password", "origen": "administrador"},
+            )
+            messages.success(request, f"Contraseña de {usuario.username} restablecida.")
             return redirect("usuario_list")
     else:
         form = UsuarioPasswordForm(usuario)
@@ -883,7 +913,7 @@ def usuario_password(request, pk):
     return render(
         request,
         "core/usuario_password_form.html",
-        {"form": form, "usuario": usuario},
+        {"form": form, "usuario": usuario, "title": "Restablecer contraseña"},
     )
 
 

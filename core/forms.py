@@ -2,7 +2,7 @@ import calendar
 
 from django import forms
 from django.contrib.auth import get_user_model
-from django.contrib.auth.forms import SetPasswordForm, UserCreationForm
+from django.contrib.auth.forms import PasswordChangeForm, SetPasswordForm, UserCreationForm
 from django.contrib.auth.password_validation import validate_password
 from django.utils import timezone
 
@@ -198,6 +198,12 @@ class UsuarioUpdateForm(BootstrapFormMixin, forms.ModelForm):
 
 
 class UsuarioPasswordForm(BootstrapFormMixin, SetPasswordForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.apply_bootstrap_classes()
+
+
+class MiPasswordChangeForm(BootstrapFormMixin, PasswordChangeForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.apply_bootstrap_classes()

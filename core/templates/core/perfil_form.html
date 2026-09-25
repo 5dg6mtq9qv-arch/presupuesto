@@ -16,6 +16,10 @@
     <div>
       <h2>{{ user.get_full_name|default:user.username }}</h2>
       <p class="muted mb-0">{{ user.email|default:"Sin correo registrado" }}</p>
+      <a class="btn btn-sm btn-outline-secondary mt-2" href="{% url 'mi_password_update' %}">
+        <span class="material-symbols-outlined">key</span>
+        <span>Cambiar mi contraseña</span>
+      </a>
     </div>
   </div>
 

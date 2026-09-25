@@ -8,6 +8,7 @@ urlpatterns = [
     path("registro/", views.registro, name="registro"),
     path("analisis/", views.analisis_financiero, name="analisis_financiero"),
     path("perfil/", views.perfil_update, name="perfil_update"),
+    path("perfil/contrasenia/", views.mi_password_update, name="mi_password_update"),
     path("reportes/finanzas.csv", views.reporte_financiero_csv, name="reporte_financiero_csv"),
     path("reportes/finanzas.pdf", views.reporte_financiero_pdf, name="reporte_financiero_pdf"),
     path("cuentas/", views.cuenta_list, name="cuenta_list"),
