@@ -1,4 +1,5 @@
 import calendar
+from decimal import Decimal
 
 from django import forms
 from django.contrib.auth import get_user_model
@@ -19,6 +20,7 @@ from .models import (
     PerfilUsuario,
     PresupuestoMensual,
     Tarea,
+    TransferenciaCuenta,
 )
 
 User = get_user_model()
@@ -839,6 +841,39 @@ class AjusteSaldoForm(forms.Form):
     )
 
 
+class TransferenciaCuentaForm(UserScopedModelForm):
+    class Meta:
+        model = TransferenciaCuenta
+        fields = ["cuenta_origen", "cuenta_destino", "monto", "fecha", "nota"]
+        labels = {
+            "cuenta_origen": "Desde",
+            "cuenta_destino": "Hacia",
+        }
+        widgets = {
+            "monto": forms.NumberInput(attrs={"step": "0.01", "min": "0.01"}),
+            "fecha": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
+        }
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, user=user, **kwargs)
+        cuentas = CuentaFinanciera.objects.filter(usuario=user, activa=True).order_by("nombre")
+        self.fields["cuenta_origen"].queryset = cuentas
+        self.fields["cuenta_destino"].queryset = cuentas
+        if not self.is_bound:
+            self.fields["fecha"].initial = timezone.localdate().isoformat()
+
+    def clean(self):
+        cleaned_data = super().clean()
+        origen = cleaned_data.get("cuenta_origen")
+        destino = cleaned_data.get("cuenta_destino")
+        monto = cleaned_data.get("monto")
+        if origen and destino and origen == destino:
+            self.add_error("cuenta_destino", "La cuenta de destino debe ser diferente.")
+        if monto is not None and monto <= 0:
+            self.add_error("monto", "El monto debe ser mayor que cero.")
+        return cleaned_data
+
+
 class PagoDeudaForm(UserScopedModelForm):
     class Meta:
         model = PagoDeuda
@@ -871,10 +906,14 @@ class ConfirmarPagoDeudaForm(BootstrapFormMixin, forms.Form):
         empty_label="Selecciona de dónde sale el dinero",
     )
 
-    def __init__(self, *args, user=None, **kwargs):
+    def __init__(self, *args, user=None, saldos=None, **kwargs):
         super().__init__(*args, **kwargs)
+        saldos = saldos or {}
         self.fields["cuenta"].queryset = CuentaFinanciera.objects.filter(
             usuario=user,
             activa=True,
         ).order_by("nombre")
+        self.fields["cuenta"].label_from_instance = lambda cuenta: (
+            f"{cuenta.nombre} · disponible {saldos.get(cuenta.pk, Decimal('0')):.2f}"
+        )
         self.apply_bootstrap_classes()

@@ -157,6 +157,37 @@ class AjusteSaldo(models.Model):
         return f"{self.cuenta}: {self.saldo_anterior} -> {self.saldo_nuevo}"
 
 
+class TransferenciaCuenta(models.Model):
+    usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    cuenta_origen = models.ForeignKey(
+        CuentaFinanciera,
+        on_delete=models.PROTECT,
+        related_name="transferencias_salientes",
+    )
+    cuenta_destino = models.ForeignKey(
+        CuentaFinanciera,
+        on_delete=models.PROTECT,
+        related_name="transferencias_entrantes",
+    )
+    monto = models.DecimalField(max_digits=12, decimal_places=2)
+    fecha = models.DateField()
+    nota = models.TextField(blank=True)
+    creado = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = '"finanzas"."transferencia_cuenta"'
+        ordering = ["-fecha", "-creado"]
+        constraints = [
+            models.CheckConstraint(
+                condition=~models.Q(cuenta_origen=models.F("cuenta_destino")),
+                name="transferencia_cuentas_distintas",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.cuenta_origen} → {self.cuenta_destino}: {self.monto}"
+
+
 class MetodoPago(models.Model):
     class Tipo(models.TextChoices):
         EFECTIVO = "efectivo", "Efectivo"

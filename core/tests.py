@@ -16,6 +16,7 @@ from .models import (
     MovimientoFinanciero,
     MovimientoRecurrente,
     PagoDeuda,
+    TransferenciaCuenta,
 )
 from .services import (
     crear_historial_inicial_deuda,
@@ -251,6 +252,59 @@ class GastoTarjetaCreditoTests(TestCase):
         self.assertCountEqual([cuota.cuota_numero for cuota in cuotas], [5, 1])
         self.assertEqual(response.context["tarjeta_vence_mes_siguiente"], Decimal("96.17"))
 
+
+
+class TransferenciaCuentaTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="transferencias", password="test")
+        self.origen = CuentaFinanciera.objects.create(
+            usuario=self.user,
+            nombre="Banco",
+            tipo=CuentaFinanciera.Tipo.BANCO,
+            saldo_inicial="100.00",
+        )
+        self.destino = CuentaFinanciera.objects.create(
+            usuario=self.user,
+            nombre="Efectivo",
+            tipo=CuentaFinanciera.Tipo.EFECTIVO,
+            saldo_inicial="20.00",
+        )
+        self.client.force_login(self.user)
+
+    def test_transferencia_mueve_saldo_sin_crear_ingreso_o_gasto(self):
+        response = self.client.post(
+            reverse("cuenta_transferir"),
+            {
+                "cuenta_origen": self.origen.pk,
+                "cuenta_destino": self.destino.pk,
+                "monto": "30.00",
+                "fecha": "2026-09-25",
+                "nota": "Retiro para efectivo",
+            },
+        )
+
+        self.assertRedirects(response, reverse("cuenta_list"))
+        self.assertEqual(TransferenciaCuenta.objects.count(), 1)
+        dashboard = self.client.get(reverse("dashboard"))
+        saldos = {item["nombre"]: item["saldo"] for item in dashboard.context["cuentas_resumen"]}
+        self.assertEqual(saldos["Banco"], Decimal("70.00"))
+        self.assertEqual(saldos["Efectivo"], Decimal("50.00"))
+        self.assertEqual(MovimientoFinanciero.objects.count(), 0)
+
+    def test_transferencia_rechaza_saldo_insuficiente(self):
+        response = self.client.post(
+            reverse("cuenta_transferir"),
+            {
+                "cuenta_origen": self.origen.pk,
+                "cuenta_destino": self.destino.pk,
+                "monto": "150.00",
+                "fecha": "2026-09-25",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("monto", response.context["form"].errors)
+        self.assertEqual(TransferenciaCuenta.objects.count(), 0)
 
 
 class PasswordPermissionTests(TestCase):

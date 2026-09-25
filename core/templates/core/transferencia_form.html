@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block page_title %}Transferir entre cuentas{% endblock %}
+{% block page_subtitle %}Mueve dinero sin registrarlo como ingreso ni gasto{% endblock %}
+
+{% block content %}
+{{ saldos_cuenta|json_script:"saldos-cuenta-data" }}
+<section class="panel">
+  <form class="form-grid" method="post">
+    {% csrf_token %}
+    {% include "core/includes/unfold_form_fields.html" %}
+    <div class="unfold-field">
+      <span class="form-label">Saldo disponible en origen</span>
+      <div id="saldo-origen" class="form-control bg-light">Selecciona una cuenta</div>
+      <div id="saldo-despues" class="form-text"></div>
+    </div>
+    <div class="form-actions actions">
+      <button class="btn btn-primary" type="submit"><span class="material-symbols-outlined">swap_horiz</span><span>Transferir</span></button>
+      <a class="btn btn-outline-secondary" href="{% url 'cuenta_list' %}">Cancelar</a>
+    </div>
+  </form>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (() => {
+    const saldos = JSON.parse(document.getElementById("saldos-cuenta-data").textContent);
+    const origen = document.getElementById("id_cuenta_origen");
+    const monto = document.getElementById("id_monto");
+    const saldo = document.getElementById("saldo-origen");
+    const despues = document.getElementById("saldo-despues");
+    const formato = new Intl.NumberFormat("es-EC", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    const actualizar = () => {
+      if (!origen.value || saldos[origen.value] === undefined) {
+        saldo.textContent = "Selecciona una cuenta";
+        despues.textContent = "";
+        return;
+      }
+      const disponible = Number(saldos[origen.value]);
+      const valor = Number(String(monto.value || "0").replace(",", "."));
+      const restante = disponible - valor;
+      saldo.textContent = formato.format(disponible);
+      despues.textContent = valor ? `Después de transferir quedarían ${formato.format(restante)}.` : "";
+      despues.classList.toggle("text-danger", restante < 0);
+    };
+    [origen, monto].forEach(campo => {
+      campo.addEventListener("change", actualizar);
+      campo.addEventListener("input", actualizar);
+    });
+    if (window.jQuery) window.jQuery(origen).on("change", actualizar);
+    window.setTimeout(actualizar, 0);
+  })();
+</script>
+{% endblock %}

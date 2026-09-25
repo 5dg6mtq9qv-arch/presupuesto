@@ -52,7 +52,12 @@
       resultante.classList.toggle("text-danger", despues < 0);
     };
     cuenta.addEventListener("change", actualizar);
-    actualizar();
+    cuenta.addEventListener("input", actualizar);
+    if (window.jQuery) window.jQuery(cuenta).on("change", actualizar);
+    document.addEventListener("change", event => {
+      if (event.target === cuenta) actualizar();
+    });
+    window.setTimeout(actualizar, 0);
   })();
 </script>
 {% endblock %}

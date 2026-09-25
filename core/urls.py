@@ -13,6 +13,7 @@ urlpatterns = [
     path("reportes/finanzas.pdf", views.reporte_financiero_pdf, name="reporte_financiero_pdf"),
     path("cuentas/", views.cuenta_list, name="cuenta_list"),
     path("cuentas/<int:pk>/ajustar-saldo/", views.cuenta_ajustar_saldo, name="cuenta_ajustar_saldo"),
+    path("cuentas/transferir/", views.cuenta_transferir, name="cuenta_transferir"),
     path("metodos-pago/", views.metodo_pago_list, name="metodo_pago_list"),
     path("etiquetas/", views.etiqueta_list, name="etiqueta_list"),
     path("presupuestos/", views.presupuesto_list, name="presupuesto_list"),

@@ -17,6 +17,7 @@ from .models import (
     PresupuestoMensual,
     RegistroAuditoria,
     Tarea,
+    TransferenciaCuenta,
 )
 
 
@@ -69,6 +70,13 @@ class CuentaFinancieraAdmin(ModelAdmin):
     list_display = ("nombre", "tipo", "saldo_inicial", "activa", "usuario")
     list_filter = ("tipo", "activa")
     search_fields = ("nombre", "usuario__username")
+
+
+@admin.register(TransferenciaCuenta)
+class TransferenciaCuentaAdmin(ModelAdmin):
+    list_display = ("cuenta_origen", "cuenta_destino", "monto", "fecha", "usuario")
+    list_filter = ("fecha",)
+    search_fields = ("cuenta_origen__nombre", "cuenta_destino__nombre", "usuario__username")
 
 
 @admin.register(MetodoPago)

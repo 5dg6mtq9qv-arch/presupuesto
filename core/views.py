@@ -40,6 +40,7 @@ from .forms import (
     CategoriaPrincipalForm,
     SubcategoriaForm,
     TareaForm,
+    TransferenciaCuentaForm,
     UsuarioCreateForm,
     UsuarioPasswordForm,
     UsuarioUpdateForm,
@@ -60,6 +61,7 @@ from .models import (
     PresupuestoMensual,
     RegistroAuditoria,
     Tarea,
+    TransferenciaCuenta,
 )
 from .services import (
     crear_historial_inicial_deuda,
@@ -123,8 +125,26 @@ def saldo_actual_cuenta(cuenta):
         estado=MovimientoFinanciero.Estado.CONFIRMADO,
     )
     ingresos = movimientos.filter(tipo=MovimientoFinanciero.Tipo.INGRESO).aggregate(total=Sum("monto"))["total"] or Decimal("0")
-    gastos = movimientos.filter(tipo=MovimientoFinanciero.Tipo.GASTO).aggregate(total=Sum("monto"))["total"] or Decimal("0")
-    return cuenta.saldo_inicial + ingresos - gastos
+    gastos = movimientos.filter(tipo=MovimientoFinanciero.Tipo.GASTO).exclude(
+        metodo_pago__tipo=MetodoPago.Tipo.CREDITO,
+    ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    pagos_deuda = PagoDeuda.objects.filter(
+        deuda__usuario=cuenta.usuario,
+        cuenta=cuenta,
+        estado=PagoDeuda.Estado.CONFIRMADO,
+    ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    transferencias_entrantes = TransferenciaCuenta.objects.filter(
+        usuario=cuenta.usuario,
+        cuenta_destino=cuenta,
+    ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    transferencias_salientes = TransferenciaCuenta.objects.filter(
+        usuario=cuenta.usuario,
+        cuenta_origen=cuenta,
+    ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    return (
+        cuenta.saldo_inicial + ingresos - gastos - pagos_deuda
+        + transferencias_entrantes - transferencias_salientes
+    )
 
 
 def get_or_create_category_by_name(user, tipo, parent, nombre, defaults=None):
@@ -349,23 +369,12 @@ def saldos_por_cuenta(user):
     cuentas = []
     for cuenta in CuentaFinanciera.objects.filter(usuario=user, activa=True).order_by("nombre"):
         ingresos = movimientos.filter(cuenta=cuenta, tipo=MovimientoFinanciero.Tipo.INGRESO).aggregate(total=Sum("monto"))["total"] or Decimal("0")
-        gastos = movimientos.filter(
-            cuenta=cuenta,
-            tipo=MovimientoFinanciero.Tipo.GASTO,
-        ).exclude(
-            metodo_pago__tipo=MetodoPago.Tipo.CREDITO,
-        ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
-        pagos_deuda = PagoDeuda.objects.filter(
-            deuda__usuario=user,
-            cuenta=cuenta,
-            estado=PagoDeuda.Estado.CONFIRMADO,
-        ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
         cuentas.append(
             {
                 "id": cuenta.pk,
                 "nombre": cuenta.nombre,
                 "color": cuenta.color or "#38bdf8",
-                "saldo": cuenta.saldo_inicial + ingresos - gastos - pagos_deuda,
+                "saldo": saldo_actual_cuenta(cuenta),
             }
         )
     return cuentas
@@ -529,7 +538,7 @@ def cuenta_list(request):
             cuenta=cuenta,
             tipo=MovimientoFinanciero.Tipo.GASTO,
         ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
-        cuenta.saldo_actual = cuenta.saldo_inicial + cuenta.ingresos_confirmados - cuenta.gastos_confirmados
+        cuenta.saldo_actual = saldo_actual_cuenta(cuenta)
 
     return render(
         request,
@@ -578,6 +587,50 @@ def cuenta_ajustar_saldo(request, pk):
     else:
         form = AjusteSaldoForm(initial={"saldo_nuevo": saldo_anterior})
     return render(request, "core/ajuste_saldo_form.html", {"form": form, "cuenta": cuenta, "saldo_anterior": saldo_anterior})
+
+
+@login_required
+@transaction.atomic
+def cuenta_transferir(request):
+    resumen_cuentas = saldos_por_cuenta(request.user)
+    saldos_por_id = {item["id"]: item["saldo"] for item in resumen_cuentas}
+    form = TransferenciaCuentaForm(request.POST or None, user=request.user)
+    if request.method == "POST" and form.is_valid():
+        origen = CuentaFinanciera.objects.select_for_update().get(
+            pk=form.cleaned_data["cuenta_origen"].pk,
+            usuario=request.user,
+        )
+        CuentaFinanciera.objects.select_for_update().get(
+            pk=form.cleaned_data["cuenta_destino"].pk,
+            usuario=request.user,
+        )
+        saldo_origen = saldo_actual_cuenta(origen)
+        if form.cleaned_data["monto"] > saldo_origen:
+            form.add_error(
+                "monto",
+                f"Saldo insuficiente: la cuenta origen tiene {saldo_origen:.2f}.",
+            )
+        else:
+            transferencia = form.save(commit=False)
+            transferencia.usuario = request.user
+            transferencia.save()
+            registrar_auditoria(
+                request,
+                RegistroAuditoria.Accion.CREAR,
+                transferencia,
+                cambios={"monto": str(transferencia.monto)},
+            )
+            messages.success(request, "Transferencia realizada.")
+            return redirect("cuenta_list")
+
+    return render(
+        request,
+        "core/transferencia_form.html",
+        {
+            "form": form,
+            "saldos_cuenta": {str(pk): float(saldo) for pk, saldo in saldos_por_id.items()},
+        },
+    )
 
 
 @login_required
@@ -2242,15 +2295,15 @@ def pago_confirmar(request, pk):
         messages.error(request, "Esta deuda ya no admite pagos.")
         return redirect("deuda_list")
 
+    resumen_cuentas = saldos_por_cuenta(request.user)
+    saldos_por_id = {item["id"]: item["saldo"] for item in resumen_cuentas}
+    saldos_cuenta = {str(pk): float(saldo) for pk, saldo in saldos_por_id.items()}
     form = ConfirmarPagoDeudaForm(
         request.POST if request.method == "POST" else None,
         user=request.user,
+        saldos=saldos_por_id,
     )
     if request.method != "POST" or not form.is_valid():
-        saldos_cuenta = {
-            str(item["id"]): float(item["saldo"])
-            for item in saldos_por_cuenta(request.user)
-        }
         return render(
             request,
             "core/pago_confirmar_form.html",
@@ -2258,6 +2311,17 @@ def pago_confirmar(request, pk):
         )
 
     cuenta = form.cleaned_data["cuenta"]
+    saldo_disponible = saldos_por_id.get(cuenta.pk, Decimal("0"))
+    if saldo_disponible < pago.monto:
+        form.add_error(
+            "cuenta",
+            f"Saldo insuficiente: tienes {saldo_disponible:.2f} y la cuota es de {pago.monto:.2f}.",
+        )
+        return render(
+            request,
+            "core/pago_confirmar_form.html",
+            {"form": form, "pago": pago, "saldos_cuenta": saldos_cuenta},
+        )
 
     monto_aplicado = min(pago.monto, deuda.saldo_actual)
     pago.monto = monto_aplicado

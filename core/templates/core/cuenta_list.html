@@ -6,9 +6,12 @@
 {% block content %}
 <div class="actions">
   <div></div>
-  <button class="btn btn-primary btn-icon shadow-sm" type="button" title="Nueva cuenta" aria-label="Nueva cuenta" data-create-toggle="create-account-panel">
-    <span class="material-symbols-outlined">add</span>
-  </button>
+  <div class="actions mb-0">
+    <a class="btn btn-outline-primary" href="{% url 'cuenta_transferir' %}"><span class="material-symbols-outlined">swap_horiz</span><span>Transferir</span></a>
+    <button class="btn btn-primary btn-icon shadow-sm" type="button" title="Nueva cuenta" aria-label="Nueva cuenta" data-create-toggle="create-account-panel">
+      <span class="material-symbols-outlined">add</span>
+    </button>
+  </div>
 </div>
 
 <section class="panel" id="create-account-panel"{% if not form.errors %} hidden{% endif %}>
