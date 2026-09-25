@@ -348,10 +348,20 @@ class Deuda(models.Model):
 
 
 class PagoDeuda(models.Model):
+    class Estado(models.TextChoices):
+        PENDIENTE = "pendiente", "Pendiente"
+        CONFIRMADO = "confirmado", "Confirmado"
+
     deuda = models.ForeignKey(Deuda, on_delete=models.CASCADE, related_name="pagos")
     monto = models.DecimalField(max_digits=12, decimal_places=2)
     fecha = models.DateField()
     cuota_numero = models.PositiveIntegerField(null=True, blank=True)
+    estado = models.CharField(
+        max_length=20,
+        choices=Estado.choices,
+        default=Estado.CONFIRMADO,
+    )
+    confirmado_en = models.DateTimeField(null=True, blank=True)
     nota = models.TextField(blank=True)
     creado = models.DateTimeField(auto_now_add=True)
 

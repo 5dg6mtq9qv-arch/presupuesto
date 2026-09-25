@@ -706,3 +706,9 @@ class PagoDeudaForm(UserScopedModelForm):
         super().__init__(*args, user=user, **kwargs)
         if not self.is_bound and not self.instance.pk:
             self.fields["fecha"].initial = timezone.localdate().isoformat()
+
+    def clean_monto(self):
+        monto = self.cleaned_data["monto"]
+        if monto <= 0:
+            raise forms.ValidationError("El monto debe ser mayor que cero.")
+        return monto

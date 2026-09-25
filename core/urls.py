@@ -40,5 +40,6 @@ urlpatterns = [
     path("deudas/<int:pk>/editar/", views.deuda_update, name="deuda_update"),
     path("deudas/<int:pk>/eliminar/", views.deuda_delete, name="deuda_delete"),
     path("deudas/<int:deuda_id>/pagos/nuevo/", views.pago_create, name="pago_create"),
+    path("pagos/<int:pk>/confirmar/", views.pago_confirmar, name="pago_confirmar"),
     path("pagos/<int:pk>/eliminar/", views.pago_delete, name="pago_delete"),
 ]

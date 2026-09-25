@@ -149,7 +149,8 @@ class MovimientoRecurrenteServiceTests(TestCase):
         self.assertEqual(len(creados), 1)
         self.assertEqual(creados[0].cuota_numero, 2)
         self.assertEqual(creados[0].fecha, datetime(2026, 8, 5).date())
-        self.assertEqual(deuda.saldo_actual, Decimal("200.00"))
+        self.assertEqual(creados[0].estado, PagoDeuda.Estado.PENDIENTE)
+        self.assertEqual(deuda.saldo_actual, Decimal("300.00"))
 
     def test_generacion_de_pagos_de_deuda_es_idempotente(self):
         deuda = Deuda.objects.create(
@@ -176,6 +177,90 @@ class MovimientoRecurrenteServiceTests(TestCase):
         self.assertEqual(len(creados), 0)
         self.assertEqual(omitidos, 0)
         self.assertEqual(PagoDeuda.objects.count(), 1)
+
+    def test_confirmar_cuota_pendiente_descuenta_saldo_una_sola_vez(self):
+        deuda = Deuda.objects.create(
+            usuario=self.user,
+            acreedor="Banco",
+            concepto="Prestamo",
+            monto_inicial="200.00",
+            saldo_actual="200.00",
+            numero_cuotas=2,
+            fecha_inicio=datetime(2026, 7, 5).date(),
+            fecha_vencimiento=datetime(2026, 9, 5).date(),
+        )
+        self.set_creado(deuda, 2026, 7, 4)
+        cuotas, _ = generar_pagos_deudas(
+            hasta_fecha=datetime(2026, 8, 5).date(),
+            usuario=self.user,
+        )
+        cuota = cuotas[0]
+        self.client.force_login(self.user)
+
+        response = self.client.post(reverse("pago_confirmar", args=[cuota.pk]))
+
+        deuda.refresh_from_db()
+        cuota.refresh_from_db()
+        self.assertRedirects(response, reverse("deuda_list"))
+        self.assertEqual(cuota.estado, PagoDeuda.Estado.CONFIRMADO)
+        self.assertIsNotNone(cuota.confirmado_en)
+        self.assertEqual(deuda.saldo_actual, Decimal("100.00"))
+
+        self.client.post(reverse("pago_confirmar", args=[cuota.pk]))
+        deuda.refresh_from_db()
+        self.assertEqual(deuda.saldo_actual, Decimal("100.00"))
+
+    def test_otro_usuario_no_puede_confirmar_cuota(self):
+        otro = get_user_model().objects.create_user(username="otro", password="test")
+        deuda = Deuda.objects.create(
+            usuario=self.user,
+            acreedor="Banco",
+            concepto="Prestamo",
+            monto_inicial="100.00",
+            saldo_actual="100.00",
+            numero_cuotas=1,
+            fecha_inicio=datetime(2026, 7, 5).date(),
+        )
+        cuota = PagoDeuda.objects.create(
+            deuda=deuda,
+            monto="100.00",
+            fecha=datetime(2026, 8, 5).date(),
+            cuota_numero=1,
+            estado=PagoDeuda.Estado.PENDIENTE,
+        )
+        self.client.force_login(otro)
+
+        response = self.client.post(reverse("pago_confirmar", args=[cuota.pk]))
+
+        deuda.refresh_from_db()
+        cuota.refresh_from_db()
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(cuota.estado, PagoDeuda.Estado.PENDIENTE)
+        self.assertEqual(deuda.saldo_actual, Decimal("100.00"))
+
+    def test_eliminar_cuota_pendiente_no_modifica_saldo(self):
+        deuda = Deuda.objects.create(
+            usuario=self.user,
+            acreedor="Banco",
+            concepto="Prestamo",
+            monto_inicial="100.00",
+            saldo_actual="100.00",
+            numero_cuotas=1,
+            fecha_inicio=datetime(2026, 7, 5).date(),
+        )
+        cuota = PagoDeuda.objects.create(
+            deuda=deuda,
+            monto="100.00",
+            fecha=datetime(2026, 8, 5).date(),
+            cuota_numero=1,
+            estado=PagoDeuda.Estado.PENDIENTE,
+        )
+        self.client.force_login(self.user)
+
+        self.client.post(reverse("pago_delete", args=[cuota.pk]))
+
+        deuda.refresh_from_db()
+        self.assertEqual(deuda.saldo_actual, Decimal("100.00"))
 
     def test_cuotas_programadas_suman_solo_la_cuota_del_periodo(self):
         deuda = Deuda.objects.create(

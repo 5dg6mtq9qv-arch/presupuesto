@@ -45,7 +45,7 @@ class Command(BaseCommand):
                 f"{len(resultado['movimientos'])}. "
                 "Movimientos duplicados omitidos: "
                 f"{resultado['movimientos_omitidos']}. "
-                "Pagos de deuda creados: "
+                "Cuotas de deuda pendientes creadas: "
                 f"{len(resultado['pagos_deuda'])}. "
                 "Pagos de deuda omitidos: "
                 f"{resultado['pagos_deuda_omitidos']}."

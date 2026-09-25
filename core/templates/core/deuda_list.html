@@ -65,8 +65,9 @@
             <td class="amount">{{ deuda.saldo_actual }}</td>
             <td>
               <span class="badge rounded-pill text-bg-light border">
-                {{ deuda.pagos.count }}/{{ deuda.numero_cuotas }}
+                {{ deuda.pagos_confirmados_count }}/{{ deuda.numero_cuotas }} pagadas
               </span>
+              {% if deuda.cuotas_pendientes_count %}<span class="badge rounded-pill text-bg-warning">{{ deuda.cuotas_pendientes_count }} pendiente{{ deuda.cuotas_pendientes_count|pluralize:"s" }}</span>{% endif %}
             </td>
             <td>
               <span class="badge rounded-pill {% if deuda.estado == 'pagada' %}text-bg-success{% elif deuda.estado == 'cancelada' %}text-bg-danger{% else %}text-bg-warning{% endif %}">
@@ -79,7 +80,18 @@
               </a>
               {% for pago in deuda.pagos.all %}
                 <div class="d-flex align-items-center justify-content-between gap-2 small text-muted">
-                  <span>{{ pago.fecha|date:"Y-m" }} · {{ pago.monto }}{% if pago.cuota_numero %} · Cuota {{ pago.cuota_numero }}{% endif %}</span>
+                  <span>
+                    {{ pago.fecha|date:"Y-m" }} · {{ pago.monto }}{% if pago.cuota_numero %} · Cuota {{ pago.cuota_numero }}{% endif %}
+                    <span class="badge rounded-pill {% if pago.estado == 'confirmado' %}text-bg-success{% else %}text-bg-warning{% endif %}">{{ pago.get_estado_display }}</span>
+                  </span>
+                  {% if pago.estado == "pendiente" %}
+                    <form method="post" action="{% url 'pago_confirmar' pago.pk %}">
+                      {% csrf_token %}
+                      <button class="btn btn-sm btn-primary" type="submit" title="Confirmar que esta cuota fue pagada">
+                        <span class="material-symbols-outlined">check</span><span>Confirmar</span>
+                      </button>
+                    </form>
+                  {% endif %}
                   <button class="btn btn-sm btn-outline-danger btn-icon" type="button" title="Eliminar pago" aria-label="Eliminar pago" data-delete-trigger="delete-pago-{{ pago.pk }}">
                     <span class="material-symbols-outlined">delete</span>
                   </button>

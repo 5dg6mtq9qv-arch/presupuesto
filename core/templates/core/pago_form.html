@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block page_title %}Registrar pago{% endblock %}
-{% block page_subtitle %}{{ deuda.acreedor }} · saldo actual {{ deuda.saldo_actual }} · cuota {{ deuda.pagos.count|add:1 }} de {{ deuda.numero_cuotas }}{% endblock %}
+{% block page_subtitle %}{{ deuda.acreedor }} · saldo actual {{ deuda.saldo_actual }}{% endblock %}
 
 {% block content %}
 <section class="panel">

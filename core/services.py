@@ -3,7 +3,7 @@ from datetime import datetime, time
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import IntegrityError, transaction
-from django.db.models import Q
+from django.db.models import Sum
 from django.utils import timezone
 
 from .models import (
@@ -188,9 +188,14 @@ def generar_movimientos_recurrentes(hasta_fecha=None, usuario=None):
 
 def iter_cuotas_deuda_vencidas(deuda, hasta_fecha):
     creado_local = timezone.localtime(deuda.creado)
-    pagos_existentes = deuda.pagos.count()
+    cuotas_registradas = set(
+        deuda.pagos.filter(cuota_numero__isnull=False).values_list("cuota_numero", flat=True)
+    )
+    pagos_manuales = deuda.pagos.filter(cuota_numero__isnull=True).count()
 
-    for cuota_numero in range(pagos_existentes + 1, deuda.numero_cuotas + 1):
+    for cuota_numero in range(pagos_manuales + 1, deuda.numero_cuotas + 1):
+        if cuota_numero in cuotas_registradas:
+            continue
         fecha = sumar_meses(deuda.fecha_inicio, cuota_numero)
         if fecha > hasta_fecha:
             break
@@ -222,31 +227,31 @@ def generar_pagos_deudas(hasta_fecha=None, usuario=None):
                     deuda_actual = Deuda.objects.select_for_update().get(pk=deuda.pk)
                     if deuda_actual.estado != Deuda.Estado.ACTIVA or deuda_actual.saldo_actual <= 0:
                         break
-                    if PagoDeuda.objects.filter(
-                        Q(cuota_numero=cuota_numero) | Q(cuota_numero__isnull=True),
-                        deuda=deuda_actual,
-                    ).count() >= cuota_numero:
+                    if PagoDeuda.objects.filter(deuda=deuda_actual, cuota_numero=cuota_numero).exists():
                         omitidos += 1
                         continue
 
-                    pagos_actuales = deuda_actual.pagos.count()
-                    cuotas_restantes = max(1, deuda_actual.numero_cuotas - pagos_actuales)
-                    monto = (deuda_actual.saldo_actual / Decimal(cuotas_restantes)).quantize(
+                    pendiente_programado = deuda_actual.pagos.filter(
+                        estado=PagoDeuda.Estado.PENDIENTE,
+                    ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+                    saldo_por_programar = max(Decimal("0"), deuda_actual.saldo_actual - pendiente_programado)
+                    cuotas_registradas = deuda_actual.pagos.count()
+                    cuotas_restantes = max(1, deuda_actual.numero_cuotas - cuotas_registradas)
+                    monto = (saldo_por_programar / Decimal(cuotas_restantes)).quantize(
                         Decimal("0.01"),
                         rounding=ROUND_HALF_UP,
                     )
-                    monto = min(monto, deuda_actual.saldo_actual)
+                    monto = min(monto, saldo_por_programar)
+                    if monto <= 0:
+                        break
                     pago = PagoDeuda.objects.create(
                         deuda=deuda_actual,
                         monto=monto,
                         fecha=fecha,
                         cuota_numero=cuota_numero,
-                        nota="Pago generado automaticamente por cuota de deuda.",
+                        estado=PagoDeuda.Estado.PENDIENTE,
+                        nota="Cuota programada automáticamente; pendiente de confirmación.",
                     )
-                    deuda_actual.saldo_actual = max(Decimal("0"), deuda_actual.saldo_actual - pago.monto)
-                    if deuda_actual.saldo_actual == Decimal("0"):
-                        deuda_actual.estado = Deuda.Estado.PAGADA
-                    deuda_actual.save(update_fields=["saldo_actual", "estado"])
             except IntegrityError:
                 omitidos += 1
                 continue
@@ -286,10 +291,34 @@ def cuotas_deudas_programadas(usuario, fecha_inicio, fecha_fin, categoria_id=Non
 
     for deuda in deudas:
         creado_local = timezone.localtime(deuda.creado)
-        pagos_count = deuda.pagos.count()
-        saldo_virtual = deuda.saldo_actual
+        pagos = list(deuda.pagos.all())
+        pagos_count = len(pagos)
+        cuotas_registradas = {
+            pago.cuota_numero for pago in pagos if pago.cuota_numero is not None
+        }
+        pagos_manuales = sum(pago.cuota_numero is None for pago in pagos)
+        pendiente_programado = sum(
+            (pago.monto for pago in pagos if pago.estado == PagoDeuda.Estado.PENDIENTE),
+            Decimal("0"),
+        )
+        saldo_virtual = max(Decimal("0"), deuda.saldo_actual - pendiente_programado)
 
-        for cuota_numero in range(pagos_count + 1, deuda.numero_cuotas + 1):
+        for pago in pagos:
+            if pago.cuota_numero and fecha_inicio <= pago.fecha <= fecha_fin:
+                cuotas.append(
+                    {
+                        "deuda": deuda,
+                        "cuota_numero": pago.cuota_numero,
+                        "fecha": pago.fecha,
+                        "monto": pago.monto,
+                        "estado": pago.estado,
+                    }
+                )
+                total += pago.monto
+
+        for cuota_numero in range(pagos_manuales + 1, deuda.numero_cuotas + 1):
+            if cuota_numero in cuotas_registradas:
+                continue
             fecha = sumar_meses(deuda.fecha_inicio, cuota_numero)
             vence_en = timezone.make_aware(
                 datetime.combine(fecha, time.min),
@@ -314,6 +343,7 @@ def cuotas_deudas_programadas(usuario, fecha_inicio, fecha_fin, categoria_id=Non
                         "cuota_numero": cuota_numero,
                         "fecha": fecha,
                         "monto": monto,
+                        "estado": PagoDeuda.Estado.PENDIENTE,
                     }
                 )
                 total += monto

@@ -735,6 +735,7 @@ def dashboard(request):
     )
     pagos_mes = PagoDeuda.objects.filter(
         deuda__usuario=request.user,
+        estado=PagoDeuda.Estado.CONFIRMADO,
         fecha__year=hoy.year,
         fecha__month=hoy.month,
     ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
@@ -1087,6 +1088,7 @@ def analisis_financiero(request):
         etiqueta_deudas_balance = "Cuotas del periodo"
     pagos_periodo = PagoDeuda.objects.filter(
         deuda__usuario=request.user,
+        estado=PagoDeuda.Estado.CONFIRMADO,
         fecha__range=(fecha_inicio, fecha_fin),
     )
     if categoria_id:
@@ -1756,7 +1758,7 @@ def movimiento_delete(request, pk):
 
 @login_required
 def deuda_list(request):
-    deudas = Deuda.objects.filter(usuario=request.user).select_related("categoria__parent")
+    deudas = Deuda.objects.filter(usuario=request.user).select_related("categoria__parent").prefetch_related("pagos")
     q = request.GET.get("q", "").strip()
     estado = request.GET.get("estado", "")
     categoria_id = request.GET.get("categoria", "")
@@ -1772,6 +1774,10 @@ def deuda_list(request):
     if categoria_id.isdigit():
         deudas = deudas.filter(categoria_id=categoria_id)
     page_obj, list_querystring = paginate_queryset(request, deudas)
+    for deuda in page_obj:
+        pagos = list(deuda.pagos.all())
+        deuda.pagos_confirmados_count = sum(pago.estado == PagoDeuda.Estado.CONFIRMADO for pago in pagos)
+        deuda.cuotas_pendientes_count = sum(pago.estado == PagoDeuda.Estado.PENDIENTE for pago in pagos)
     categorias = Categoria.objects.filter(
         usuario=request.user,
         tipo=Categoria.Tipo.FINANZAS,
@@ -1836,7 +1842,12 @@ def pago_create(request, deuda_id):
         form = PagoDeudaForm(request.POST, user=request.user)
         if form.is_valid():
             pago = form.save(commit=False)
+            if pago.monto > deuda.saldo_actual:
+                form.add_error("monto", "El pago no puede superar el saldo actual de la deuda.")
+                return render(request, "core/pago_form.html", {"form": form, "deuda": deuda})
             pago.deuda = deuda
+            pago.estado = PagoDeuda.Estado.CONFIRMADO
+            pago.confirmado_en = timezone.now()
             pago.save()
             deuda.saldo_actual = max(Decimal("0"), deuda.saldo_actual - pago.monto)
             if deuda.saldo_actual == Decimal("0"):
@@ -1845,13 +1856,49 @@ def pago_create(request, deuda_id):
             messages.success(request, "Pago registrado.")
             return redirect("deuda_list")
     else:
+        pendiente_programado = deuda.pagos.filter(
+            estado=PagoDeuda.Estado.PENDIENTE,
+        ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
         cuotas_restantes = max(1, deuda.numero_cuotas - deuda.pagos.count())
-        monto_sugerido = (deuda.saldo_actual / Decimal(cuotas_restantes)).quantize(
+        saldo_por_programar = max(Decimal("0"), deuda.saldo_actual - pendiente_programado)
+        monto_sugerido = (saldo_por_programar / Decimal(cuotas_restantes)).quantize(
             Decimal("0.01"),
             rounding=ROUND_HALF_UP,
         )
         form = PagoDeudaForm(initial={"monto": monto_sugerido}, user=request.user)
     return render(request, "core/pago_form.html", {"form": form, "deuda": deuda})
+
+
+@login_required
+@transaction.atomic
+def pago_confirmar(request, pk):
+    if request.method != "POST":
+        return redirect("deuda_list")
+
+    pago = get_object_or_404(
+        PagoDeuda.objects.select_for_update().select_related("deuda"),
+        pk=pk,
+        deuda__usuario=request.user,
+    )
+    deuda = Deuda.objects.select_for_update().get(pk=pago.deuda_id)
+    if pago.estado == PagoDeuda.Estado.CONFIRMADO:
+        messages.info(request, "La cuota ya estaba confirmada.")
+        return redirect("deuda_list")
+    if deuda.estado == Deuda.Estado.CANCELADA or deuda.saldo_actual <= 0:
+        messages.error(request, "Esta deuda ya no admite pagos.")
+        return redirect("deuda_list")
+
+    monto_aplicado = min(pago.monto, deuda.saldo_actual)
+    pago.monto = monto_aplicado
+    pago.estado = PagoDeuda.Estado.CONFIRMADO
+    pago.confirmado_en = timezone.now()
+    pago.save(update_fields=["monto", "estado", "confirmado_en"])
+    deuda.saldo_actual = max(Decimal("0"), deuda.saldo_actual - monto_aplicado)
+    if deuda.saldo_actual == 0:
+        deuda.estado = Deuda.Estado.PAGADA
+    deuda.save(update_fields=["saldo_actual", "estado"])
+    messages.success(request, "Pago confirmado y saldo actualizado.")
+    return redirect("deuda_list")
 
 
 @login_required
@@ -1863,10 +1910,11 @@ def pago_delete(request, pk):
         return redirect("deuda_list")
     if request.method == "POST":
         registrar_eliminacion(request, pago)
-        deuda.saldo_actual += pago.monto
-        if deuda.estado == Deuda.Estado.PAGADA and deuda.saldo_actual > 0:
-            deuda.estado = Deuda.Estado.ACTIVA
-        deuda.save(update_fields=["saldo_actual", "estado"])
+        if pago.estado == PagoDeuda.Estado.CONFIRMADO:
+            deuda.saldo_actual = min(deuda.monto_inicial, deuda.saldo_actual + pago.monto)
+            if deuda.estado == Deuda.Estado.PAGADA and deuda.saldo_actual > 0:
+                deuda.estado = Deuda.Estado.ACTIVA
+            deuda.save(update_fields=["saldo_actual", "estado"])
         pago.delete()
         messages.success(request, "Pago eliminado.")
         return redirect("deuda_list")
