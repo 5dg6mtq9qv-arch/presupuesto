@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block page_title %}Conciliar saldo{% endblock %}
+{% block page_subtitle %}Ajusta {{ cuenta.nombre }} sin perder la trazabilidad{% endblock %}
+
+{% block content %}
+<section class="panel">
+  <div class="alert alert-info">
+    Saldo calculado actual: <strong>{{ saldo_anterior }}</strong>. El sistema registrara la diferencia, el motivo, la fecha y el usuario.
+  </div>
+  <form class="form-grid" method="post">
+    {% csrf_token %}
+    {% include "core/includes/unfold_form_fields.html" %}
+    <div class="form-actions actions">
+      <button class="btn btn-primary" type="submit"><span class="material-symbols-outlined">balance</span><span>Conciliar saldo</span></button>
+      <a class="btn btn-outline-secondary" href="{% url 'cuenta_list' %}">Cancelar</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

@@ -48,6 +48,32 @@ class EliminacionRegistro(models.Model):
         return f"{self.modelo}: {self.objeto_repr}"
 
 
+class RegistroAuditoria(models.Model):
+    class Accion(models.TextChoices):
+        CREAR = "crear", "Creacion"
+        ACTUALIZAR = "actualizar", "Actualizacion"
+        ELIMINAR = "eliminar", "Eliminacion"
+        CONFIRMAR = "confirmar", "Confirmacion"
+        AJUSTAR_SALDO = "ajustar_saldo", "Ajuste de saldo"
+
+    usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+    accion = models.CharField(max_length=30, choices=Accion.choices)
+    modelo = models.CharField(max_length=120)
+    objeto_id = models.CharField(max_length=80)
+    objeto_repr = models.CharField(max_length=255)
+    cambios = models.JSONField(default=dict, blank=True)
+    motivo = models.TextField(blank=True)
+    ip = models.GenericIPAddressField(null=True, blank=True)
+    creado = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = '"auditoria"."registro_auditoria"'
+        ordering = ["-creado"]
+
+    def __str__(self):
+        return f"{self.get_accion_display()}: {self.objeto_repr}"
+
+
 class Categoria(models.Model):
     class Tipo(models.TextChoices):
         TAREA = "tarea", "Tarea"
@@ -112,6 +138,23 @@ class CuentaFinanciera(models.Model):
 
     def __str__(self):
         return self.nombre
+
+
+class AjusteSaldo(models.Model):
+    usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    cuenta = models.ForeignKey(CuentaFinanciera, on_delete=models.PROTECT, related_name="ajustes_saldo")
+    saldo_anterior = models.DecimalField(max_digits=12, decimal_places=2)
+    saldo_nuevo = models.DecimalField(max_digits=12, decimal_places=2)
+    diferencia = models.DecimalField(max_digits=12, decimal_places=2)
+    motivo = models.TextField()
+    creado = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = '"auditoria"."ajuste_saldo"'
+        ordering = ["-creado"]
+
+    def __str__(self):
+        return f"{self.cuenta}: {self.saldo_anterior} -> {self.saldo_nuevo}"
 
 
 class MetodoPago(models.Model):
@@ -311,6 +354,26 @@ class MovimientoRecurrente(models.Model):
         return f"{self.get_tipo_display()}: {self.concepto}"
 
 
+class Acreedor(models.Model):
+    usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="acreedores")
+    nombre = models.CharField(max_length=120)
+    telefono = models.CharField(max_length=30, blank=True)
+    email = models.EmailField(blank=True)
+    nota = models.TextField(blank=True)
+    activo = models.BooleanField(default=True)
+    creado = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = '"deudas"."acreedor"'
+        ordering = ["nombre"]
+        constraints = [
+            models.UniqueConstraint(fields=["usuario", "nombre"], name="acreedor_unico_por_usuario"),
+        ]
+
+    def __str__(self):
+        return self.nombre
+
+
 class Deuda(models.Model):
     class Estado(models.TextChoices):
         ACTIVA = "activa", "Activa"
@@ -325,6 +388,13 @@ class Deuda(models.Model):
         blank=True,
     )
     acreedor = models.CharField(max_length=120)
+    acreedor_entidad = models.ForeignKey(
+        Acreedor,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="deudas",
+    )
     concepto = models.CharField(max_length=160)
     monto_inicial = models.DecimalField(max_digits=12, decimal_places=2)
     saldo_actual = models.DecimalField(max_digits=12, decimal_places=2)

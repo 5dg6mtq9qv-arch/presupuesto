@@ -1,5 +1,8 @@
 import calendar
 import csv
+from html import escape
+from ipaddress import ip_address
+from io import BytesIO
 from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -18,6 +21,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date
 
 from .forms import (
+    AjusteSaldoForm,
     CategoriaForm,
     CuentaFinancieraForm,
     DeudaForm,
@@ -39,6 +43,8 @@ from .forms import (
     UsuarioUpdateForm,
 )
 from .models import (
+    Acreedor,
+    AjusteSaldo,
     Categoria,
     CuentaFinanciera,
     Deuda,
@@ -50,6 +56,7 @@ from .models import (
     PagoDeuda,
     PerfilUsuario,
     PresupuestoMensual,
+    RegistroAuditoria,
     Tarea,
 )
 from .services import (
@@ -78,6 +85,37 @@ def registrar_eliminacion(request, instance):
         objeto_repr=str(instance)[:255],
         motivo_eliminacion=motivo,
     )
+    registrar_auditoria(request, RegistroAuditoria.Accion.ELIMINAR, instance, motivo=motivo)
+
+
+def registrar_auditoria(request, accion, instance, cambios=None, motivo=""):
+    forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
+    ip = forwarded.split(",")[0].strip() if forwarded else request.META.get("REMOTE_ADDR")
+    try:
+        ip = str(ip_address(ip)) if ip else None
+    except ValueError:
+        ip = None
+    RegistroAuditoria.objects.create(
+        usuario=request.user if request.user.is_authenticated else None,
+        accion=accion,
+        modelo=instance._meta.label,
+        objeto_id=str(instance.pk),
+        objeto_repr=str(instance)[:255],
+        cambios=cambios or {},
+        motivo=motivo,
+        ip=ip or None,
+    )
+
+
+def saldo_actual_cuenta(cuenta):
+    movimientos = MovimientoFinanciero.objects.filter(
+        usuario=cuenta.usuario,
+        cuenta=cuenta,
+        estado=MovimientoFinanciero.Estado.CONFIRMADO,
+    )
+    ingresos = movimientos.filter(tipo=MovimientoFinanciero.Tipo.INGRESO).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    gastos = movimientos.filter(tipo=MovimientoFinanciero.Tipo.GASTO).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    return cuenta.saldo_inicial + ingresos - gastos
 
 
 def get_or_create_category_by_name(user, tipo, parent, nombre, defaults=None):
@@ -426,7 +464,8 @@ def cuenta_list(request):
     if request.method == "POST":
         form = CuentaFinancieraForm(request.POST, user=request.user)
         if form.is_valid():
-            assign_user_and_save(form, request.user)
+            cuenta = assign_user_and_save(form, request.user)
+            registrar_auditoria(request, RegistroAuditoria.Accion.CREAR, cuenta)
             messages.success(request, "Cuenta creada.")
             return redirect("cuenta_list")
 
@@ -465,6 +504,40 @@ def cuenta_list(request):
             "subtitle": "General y efectivo como base; agrega bancos o tarjetas según necesites.",
         },
     )
+
+
+@login_required
+@transaction.atomic
+def cuenta_ajustar_saldo(request, pk):
+    cuenta = get_object_or_404(CuentaFinanciera.objects.select_for_update(), pk=pk, usuario=request.user)
+    saldo_anterior = saldo_actual_cuenta(cuenta)
+    if request.method == "POST":
+        form = AjusteSaldoForm(request.POST)
+        if form.is_valid():
+            saldo_nuevo = form.cleaned_data["saldo_nuevo"]
+            diferencia = saldo_nuevo - saldo_anterior
+            cuenta.saldo_inicial += diferencia
+            cuenta.save(update_fields=["saldo_inicial"])
+            ajuste = AjusteSaldo.objects.create(
+                usuario=request.user,
+                cuenta=cuenta,
+                saldo_anterior=saldo_anterior,
+                saldo_nuevo=saldo_nuevo,
+                diferencia=diferencia,
+                motivo=form.cleaned_data["motivo"],
+            )
+            registrar_auditoria(
+                request,
+                RegistroAuditoria.Accion.AJUSTAR_SALDO,
+                ajuste,
+                cambios={"saldo_anterior": str(saldo_anterior), "saldo_nuevo": str(saldo_nuevo), "diferencia": str(diferencia)},
+                motivo=ajuste.motivo,
+            )
+            messages.success(request, "Saldo conciliado. El ajuste quedo registrado en auditoria.")
+            return redirect("cuenta_list")
+    else:
+        form = AjusteSaldoForm(initial={"saldo_nuevo": saldo_anterior})
+    return render(request, "core/ajuste_saldo_form.html", {"form": form, "cuenta": cuenta, "saldo_anterior": saldo_anterior})
 
 
 @login_required
@@ -538,6 +611,7 @@ def finance_object_update(request, kind, pk):
         form = form_class(request.POST, instance=instance, user=request.user)
         if form.is_valid():
             form.save()
+            registrar_auditoria(request, RegistroAuditoria.Accion.ACTUALIZAR, instance)
             messages.success(request, f"{label.capitalize()} actualizado.")
             return redirect(back_url)
     else:
@@ -595,6 +669,117 @@ def reporte_financiero_csv(request):
             movimiento.metodo_pago.nombre if movimiento.metodo_pago else "",
             ", ".join(etiqueta.nombre for etiqueta in movimiento.etiquetas.all()),
         ])
+    return response
+
+
+@login_required
+def reporte_financiero_pdf(request):
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+    hoy = timezone.localdate()
+    fecha_inicio = parse_date(request.GET.get("fecha_inicio", "")) or hoy.replace(day=1)
+    fecha_fin = parse_date(request.GET.get("fecha_fin", "")) or hoy
+    if fecha_inicio > fecha_fin:
+        fecha_inicio, fecha_fin = fecha_fin, fecha_inicio
+
+    movimientos = MovimientoFinanciero.objects.filter(
+        usuario=request.user,
+        estado=MovimientoFinanciero.Estado.CONFIRMADO,
+        fecha__range=(fecha_inicio, fecha_fin),
+    ).select_related("categoria__parent")
+    ingresos = movimientos.filter(tipo=MovimientoFinanciero.Tipo.INGRESO).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    gastos = movimientos.filter(tipo=MovimientoFinanciero.Tipo.GASTO).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    recurrentes = MovimientoRecurrente.objects.filter(usuario=request.user, activo=True).select_related("categoria__parent").order_by("tipo", "dia_mes", "concepto")
+    gastos_categoria = gastos_por_categoria(movimientos.filter(tipo=MovimientoFinanciero.Tipo.GASTO), 8)
+    saldo_deudas = Deuda.objects.filter(usuario=request.user, estado=Deuda.Estado.ACTIVA).aggregate(total=Sum("saldo_actual"))["total"] or Decimal("0")
+    pagos_deuda = PagoDeuda.objects.filter(deuda__usuario=request.user, estado=PagoDeuda.Estado.CONFIRMADO, fecha__range=(fecha_inicio, fecha_fin)).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    margen = ingresos - gastos - pagos_deuda
+
+    sugerencias = []
+    if not ingresos:
+        sugerencias.append("Registra tus ingresos para medir cuanto de ellos absorben los gastos y las deudas.")
+    elif gastos > ingresos * Decimal("0.80"):
+        sugerencias.append("Los gastos consumen mas del 80% de los ingresos. Revisa primero las categorias de mayor peso.")
+    if gastos_categoria and gastos > 0:
+        principal = gastos_categoria[0]
+        porcentaje = Decimal(str(principal["total"])) / gastos * Decimal("100")
+        objetivo = Decimal(str(principal["total"])) * Decimal("0.10")
+        sugerencias.append(f'{principal["categoria"]} concentra {porcentaje:.1f}% del gasto. Una reduccion inicial del 10% liberaria aproximadamente {objetivo:.2f}.')
+    recurrentes_gasto = [item for item in recurrentes if item.tipo == MovimientoFinanciero.Tipo.GASTO]
+    if recurrentes_gasto:
+        total_recurrente = sum((item.monto for item in recurrentes_gasto), Decimal("0"))
+        sugerencias.append(f"Revisa {len(recurrentes_gasto)} gastos recurrentes activos por un total mensual de {total_recurrente:.2f}; cancela o renegocia los que ya no aporten valor.")
+    if saldo_deudas and ingresos and saldo_deudas > ingresos:
+        sugerencias.append("La deuda activa supera los ingresos del periodo. Prioriza la obligacion de mayor costo financiero sin descuidar pagos minimos.")
+    if not sugerencias:
+        sugerencias.append("El periodo luce equilibrado. Mantener presupuestos por categoria ayudara a detectar desviaciones temprano.")
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=18 * mm, leftMargin=18 * mm, topMargin=18 * mm, bottomMargin=18 * mm, title="Informe financiero personal")
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name="ReportTitle", parent=styles["Title"], textColor=colors.HexColor("#167f75"), fontSize=20, leading=24, alignment=TA_CENTER, spaceAfter=10))
+    styles.add(ParagraphStyle(name="Section", parent=styles["Heading2"], textColor=colors.HexColor("#1b2431"), fontSize=13, leading=16, spaceBefore=12, spaceAfter=7))
+    styles.add(ParagraphStyle(name="SmallMuted", parent=styles["BodyText"], textColor=colors.HexColor("#687588"), fontSize=8, leading=11))
+    story = [
+        Paragraph("Informe financiero personal", styles["ReportTitle"]),
+        Paragraph(f"{fecha_inicio.strftime('%d/%m/%Y')} al {fecha_fin.strftime('%d/%m/%Y')} - generado el {hoy.strftime('%d/%m/%Y')}", styles["SmallMuted"]),
+        Spacer(1, 5 * mm),
+    ]
+    resumen = [
+        ["Ingresos", "Gastos", "Pagos de deuda", "Resultado"],
+        [f"{ingresos:.2f}", f"{gastos:.2f}", f"{pagos_deuda:.2f}", f"{margen:.2f}"],
+    ]
+    tabla = Table(resumen, colWidths=[42 * mm] * 4)
+    tabla.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e6f7f5")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#167f75")),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("GRID", (0, 0), (-1, -1), .35, colors.HexColor("#d9e2e8")), ("TOPPADDING", (0, 0), (-1, -1), 8), ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    story.extend([tabla, Paragraph("Gastos recurrentes", styles["Section"])])
+    recurrente_data = [["Concepto", "Categoria", "Dia", "Monto mensual"]]
+    for item in recurrentes_gasto:
+        categoria = str(item.categoria) if item.categoria else "Sin categoria"
+        recurrente_data.append([
+            Paragraph(escape(item.concepto), styles["SmallMuted"]),
+            Paragraph(escape(categoria), styles["SmallMuted"]),
+            str(item.dia_mes),
+            f"{item.monto:.2f}",
+        ])
+    if len(recurrente_data) == 1:
+        recurrente_data.append(["No hay gastos recurrentes activos", "", "", "0.00"])
+    tabla_recurrentes = Table(recurrente_data, colWidths=[60 * mm, 55 * mm, 18 * mm, 34 * mm], repeatRows=1)
+    tabla_recurrentes.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f1f5f9")), ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("GRID", (0, 0), (-1, -1), .3, colors.HexColor("#d9e2e8")), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("FONTSIZE", (0, 0), (-1, -1), 8), ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
+    story.extend([tabla_recurrentes, Paragraph("Donde reducir", styles["Section"])])
+    categoria_data = [["Categoria", "Gasto", "% del total"]]
+    for item in gastos_categoria:
+        total = Decimal(str(item["total"]))
+        porcentaje = total / gastos * Decimal("100") if gastos else Decimal("0")
+        categoria_data.append([Paragraph(escape(item["categoria"]), styles["SmallMuted"]), f"{total:.2f}", f"{porcentaje:.1f}%"])
+    if len(categoria_data) == 1:
+        categoria_data.append(["Sin gastos en el periodo", "0.00", "0.0%"])
+    tabla_categorias = Table(categoria_data, colWidths=[95 * mm, 36 * mm, 36 * mm], repeatRows=1)
+    tabla_categorias.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#fef3e2")), ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("GRID", (0, 0), (-1, -1), .3, colors.HexColor("#d9e2e8")), ("FONTSIZE", (0, 0), (-1, -1), 8), ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
+    story.extend([tabla_categorias, Paragraph("Sugerencias y mejoras", styles["Section"])])
+    for numero, sugerencia in enumerate(sugerencias, 1):
+        story.append(Paragraph(f"{numero}. {escape(sugerencia)}", styles["BodyText"]))
+        story.append(Spacer(1, 2 * mm))
+    story.extend([Paragraph("Situacion de deuda", styles["Section"]), Paragraph(f"Saldo activo: {saldo_deudas:.2f}. Pagado durante el periodo: {pagos_deuda:.2f}.", styles["BodyText"]), Spacer(1, 5 * mm), Paragraph("Las sugerencias son orientativas y se basan unicamente en los datos registrados en el sistema.", styles["SmallMuted"])])
+
+    def pie_pagina(canvas, document):
+        canvas.saveState()
+        canvas.setFont("Helvetica", 8)
+        canvas.setFillColor(colors.HexColor("#687588"))
+        canvas.drawRightString(A4[0] - 18 * mm, 10 * mm, f"Pagina {document.page}")
+        canvas.restoreState()
+
+    doc.build(story, onFirstPage=pie_pagina, onLaterPages=pie_pagina)
+    response = HttpResponse(buffer.getvalue(), content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="informe-financiero-{fecha_inicio}-{fecha_fin}.pdf"'
     return response
 
 
@@ -1662,7 +1847,8 @@ def movimiento_ingreso_create(request):
     if request.method == "POST":
         form = MovimientoFinancieroForm(request.POST, request.FILES, user=request.user, tipo=tipo)
         if form.is_valid():
-            assign_user_and_save(form, request.user)
+            movimiento = assign_user_and_save(form, request.user)
+            registrar_auditoria(request, RegistroAuditoria.Accion.CREAR, movimiento, cambios={"monto": str(movimiento.monto)})
             messages.success(request, "Ingreso creado.")
             return redirect(f"{reverse('movimiento_list')}?tipo={tipo}")
     else:
@@ -1687,7 +1873,8 @@ def movimiento_gasto_create(request):
     if request.method == "POST":
         form = MovimientoFinancieroForm(request.POST, request.FILES, user=request.user, tipo=tipo)
         if form.is_valid():
-            assign_user_and_save(form, request.user)
+            movimiento = assign_user_and_save(form, request.user)
+            registrar_auditoria(request, RegistroAuditoria.Accion.CREAR, movimiento, cambios={"monto": str(movimiento.monto)})
             messages.success(request, "Gasto creado.")
             return redirect(f"{reverse('movimiento_list')}?tipo={tipo}")
     else:
@@ -1722,7 +1909,14 @@ def movimiento_update(request, pk):
             tipo=tipo,
         )
         if form.is_valid():
+            monto_anterior = movimiento.monto
             form.save()
+            registrar_auditoria(
+                request,
+                RegistroAuditoria.Accion.ACTUALIZAR,
+                movimiento,
+                cambios={"monto_anterior": str(monto_anterior), "monto_nuevo": str(movimiento.monto)},
+            )
             messages.success(request, "Movimiento actualizado.")
             return redirect(f"{reverse('movimiento_list')}?tipo={tipo}")
     else:
@@ -1803,7 +1997,8 @@ def deuda_create(request):
     if request.method == "POST":
         form = DeudaForm(request.POST, user=request.user)
         if form.is_valid():
-            assign_user_and_save(form, request.user)
+            deuda = assign_user_and_save(form, request.user)
+            registrar_auditoria(request, RegistroAuditoria.Accion.CREAR, deuda)
             messages.success(request, "Deuda creada.")
             return redirect("deuda_list")
     else:
@@ -1817,7 +2012,14 @@ def deuda_update(request, pk):
     if request.method == "POST":
         form = DeudaForm(request.POST, instance=deuda, user=request.user)
         if form.is_valid():
+            saldo_anterior = deuda.saldo_actual
             form.save()
+            registrar_auditoria(
+                request,
+                RegistroAuditoria.Accion.ACTUALIZAR,
+                deuda,
+                cambios={"saldo_anterior": str(saldo_anterior), "saldo_actual": str(deuda.saldo_actual)},
+            )
             messages.success(request, "Deuda actualizada.")
             return redirect("deuda_list")
     else:
@@ -1856,6 +2058,12 @@ def pago_create(request, deuda_id):
             if deuda.saldo_actual == Decimal("0"):
                 deuda.estado = Deuda.Estado.PAGADA
             deuda.save(update_fields=["saldo_actual", "estado"])
+            registrar_auditoria(
+                request,
+                RegistroAuditoria.Accion.CREAR,
+                pago,
+                cambios={"monto": str(pago.monto), "saldo_resultante": str(deuda.saldo_actual)},
+            )
             messages.success(request, "Pago registrado.")
             return redirect("deuda_list")
     else:
@@ -1900,6 +2108,12 @@ def pago_confirmar(request, pk):
     if deuda.saldo_actual == 0:
         deuda.estado = Deuda.Estado.PAGADA
     deuda.save(update_fields=["saldo_actual", "estado"])
+    registrar_auditoria(
+        request,
+        RegistroAuditoria.Accion.CONFIRMAR,
+        pago,
+        cambios={"monto": str(monto_aplicado), "saldo_resultante": str(deuda.saldo_actual)},
+    )
     messages.success(request, "Pago confirmado y saldo actualizado.")
     return redirect("deuda_list")
 

@@ -2,6 +2,8 @@ from django.contrib import admin
 from unfold.admin import ModelAdmin, TabularInline
 
 from .models import (
+    Acreedor,
+    AjusteSaldo,
     Categoria,
     CuentaFinanciera,
     Deuda,
@@ -13,6 +15,7 @@ from .models import (
     PagoDeuda,
     PerfilUsuario,
     PresupuestoMensual,
+    RegistroAuditoria,
     Tarea,
 )
 
@@ -29,6 +32,29 @@ class EliminacionRegistroAdmin(ModelAdmin):
     list_filter = ("modelo", "creado")
     search_fields = ("modelo", "objeto_repr", "motivo_eliminacion", "usuario__username")
     readonly_fields = ("usuario", "modelo", "objeto_id", "objeto_repr", "motivo_eliminacion", "creado")
+
+
+@admin.register(RegistroAuditoria)
+class RegistroAuditoriaAdmin(ModelAdmin):
+    list_display = ("accion", "modelo", "objeto_repr", "usuario", "ip", "creado")
+    list_filter = ("accion", "modelo", "creado")
+    search_fields = ("objeto_repr", "motivo", "usuario__username")
+    readonly_fields = ("usuario", "accion", "modelo", "objeto_id", "objeto_repr", "cambios", "motivo", "ip", "creado")
+
+
+@admin.register(AjusteSaldo)
+class AjusteSaldoAdmin(ModelAdmin):
+    list_display = ("cuenta", "saldo_anterior", "saldo_nuevo", "diferencia", "usuario", "creado")
+    list_filter = ("creado",)
+    search_fields = ("cuenta__nombre", "motivo", "usuario__username")
+    readonly_fields = ("usuario", "cuenta", "saldo_anterior", "saldo_nuevo", "diferencia", "motivo", "creado")
+
+
+@admin.register(Acreedor)
+class AcreedorAdmin(ModelAdmin):
+    list_display = ("nombre", "usuario", "telefono", "email", "activo")
+    list_filter = ("activo",)
+    search_fields = ("nombre", "telefono", "email", "usuario__username")
 
 
 @admin.register(Categoria)
@@ -107,7 +133,7 @@ class DeudaAdmin(ModelAdmin):
         "usuario",
     )
     list_filter = ("estado", "fecha_vencimiento")
-    search_fields = ("acreedor", "concepto", "nota", "usuario__username")
+    search_fields = ("acreedor", "acreedor_entidad__nombre", "concepto", "nota", "usuario__username")
     inlines = [PagoDeudaInline]
 
 

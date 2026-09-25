@@ -7,6 +7,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.utils import timezone
 
 from .models import (
+    Acreedor,
     Categoria,
     CuentaFinanciera,
     Deuda,
@@ -447,6 +448,12 @@ class CuentaFinancieraForm(UserScopedModelForm):
             raise forms.ValidationError("Ya existe.")
         return nombre
 
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, user=user, **kwargs)
+        if self.instance.pk:
+            self.fields["saldo_inicial"].disabled = True
+            self.fields["saldo_inicial"].help_text = "Para cuadrar el saldo usa la accion Conciliar saldo; asi quedara auditado."
+
 
 class MetodoPagoForm(UserScopedModelForm):
     class Meta:
@@ -628,10 +635,24 @@ class MovimientoRecurrenteForm(UserScopedModelForm):
 
 
 class DeudaForm(UserScopedModelForm):
+    acreedor_existente = forms.ModelChoiceField(
+        label="Acreedor",
+        queryset=Acreedor.objects.none(),
+        required=False,
+        empty_label="Selecciona un acreedor",
+    )
+    nuevo_acreedor = forms.CharField(
+        label="O crea uno nuevo",
+        max_length=120,
+        required=False,
+        help_text="Se guardara para reutilizarlo en futuras deudas.",
+    )
+
     class Meta:
         model = Deuda
         fields = [
-            "acreedor",
+            "acreedor_existente",
+            "nuevo_acreedor",
             "categoria",
             "concepto",
             "monto_inicial",
@@ -659,6 +680,12 @@ class DeudaForm(UserScopedModelForm):
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, user=user, **kwargs)
+        self.fields["acreedor_existente"].queryset = Acreedor.objects.filter(
+            usuario=user,
+            activo=True,
+        ).order_by("nombre")
+        if self.instance.pk and self.instance.acreedor_entidad_id:
+            self.fields["acreedor_existente"].initial = self.instance.acreedor_entidad
         self.fields["categoria"].queryset = Categoria.objects.filter(
             usuario=user,
             tipo__in=FINANCIAL_CATEGORY_TYPES,
@@ -675,6 +702,14 @@ class DeudaForm(UserScopedModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
+        acreedor = cleaned_data.get("acreedor_existente")
+        nuevo_acreedor = (cleaned_data.get("nuevo_acreedor") or "").strip()
+        if acreedor and nuevo_acreedor:
+            self.add_error("nuevo_acreedor", "Selecciona un acreedor o crea uno nuevo, no ambos.")
+        elif not acreedor and not nuevo_acreedor:
+            self.add_error("acreedor_existente", "Selecciona un acreedor o escribe uno nuevo.")
+        elif acreedor and acreedor.usuario_id != self.user.id:
+            self.add_error("acreedor_existente", "El acreedor seleccionado no es valido.")
         fecha_inicio = cleaned_data.get("fecha_inicio")
         numero_cuotas = cleaned_data.get("numero_cuotas")
 
@@ -685,12 +720,37 @@ class DeudaForm(UserScopedModelForm):
 
     def save(self, commit=True):
         instance = super().save(commit=False)
+        acreedor = self.cleaned_data.get("acreedor_existente")
+        nombre_nuevo = (self.cleaned_data.get("nuevo_acreedor") or "").strip()
+        if nombre_nuevo:
+            acreedor = Acreedor.objects.filter(
+                usuario=self.user,
+                nombre__iexact=nombre_nuevo,
+            ).first()
+            if not acreedor:
+                acreedor = Acreedor.objects.create(usuario=self.user, nombre=nombre_nuevo)
+        instance.acreedor_entidad = acreedor
+        instance.acreedor = acreedor.nombre
         if instance.categoria_id and not instance.categoria.parent_id:
             instance.categoria = get_general_subcategory(instance.categoria)
         if commit:
             instance.save()
             self.save_m2m()
         return instance
+
+
+class AjusteSaldoForm(forms.Form):
+    saldo_nuevo = forms.DecimalField(
+        label="Saldo real",
+        max_digits=12,
+        decimal_places=2,
+        widget=forms.NumberInput(attrs={"class": "form-control", "step": "0.01"}),
+    )
+    motivo = forms.CharField(
+        label="Motivo del ajuste",
+        min_length=5,
+        widget=forms.Textarea(attrs={"class": "form-control", "rows": 3, "placeholder": "Ej.: conciliacion con estado bancario"}),
+    )
 
 
 class PagoDeudaForm(UserScopedModelForm):

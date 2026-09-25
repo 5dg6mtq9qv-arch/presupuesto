@@ -5,6 +5,7 @@
 
 {% block content %}
 <section class="panel">
+  <p class="muted">Selecciona un acreedor guardado. Si aun no existe, escribe su nombre en “O crea uno nuevo” y quedara disponible para la proxima deuda.</p>
   <form class="form-grid" method="post">
     {% csrf_token %}
     {% include "core/includes/unfold_form_fields.html" %}
