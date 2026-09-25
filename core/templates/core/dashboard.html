@@ -68,8 +68,8 @@
     <p class="metric-help">Porcentaje de tus ingresos que ya destinaste a gastos.</p>
   </section>
   <section class="panel panel-interactive metric gray">
-    <div class="metric-head"><span class="metric-icon"><span class="material-symbols-outlined">event_upcoming</span></span><div class="metric-copy"><div class="metric-label">Cuotas del mes</div><div class="metric-value">{{ cuotas_deuda_mes }}</div></div></div>
-    <p class="metric-help">Obligaciones programadas, pendientes o confirmadas.</p>
+    <div class="metric-head"><span class="metric-icon"><span class="material-symbols-outlined">event_upcoming</span></span><div class="metric-copy"><div class="metric-label">Cuotas pendientes del mes</div><div class="metric-value">{{ cuotas_deuda_mes }}</div></div></div>
+    <p class="metric-help">Solo obligaciones de este mes que todavía no has pagado.</p>
   </section>
   <section class="panel panel-interactive metric blue">
     <div class="metric-head"><span class="metric-icon"><span class="material-symbols-outlined">savings</span></span><div class="metric-copy"><div class="metric-label">Presupuesto disponible</div><div class="metric-value">{{ presupuesto.total_restante }}</div></div></div>
@@ -110,13 +110,18 @@
           <td class="amount">{{ calculo_balance.margen }}</td>
         </tr>
         <tr>
-          <td>Cuotas de deudas del mes</td>
-          <td>{{ calculo_balance.cuotas_deuda_count }} cuotas programadas para este mes</td>
+          <td>Pagado a deudas este mes</td>
+          <td>Cuotas que ya fueron confirmadas como pagadas</td>
+          <td class="amount">{{ calculo_balance.pagos_deuda }}</td>
+        </tr>
+        <tr>
+          <td>Cuotas pendientes del mes</td>
+          <td>{{ calculo_balance.cuotas_deuda_count }} cuotas todavía por pagar este mes</td>
           <td class="amount">{{ calculo_balance.cuotas_deuda }}</td>
         </tr>
         <tr>
           <td><strong>Resultado proyectado del mes</strong></td>
-          <td>Margen {{ calculo_balance.margen }} - cuotas {{ calculo_balance.cuotas_deuda }}</td>
+          <td>Margen {{ calculo_balance.margen }} - pagado {{ calculo_balance.pagos_deuda }} - pendiente {{ calculo_balance.cuotas_deuda }}</td>
           <td class="amount"><strong>{{ calculo_balance.posicion_neta }}</strong></td>
         </tr>
       </tbody>
@@ -135,7 +140,7 @@
     <span><strong>{{ ingresos }}</strong> ingresos registrados</span>
     <span><strong>{{ gastos }}</strong> gastos reales acumulados</span>
     <span><strong>{{ margen }}</strong> margen antes de deudas</span>
-    <span><strong>{{ cuotas_deuda_mes }}</strong> cuotas de deudas del mes</span>
+    <span><strong>{{ cuotas_deuda_mes }}</strong> cuotas pendientes del mes</span>
     <span><strong>{{ pagos_mes }}</strong> pagado a deudas este mes</span>
     <span><strong>{{ saldo_deudas }}</strong> saldo total pendiente</span>
     <span><strong>{{ saldo_disponible }}</strong> disponible hoy</span>

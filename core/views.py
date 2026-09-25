@@ -915,10 +915,18 @@ def dashboard(request):
         estado=Deuda.Estado.ACTIVA,
     )
     saldo_deudas = deudas_activas.aggregate(total=Sum("saldo_actual"))["total"] or Decimal("0")
-    cuotas_deuda_detalle, cuotas_deuda_mes = cuotas_deudas_programadas(
+    cuotas_deuda_detalle, _cuotas_deuda_total_mes = cuotas_deudas_programadas(
         request.user,
         inicio_mes,
         hoy.replace(day=calendar.monthrange(hoy.year, hoy.month)[1]),
+    )
+    cuotas_pendientes_detalle = [
+        cuota for cuota in cuotas_deuda_detalle
+        if cuota["estado"] == PagoDeuda.Estado.PENDIENTE
+    ]
+    cuotas_deuda_mes = sum(
+        (cuota["monto"] for cuota in cuotas_pendientes_detalle),
+        Decimal("0"),
     )
     pagos_mes = PagoDeuda.objects.filter(
         deuda__usuario=request.user,
@@ -926,14 +934,15 @@ def dashboard(request):
         fecha__year=hoy.year,
         fecha__month=hoy.month,
     ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
-    posicion_neta = margen - cuotas_deuda_mes
+    posicion_neta = margen - pagos_mes - cuotas_deuda_mes
     calculo_balance = {
         "ingresos": ingresos,
         "gastos": gastos,
         "margen": margen,
+        "pagos_deuda": pagos_mes,
         "cuotas_deuda": cuotas_deuda_mes,
         "posicion_neta": posicion_neta,
-        "cuotas_deuda_count": len(cuotas_deuda_detalle),
+        "cuotas_deuda_count": len(cuotas_pendientes_detalle),
     }
     uso_ingresos = Decimal("0")
     if ingresos:
@@ -1026,11 +1035,11 @@ def dashboard(request):
             "margen": [item["margen"] for item in flujo_mensual],
         },
         "balanceGeneral": {
-            "labels": ["Ingresos", "Gastos", "Cuotas del mes", "Resultado del mes"],
-            "values": [float(ingresos), float(gastos), float(cuotas_deuda_mes), float(posicion_neta)],
+            "labels": ["Ingresos", "Gastos", "Pagado a deudas", "Cuotas pendientes", "Resultado del mes"],
+            "values": [float(ingresos), float(gastos), float(pagos_mes), float(cuotas_deuda_mes), float(posicion_neta)],
         },
         "obligaciones": {
-            "labels": ["Cuotas del mes", "Pagado este mes", "Saldo pendiente"],
+            "labels": ["Pendiente este mes", "Pagado este mes", "Saldo total de deudas"],
             "values": [float(cuotas_deuda_mes), float(pagos_mes), float(saldo_deudas)],
         },
         "gastosCategoria": {
