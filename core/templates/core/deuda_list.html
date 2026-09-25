@@ -6,8 +6,9 @@
 {% block content %}
 <div class="actions">
   <div></div>
-  <a class="btn btn-primary btn-icon shadow-sm" href="{% url 'deuda_create' %}" title="Nueva deuda" aria-label="Nueva deuda">
+  <a class="btn btn-primary shadow-sm" href="{% url 'deuda_create' %}">
     <span class="material-symbols-outlined">add</span>
+    <span>Nueva deuda</span>
   </a>
 </div>
 
@@ -43,8 +44,8 @@
 
 <section class="panel">
   <div class="table-wrap">
-    <table class="table table-hover align-middle mb-0">
-      <thead><tr><th>Acreedor</th><th>Categoria</th><th>Concepto</th><th>Saldo</th><th>Cuotas</th><th>Estado</th><th>Pagos</th><th></th></tr></thead>
+    <table class="table table-hover align-middle mb-0 debt-table">
+      <thead><tr><th>Acreedor</th><th>Categoría</th><th>Concepto</th><th>Saldo</th><th>Cuotas</th><th>Estado</th><th>Cuotas y pagos</th><th><span class="visually-hidden">Acciones</span></th></tr></thead>
       <tbody>
         {% for deuda in deudas %}
           <tr>
@@ -64,50 +65,59 @@
             <td>{{ deuda.concepto }}</td>
             <td class="amount">{{ deuda.saldo_actual }}</td>
             <td>
-              <span class="badge rounded-pill text-bg-light border">
-                {{ deuda.pagos_confirmados_count }}/{{ deuda.numero_cuotas }} pagadas
-              </span>
-              {% if deuda.cuotas_pendientes_count %}<span class="badge rounded-pill text-bg-warning">{{ deuda.cuotas_pendientes_count }} pendiente{{ deuda.cuotas_pendientes_count|pluralize:"s" }}</span>{% endif %}
+              <div class="installment-summary">
+                <span class="badge rounded-pill text-bg-light border"><strong>{{ deuda.pagos_confirmados_count }}</strong> de {{ deuda.numero_cuotas }} pagadas</span>
+                {% if deuda.cuotas_pendientes_count %}<span class="badge rounded-pill text-bg-warning">{{ deuda.cuotas_pendientes_count }} pendiente{{ deuda.cuotas_pendientes_count|pluralize:"s" }}</span>{% endif %}
+              </div>
             </td>
             <td>
               <span class="badge rounded-pill {% if deuda.estado == 'pagada' %}text-bg-success{% elif deuda.estado == 'cancelada' %}text-bg-danger{% else %}text-bg-warning{% endif %}">
                 {{ deuda.get_estado_display }}
               </span>
             </td>
-            <td>
-              <a class="btn btn-sm btn-outline-primary btn-icon mb-2" href="{% url 'pago_create' deuda.pk %}" title="Registrar pago" aria-label="Registrar pago">
-                <span class="material-symbols-outlined">payments</span>
-              </a>
-              {% for pago in deuda.pagos.all %}
-                <div class="d-flex align-items-center justify-content-between gap-2 small text-muted">
-                  <span>
-                    {{ pago.fecha|date:"Y-m" }} · {{ pago.monto }}{% if pago.cuota_numero %} · Cuota {{ pago.cuota_numero }}{% endif %}
-                    <span class="badge rounded-pill {% if pago.estado == 'confirmado' %}text-bg-success{% else %}text-bg-warning{% endif %}">{{ pago.get_estado_display }}</span>
-                  </span>
-                  {% if pago.estado == "pendiente" %}
-                    <form method="post" action="{% url 'pago_confirmar' pago.pk %}">
-                      {% csrf_token %}
-                      <button class="btn btn-sm btn-primary" type="submit" title="Confirmar que esta cuota fue pagada">
-                        <span class="material-symbols-outlined">check</span><span>Confirmar</span>
+            <td class="payments-cell">
+              <div class="debt-payments">
+                {% for pago in deuda.pagos.all %}
+                  <div class="debt-payment">
+                    <div class="debt-payment-main">
+                      <div class="debt-payment-title">
+                        <strong>{% if pago.cuota_numero %}Cuota {{ pago.cuota_numero }}{% else %}Pago manual{% endif %}</strong>
+                        <span class="badge rounded-pill {% if pago.estado == 'confirmado' %}text-bg-success{% else %}text-bg-warning{% endif %}">{{ pago.get_estado_display }}</span>
+                      </div>
+                      <div class="debt-payment-meta">Vence {{ pago.fecha|date:"d/m/Y" }} · <strong class="amount">{{ pago.monto }}</strong></div>
+                    </div>
+                    <div class="debt-payment-actions">
+                      {% if pago.estado == "pendiente" %}
+                        <form method="post" action="{% url 'pago_confirmar' pago.pk %}" onsubmit="return confirm('¿Confirmas que esta cuota ya fue pagada?');">
+                          {% csrf_token %}
+                          <button class="btn btn-sm btn-primary" type="submit">
+                            <span class="material-symbols-outlined">check</span><span>Confirmar pago</span>
+                          </button>
+                        </form>
+                      {% endif %}
+                      <button class="btn btn-sm btn-outline-danger btn-icon" type="button" title="Eliminar esta cuota" aria-label="Eliminar esta cuota" data-delete-trigger="delete-pago-{{ pago.pk }}">
+                        <span class="material-symbols-outlined">delete</span>
                       </button>
-                    </form>
-                  {% endif %}
-                  <button class="btn btn-sm btn-outline-danger btn-icon" type="button" title="Eliminar pago" aria-label="Eliminar pago" data-delete-trigger="delete-pago-{{ pago.pk }}">
-                    <span class="material-symbols-outlined">delete</span>
-                  </button>
-                  <form id="delete-pago-{{ pago.pk }}" method="post" action="{% url 'pago_delete' pago.pk %}" hidden>
-                    {% csrf_token %}
-                    <input type="hidden" name="motivo_eliminacion" data-delete-reason>
-                  </form>
-                </div>
-              {% endfor %}
+                      <form id="delete-pago-{{ pago.pk }}" method="post" action="{% url 'pago_delete' pago.pk %}" hidden>
+                        {% csrf_token %}
+                        <input type="hidden" name="motivo_eliminacion" data-delete-reason>
+                      </form>
+                    </div>
+                  </div>
+                {% empty %}
+                  <span class="muted small">Todavía no hay cuotas registradas.</span>
+                {% endfor %}
+                <a class="btn btn-sm btn-outline-primary" href="{% url 'pago_create' deuda.pk %}">
+                  <span class="material-symbols-outlined">payments</span><span>Registrar otro pago</span>
+                </a>
+              </div>
             </td>
-            <td>
-              <span class="action-icons">
+            <td class="debt-actions-cell">
+              <span class="debt-actions">
                 <a class="btn btn-sm btn-outline-primary btn-icon" href="{% url 'deuda_update' deuda.pk %}" title="Editar" aria-label="Editar">
                   <span class="material-symbols-outlined">edit</span>
                 </a>
-                <button class="btn btn-sm btn-outline-danger btn-icon" type="button" title="Eliminar" aria-label="Eliminar" data-delete-trigger="delete-deuda-{{ deuda.pk }}">
+                <button class="btn btn-sm btn-outline-danger btn-icon" type="button" title="Eliminar toda la deuda" aria-label="Eliminar toda la deuda" data-delete-trigger="delete-deuda-{{ deuda.pk }}">
                   <span class="material-symbols-outlined">delete</span>
                 </button>
                 <form id="delete-deuda-{{ deuda.pk }}" method="post" action="{% url 'deuda_delete' deuda.pk %}" hidden>

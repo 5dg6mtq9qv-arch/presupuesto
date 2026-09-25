@@ -11,7 +11,7 @@ from django.contrib.auth.decorators import user_passes_test
 from django.core.paginator import Paginator
 from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse
 from django.db import transaction
-from django.db.models import Min, Q, Sum
+from django.db.models import Min, Prefetch, Q, Sum
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -1758,7 +1758,10 @@ def movimiento_delete(request, pk):
 
 @login_required
 def deuda_list(request):
-    deudas = Deuda.objects.filter(usuario=request.user).select_related("categoria__parent").prefetch_related("pagos")
+    pagos_ordenados = PagoDeuda.objects.order_by("fecha", "cuota_numero", "creado")
+    deudas = Deuda.objects.filter(usuario=request.user).select_related("categoria__parent").prefetch_related(
+        Prefetch("pagos", queryset=pagos_ordenados)
+    )
     q = request.GET.get("q", "").strip()
     estado = request.GET.get("estado", "")
     categoria_id = request.GET.get("categoria", "")
