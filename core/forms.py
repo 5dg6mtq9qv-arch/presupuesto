@@ -686,6 +686,9 @@ class DeudaForm(UserScopedModelForm):
         ).order_by("nombre")
         if self.instance.pk and self.instance.acreedor_entidad_id:
             self.fields["acreedor_existente"].initial = self.instance.acreedor_entidad
+        if self.instance.pk and self.instance.pagos.exists():
+            self.fields["saldo_actual"].disabled = True
+            self.fields["saldo_actual"].help_text = "El saldo se actualiza al confirmar o eliminar pagos."
         self.fields["categoria"].queryset = Categoria.objects.filter(
             usuario=user,
             tipo__in=FINANCIAL_CATEGORY_TYPES,
@@ -712,6 +715,15 @@ class DeudaForm(UserScopedModelForm):
             self.add_error("acreedor_existente", "El acreedor seleccionado no es valido.")
         fecha_inicio = cleaned_data.get("fecha_inicio")
         numero_cuotas = cleaned_data.get("numero_cuotas")
+        monto_inicial = cleaned_data.get("monto_inicial")
+        saldo_actual = cleaned_data.get("saldo_actual")
+
+        if monto_inicial is not None and monto_inicial <= 0:
+            self.add_error("monto_inicial", "El monto inicial debe ser mayor que cero.")
+        if saldo_actual is not None and saldo_actual < 0:
+            self.add_error("saldo_actual", "El saldo actual no puede ser negativo.")
+        if monto_inicial is not None and saldo_actual is not None and saldo_actual > monto_inicial:
+            self.add_error("saldo_actual", "El saldo actual no puede superar el monto inicial.")
 
         if fecha_inicio and numero_cuotas:
             cleaned_data["fecha_vencimiento"] = add_months(fecha_inicio, numero_cuotas)

@@ -91,6 +91,59 @@ def sumar_meses(fecha, meses):
     return fecha.replace(year=anio, month=mes, day=dia)
 
 
+@transaction.atomic
+def crear_historial_inicial_deuda(deuda, hasta_fecha=None):
+    """Reconstruct confirmed installments from the opening and current balances.
+
+    This is only used when a debt is first loaded into the system. It never
+    changes ``saldo_actual`` because that balance already includes these
+    historical payments.
+    """
+    hasta_fecha = hasta_fecha or timezone.localdate()
+    deuda = Deuda.objects.select_for_update().get(pk=deuda.pk)
+    if deuda.pagos.exists() or deuda.numero_cuotas < 1 or deuda.monto_inicial <= 0:
+        return []
+
+    total_pagado = max(Decimal("0"), deuda.monto_inicial - deuda.saldo_actual)
+    if total_pagado <= 0:
+        return []
+
+    cuota_teorica = deuda.monto_inicial / Decimal(deuda.numero_cuotas)
+    cuotas_por_saldo = int(
+        (total_pagado / cuota_teorica).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    )
+    cuotas_vencidas = sum(
+        sumar_meses(deuda.fecha_inicio, numero) <= hasta_fecha
+        for numero in range(1, deuda.numero_cuotas + 1)
+    )
+    cuotas_pagadas = min(deuda.numero_cuotas, cuotas_vencidas, cuotas_por_saldo)
+    if cuotas_pagadas <= 0:
+        return []
+
+    monto_base = (total_pagado / Decimal(cuotas_pagadas)).quantize(
+        Decimal("0.01"),
+        rounding=ROUND_HALF_UP,
+    )
+    creados = []
+    acumulado = Decimal("0")
+    for numero in range(1, cuotas_pagadas + 1):
+        monto = monto_base
+        if numero == cuotas_pagadas:
+            monto = total_pagado - acumulado
+        pago = PagoDeuda.objects.create(
+            deuda=deuda,
+            monto=monto,
+            fecha=sumar_meses(deuda.fecha_inicio, numero),
+            cuota_numero=numero,
+            estado=PagoDeuda.Estado.CONFIRMADO,
+            confirmado_en=timezone.now(),
+            nota="Cuota historica reconstruida al registrar el saldo actual.",
+        )
+        creados.append(pago)
+        acumulado += monto
+    return creados
+
+
 def iter_fechas_recurrentes_vencidas(recurrente, hasta_fecha):
     creado_local = timezone.localtime(recurrente.creado)
     anio = creado_local.year

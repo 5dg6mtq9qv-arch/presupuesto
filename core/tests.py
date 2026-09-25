@@ -16,6 +16,7 @@ from .models import (
     PagoDeuda,
 )
 from .services import (
+    crear_historial_inicial_deuda,
     cuotas_deudas_programadas,
     ensure_user_finance_setup,
     generar_movimientos_recurrentes,
@@ -151,6 +152,35 @@ class MovimientoRecurrenteServiceTests(TestCase):
         self.assertEqual(creados[0].fecha, datetime(2026, 8, 5).date())
         self.assertEqual(creados[0].estado, PagoDeuda.Estado.PENDIENTE)
         self.assertEqual(deuda.saldo_actual, Decimal("300.00"))
+
+    def test_reconstruye_cuotas_pagadas_desde_saldo_inicial_y_actual(self):
+        deuda = Deuda.objects.create(
+            usuario=self.user,
+            acreedor="Tarjeta Visa Pacifico",
+            concepto="Vivi",
+            monto_inicial="702.30",
+            saldo_actual="585.26",
+            numero_cuotas=24,
+            fecha_inicio=datetime(2026, 5, 21).date(),
+            fecha_vencimiento=datetime(2028, 5, 21).date(),
+        )
+
+        pagos = crear_historial_inicial_deuda(
+            deuda,
+            hasta_fecha=datetime(2026, 9, 25).date(),
+        )
+
+        deuda.refresh_from_db()
+        self.assertEqual(len(pagos), 4)
+        self.assertEqual([pago.cuota_numero for pago in pagos], [1, 2, 3, 4])
+        self.assertEqual([pago.fecha for pago in pagos], [
+            datetime(2026, 6, 21).date(),
+            datetime(2026, 7, 21).date(),
+            datetime(2026, 8, 21).date(),
+            datetime(2026, 9, 21).date(),
+        ])
+        self.assertEqual(sum((pago.monto for pago in pagos), Decimal("0")), Decimal("117.04"))
+        self.assertEqual(deuda.saldo_actual, Decimal("585.26"))
 
     def test_generacion_de_pagos_de_deuda_es_idempotente(self):
         deuda = Deuda.objects.create(

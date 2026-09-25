@@ -60,6 +60,7 @@ from .models import (
     Tarea,
 )
 from .services import (
+    crear_historial_inicial_deuda,
     cuotas_deudas_programadas,
     ensure_user_finance_setup,
     movimientos_recurrentes_programados,
@@ -2004,12 +2005,19 @@ def deuda_list(request):
 
 
 @login_required
+@transaction.atomic
 def deuda_create(request):
     if request.method == "POST":
         form = DeudaForm(request.POST, user=request.user)
         if form.is_valid():
             deuda = assign_user_and_save(form, request.user)
-            registrar_auditoria(request, RegistroAuditoria.Accion.CREAR, deuda)
+            pagos_historicos = crear_historial_inicial_deuda(deuda)
+            registrar_auditoria(
+                request,
+                RegistroAuditoria.Accion.CREAR,
+                deuda,
+                cambios={"cuotas_historicas_reconstruidas": len(pagos_historicos)},
+            )
             messages.success(request, "Deuda creada.")
             return redirect("deuda_list")
     else:
@@ -2018,18 +2026,25 @@ def deuda_create(request):
 
 
 @login_required
+@transaction.atomic
 def deuda_update(request, pk):
     deuda = get_object_or_404(Deuda, pk=pk, usuario=request.user)
     if request.method == "POST":
         form = DeudaForm(request.POST, instance=deuda, user=request.user)
         if form.is_valid():
             saldo_anterior = deuda.saldo_actual
+            tenia_pagos = deuda.pagos.exists()
             form.save()
+            pagos_historicos = [] if tenia_pagos else crear_historial_inicial_deuda(deuda)
             registrar_auditoria(
                 request,
                 RegistroAuditoria.Accion.ACTUALIZAR,
                 deuda,
-                cambios={"saldo_anterior": str(saldo_anterior), "saldo_actual": str(deuda.saldo_actual)},
+                cambios={
+                    "saldo_anterior": str(saldo_anterior),
+                    "saldo_actual": str(deuda.saldo_actual),
+                    "cuotas_historicas_reconstruidas": len(pagos_historicos),
+                },
             )
             messages.success(request, "Deuda actualizada.")
             return redirect("deuda_list")
