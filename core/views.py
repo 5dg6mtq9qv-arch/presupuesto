@@ -966,6 +966,15 @@ def dashboard(request):
     )
     presupuesto = resumen_presupuesto(request.user, hoy)
     cuentas_resumen = saldos_por_cuenta(request.user)
+    saldo_disponible = sum((item["saldo"] for item in cuentas_resumen), Decimal("0"))
+    patrimonio_neto = saldo_disponible - saldo_deudas
+    calculo_balance.update(
+        {
+            "saldo_disponible": saldo_disponible,
+            "saldo_deudas_total": saldo_deudas,
+            "patrimonio_neto": patrimonio_neto,
+        }
+    )
     top_gastos = movimientos_mes.filter(tipo=MovimientoFinanciero.Tipo.GASTO).select_related("categoria__parent").order_by("-monto")[:5]
     proyeccion = proyeccion_recurrente(request.user, hoy)
 
@@ -1015,7 +1024,7 @@ def dashboard(request):
             "margen": [item["margen"] for item in flujo_mensual],
         },
         "balanceGeneral": {
-            "labels": ["Ingresos", "Gastos", "Cuotas del mes", "Posición neta"],
+            "labels": ["Ingresos", "Gastos", "Cuotas del mes", "Resultado del mes"],
             "values": [float(ingresos), float(gastos), float(cuotas_deuda_mes), float(posicion_neta)],
         },
         "obligaciones": {
@@ -1104,6 +1113,8 @@ def dashboard(request):
             "gastos": gastos,
             "margen": margen,
             "saldo_deudas": saldo_deudas,
+            "saldo_disponible": saldo_disponible,
+            "patrimonio_neto": patrimonio_neto,
             "cuotas_deuda_mes": cuotas_deuda_mes,
             "pagos_mes": pagos_mes,
             "posicion_neta": posicion_neta,

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block page_title %}Balance general{% endblock %}
-{% block page_subtitle %}Analisis de ingresos, gastos, deudas y presupuesto del mes{% endblock %}
+{% block page_subtitle %}Tu dinero disponible hoy y el comportamiento financiero del mes{% endblock %}
 
 {% block content %}
 {{ chart_data|json_script:"dashboard-data" }}
@@ -28,9 +28,10 @@
 
 <div class="wallet-hero">
   <div>
-    <span class="badge rounded-pill {% if margen >= 0 %}text-bg-success{% else %}text-bg-warning{% endif %} mb-2">{{ estado_presupuesto }}</span>
-    <h2>Posición neta: <span class="{% if posicion_neta >= 0 %}text-success{% else %}text-warning{% endif %}">{{ posicion_neta }}</span></h2>
-    <p class="mb-0 text-muted">Ingresos menos gastos reales y cuotas del mes.</p>
+    <span class="badge rounded-pill {% if saldo_disponible >= 0 %}text-bg-success{% else %}text-bg-warning{% endif %} mb-2">Saldo al {{ hoy|date:"d/m/Y" }}</span>
+    <h2>Dinero disponible hoy: <span class="{% if saldo_disponible >= 0 %}text-success{% else %}text-warning{% endif %}">{{ saldo_disponible }}</span></h2>
+    <p class="mb-0 text-muted">Suma de los saldos actuales de tus cuentas activas. Los ajustes se reflejan aquí inmediatamente.</p>
+    <p class="mb-0 text-muted">Patrimonio neto después de todas las deudas activas: <strong>{{ patrimonio_neto }}</strong>.</p>
   </div>
   <div class="wallet-actions">
     <a class="btn btn-light" href="{% url 'reporte_financiero_csv' %}">
@@ -46,6 +47,14 @@
 </div>
 
 <div class="grid metric-grid">
+  <section class="panel panel-interactive metric green">
+    <div class="metric-head"><span class="metric-icon"><span class="material-symbols-outlined">account_balance_wallet</span></span><div class="metric-copy"><div class="metric-label">Disponible hoy</div><div class="metric-value">{{ saldo_disponible }}</div></div></div>
+    <p class="metric-help">Lo que realmente tienes ahora entre todas tus cuentas activas.</p>
+  </section>
+  <section class="panel panel-interactive metric blue">
+    <div class="metric-head"><span class="metric-icon"><span class="material-symbols-outlined">balance</span></span><div class="metric-copy"><div class="metric-label">Patrimonio neto</div><div class="metric-value">{{ patrimonio_neto }}</div></div></div>
+    <p class="metric-help">Disponible hoy menos el saldo completo de todas tus deudas activas.</p>
+  </section>
   <section class="panel panel-interactive metric green">
     <div class="metric-head"><span class="metric-icon"><span class="material-symbols-outlined">trending_up</span></span><div class="metric-copy"><div class="metric-label">Ingresos del mes</div><div class="metric-value">{{ ingresos }}</div></div></div>
     <p class="metric-help">Dinero confirmado que entró durante el mes actual.</p>
@@ -72,7 +81,7 @@
   <div class="panel-heading">
     <div>
       <h2>Cómo se calcula</h2>
-      <p class="muted mb-0">Desglose del balance general del mes.</p>
+      <p class="muted mb-0">Separa lo que tienes hoy del resultado generado durante el mes.</p>
     </div>
   </div>
   <div class="table-wrap">
@@ -86,6 +95,16 @@
       </thead>
       <tbody>
         <tr>
+          <td>Dinero disponible hoy</td>
+          <td>Suma de los saldos actuales de {{ cuentas_resumen|length }} cuentas activas</td>
+          <td class="amount"><strong>{{ calculo_balance.saldo_disponible }}</strong></td>
+        </tr>
+        <tr>
+          <td>Patrimonio neto</td>
+          <td>Disponible {{ calculo_balance.saldo_disponible }} - deudas activas totales {{ calculo_balance.saldo_deudas_total }}</td>
+          <td class="amount"><strong>{{ calculo_balance.patrimonio_neto }}</strong></td>
+        </tr>
+        <tr>
           <td>Margen antes de deudas</td>
           <td>Ingresos {{ calculo_balance.ingresos }} - gastos reales {{ calculo_balance.gastos }}</td>
           <td class="amount">{{ calculo_balance.margen }}</td>
@@ -96,7 +115,7 @@
           <td class="amount">{{ calculo_balance.cuotas_deuda }}</td>
         </tr>
         <tr>
-          <td><strong>Posición neta</strong></td>
+          <td><strong>Resultado proyectado del mes</strong></td>
           <td>Margen {{ calculo_balance.margen }} - cuotas {{ calculo_balance.cuotas_deuda }}</td>
           <td class="amount"><strong>{{ calculo_balance.posicion_neta }}</strong></td>
         </tr>
@@ -119,7 +138,9 @@
     <span><strong>{{ cuotas_deuda_mes }}</strong> cuotas de deudas del mes</span>
     <span><strong>{{ pagos_mes }}</strong> pagado a deudas este mes</span>
     <span><strong>{{ saldo_deudas }}</strong> saldo total pendiente</span>
-    <span><strong>{{ posicion_neta }}</strong> posición neta estimada</span>
+    <span><strong>{{ saldo_disponible }}</strong> disponible hoy</span>
+    <span><strong>{{ patrimonio_neto }}</strong> patrimonio neto</span>
+    <span><strong>{{ posicion_neta }}</strong> resultado proyectado del mes</span>
     <span><strong>{{ presupuesto.total_usado }}</strong> usado de presupuesto</span>
   </div>
 </section>
@@ -141,7 +162,7 @@
     <div class="panel-heading">
       <div>
         <h2>Balance del mes</h2>
-        <p class="muted mb-0">Ingresos, gastos reales, cuotas del mes y posición neta.</p>
+        <p class="muted mb-0">Ingresos, gastos reales, cuotas y resultado proyectado del mes.</p>
       </div>
     </div>
     <div class="chart-box chart-box-small">
