@@ -41,6 +41,9 @@ def sincronizar_deuda_compra_credito(movimiento):
         return None
 
     acreedor = movimiento.acreedor_credito
+    numero_cuotas = max(1, movimiento.numero_cuotas_credito)
+    monto_movimiento = Decimal(movimiento.monto)
+    fecha_ultima_cuota = sumar_meses(movimiento.fecha_pago, numero_cuotas - 1)
     if deuda is None:
         deuda = Deuda.objects.create(
             usuario=movimiento.usuario,
@@ -51,9 +54,9 @@ def sincronizar_deuda_compra_credito(movimiento):
             concepto=movimiento.concepto,
             monto_inicial=movimiento.monto,
             saldo_actual=movimiento.monto,
-            numero_cuotas=1,
+            numero_cuotas=numero_cuotas,
             fecha_inicio=movimiento.fecha,
-            fecha_vencimiento=movimiento.fecha_pago,
+            fecha_vencimiento=fecha_ultima_cuota,
             nota="Generada automáticamente desde una compra con tarjeta de crédito.",
         )
     elif not deuda.pagos.filter(estado=PagoDeuda.Estado.CONFIRMADO).exists():
@@ -64,25 +67,31 @@ def sincronizar_deuda_compra_credito(movimiento):
         deuda.monto_inicial = movimiento.monto
         deuda.saldo_actual = movimiento.monto
         deuda.fecha_inicio = movimiento.fecha
-        deuda.fecha_vencimiento = movimiento.fecha_pago
+        deuda.numero_cuotas = numero_cuotas
+        deuda.fecha_vencimiento = fecha_ultima_cuota
         deuda.estado = Deuda.Estado.ACTIVA
         deuda.save()
 
     if not deuda.pagos.filter(estado=PagoDeuda.Estado.CONFIRMADO).exists():
-        pago, _ = PagoDeuda.objects.get_or_create(
-            deuda=deuda,
-            cuota_numero=1,
-            defaults={
-                "monto": movimiento.monto,
-                "fecha": movimiento.fecha_pago,
-                "estado": PagoDeuda.Estado.PENDIENTE,
-                "nota": "Pago de tarjeta generado desde el gasto a crédito.",
-            },
+        deuda.pagos.all().delete()
+        monto_base = (monto_movimiento / Decimal(numero_cuotas)).quantize(
+            Decimal("0.01"),
+            rounding=ROUND_HALF_UP,
         )
-        pago.monto = movimiento.monto
-        pago.fecha = movimiento.fecha_pago
-        pago.estado = PagoDeuda.Estado.PENDIENTE
-        pago.save(update_fields=["monto", "fecha", "estado"])
+        acumulado = Decimal("0")
+        for cuota_numero in range(1, numero_cuotas + 1):
+            monto_cuota = monto_base
+            if cuota_numero == numero_cuotas:
+                monto_cuota = monto_movimiento - acumulado
+            PagoDeuda.objects.create(
+                deuda=deuda,
+                cuota_numero=cuota_numero,
+                monto=monto_cuota,
+                fecha=sumar_meses(movimiento.fecha_pago, cuota_numero - 1),
+                estado=PagoDeuda.Estado.PENDIENTE,
+                nota="Cuota de tarjeta generada desde el gasto a crédito.",
+            )
+            acumulado += monto_cuota
     return deuda
 
 

@@ -8,6 +8,7 @@ from django.utils import timezone
 
 from .forms import MovimientoFinancieroForm
 from .models import (
+    Acreedor,
     Categoria,
     CuentaFinanciera,
     Deuda,
@@ -23,6 +24,7 @@ from .services import (
     generar_movimientos_recurrentes,
     generar_pagos_deudas,
     reprogramar_fechas_cuotas,
+    sincronizar_deuda_compra_credito,
 )
 
 
@@ -93,6 +95,7 @@ class GastoTarjetaCreditoTests(TestCase):
             "metodo_pago": self.credito.pk,
             "monto": "125.50",
             "fecha": "2026-09-25",
+            "numero_cuotas_credito": "1",
             "concepto": "Compra con tarjeta",
         }
         data.update(overrides)
@@ -133,6 +136,31 @@ class GastoTarjetaCreditoTests(TestCase):
         self.assertEqual(pago.fecha, datetime(2026, 10, 15).date())
         self.assertEqual(pago.estado, PagoDeuda.Estado.PENDIENTE)
 
+    def test_compra_en_cuotas_programa_los_meses_siguientes(self):
+        self.client.force_login(self.user)
+
+        self.client.post(
+            reverse("movimiento_gasto_create"),
+            self.datos(
+                monto="90.00",
+                fecha_pago="2026-10-15",
+                numero_cuotas_credito="3",
+                nuevo_acreedor_credito="Mastercard",
+            ),
+        )
+
+        deuda = Deuda.objects.get(concepto="Compra con tarjeta")
+        self.assertEqual(deuda.numero_cuotas, 3)
+        self.assertEqual(deuda.fecha_vencimiento, datetime(2026, 12, 15).date())
+        self.assertEqual(
+            list(deuda.pagos.order_by("cuota_numero").values_list("fecha", "monto")),
+            [
+                (datetime(2026, 10, 15).date(), Decimal("30.00")),
+                (datetime(2026, 11, 15).date(), Decimal("30.00")),
+                (datetime(2026, 12, 15).date(), Decimal("30.00")),
+            ],
+        )
+
     def test_fecha_pago_no_puede_ser_anterior_a_compra(self):
         form = MovimientoFinancieroForm(
             self.datos(fecha_pago="2026-09-24"),
@@ -144,17 +172,20 @@ class GastoTarjetaCreditoTests(TestCase):
         self.assertIn("fecha_pago", form.errors)
 
     def test_dashboard_muestra_deuda_de_tarjeta_del_mes_siguiente(self):
-        MovimientoFinanciero.objects.create(
+        acreedor = Acreedor.objects.create(usuario=self.user, nombre="Visa")
+        movimiento = MovimientoFinanciero.objects.create(
             usuario=self.user,
             tipo=MovimientoFinanciero.Tipo.GASTO,
             categoria=self.categoria,
             cuenta=self.cuenta,
             metodo_pago=self.credito,
+            acreedor_credito=acreedor,
             concepto="Compra con tarjeta",
             monto="125.50",
             fecha=timezone.localdate(),
             fecha_pago=(timezone.localdate().replace(day=1) + timedelta(days=40)).replace(day=15),
         )
+        sincronizar_deuda_compra_credito(movimiento)
         self.client.force_login(self.user)
 
         response = self.client.get(reverse("dashboard"))

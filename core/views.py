@@ -950,28 +950,30 @@ def dashboard(request):
     gastos = movimientos_mes.filter(
         tipo=MovimientoFinanciero.Tipo.GASTO,
     ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
-    compras_credito = MovimientoFinanciero.objects.filter(
-        usuario=request.user,
-        estado=MovimientoFinanciero.Estado.CONFIRMADO,
-        tipo=MovimientoFinanciero.Tipo.GASTO,
-        metodo_pago__tipo=MetodoPago.Tipo.CREDITO,
-        fecha_pago__isnull=False,
+    pagos_tarjeta = PagoDeuda.objects.filter(
+        deuda__usuario=request.user,
+        deuda__estado=Deuda.Estado.ACTIVA,
+        deuda__movimiento_origen__estado=MovimientoFinanciero.Estado.CONFIRMADO,
+        estado=PagoDeuda.Estado.PENDIENTE,
     )
-    tarjeta_vence_mes = compras_credito.filter(
-        fecha_pago__year=hoy.year,
-        fecha_pago__month=hoy.month,
+    tarjeta_vence_mes = pagos_tarjeta.filter(
+        fecha__year=hoy.year,
+        fecha__month=hoy.month,
     ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
-    tarjeta_vence_mes_siguiente = compras_credito.filter(
-        fecha_pago__year=inicio_mes_siguiente.year,
-        fecha_pago__month=inicio_mes_siguiente.month,
+    tarjeta_vence_mes_siguiente = pagos_tarjeta.filter(
+        fecha__year=inicio_mes_siguiente.year,
+        fecha__month=inicio_mes_siguiente.month,
     ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
-    tarjeta_pendiente_futuro = compras_credito.filter(
-        fecha_pago__gte=hoy,
+    tarjeta_pendiente_futuro = pagos_tarjeta.filter(
+        fecha__gte=hoy,
     ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
-    proximos_pagos_tarjeta = compras_credito.filter(
-        fecha_pago__gte=hoy,
-        fecha_pago__lte=fin_mes_siguiente,
-    ).select_related("metodo_pago", "cuenta").order_by("fecha_pago", "concepto")
+    proximos_pagos_tarjeta = pagos_tarjeta.filter(
+        fecha__gte=hoy,
+        fecha__lte=fin_mes_siguiente,
+    ).select_related(
+        "deuda__movimiento_origen__metodo_pago",
+        "deuda__movimiento_origen__acreedor_credito",
+    ).order_by("fecha", "deuda__concepto")
     margen = ingresos - gastos
     deudas_activas = Deuda.objects.filter(
         usuario=request.user,

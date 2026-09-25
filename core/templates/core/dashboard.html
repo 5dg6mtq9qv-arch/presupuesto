@@ -93,12 +93,12 @@
     <table class="table table-hover align-middle mb-0">
       <thead><tr><th>Vence</th><th>Compra</th><th>Tarjeta / método</th><th>Monto</th></tr></thead>
       <tbody>
-        {% for movimiento in proximos_pagos_tarjeta %}
+        {% for pago in proximos_pagos_tarjeta %}
           <tr>
-            <td>{{ movimiento.fecha_pago|date:"d/m/Y" }}</td>
-            <td><strong>{{ movimiento.concepto }}</strong><div class="small text-muted">Comprado el {{ movimiento.fecha|date:"d/m/Y" }}</div></td>
-            <td>{{ movimiento.metodo_pago }}{% if movimiento.cuenta %} · {{ movimiento.cuenta }}{% endif %}</td>
-            <td class="amount">{{ movimiento.monto }}</td>
+            <td>{{ pago.fecha|date:"d/m/Y" }}</td>
+            <td><strong>{{ pago.deuda.concepto }}</strong><div class="small text-muted">Cuota {{ pago.cuota_numero }} de {{ pago.deuda.numero_cuotas }}</div></td>
+            <td>{{ pago.deuda.acreedor }}</td>
+            <td class="amount">{{ pago.monto }}</td>
           </tr>
         {% endfor %}
       </tbody>

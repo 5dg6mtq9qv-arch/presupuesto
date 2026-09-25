@@ -42,13 +42,15 @@
     const fechaPago = document.getElementById("id_fecha_pago");
     const acreedor = document.getElementById("id_acreedor_credito");
     const nuevoAcreedor = document.getElementById("id_nuevo_acreedor_credito");
+    const numeroCuotas = document.getElementById("id_numero_cuotas_credito");
     if (!metodo || !fechaPago) return;
-    const camposCredito = [fechaPago, acreedor, nuevoAcreedor].filter(Boolean);
+    const camposCredito = [fechaPago, acreedor, nuevoAcreedor, numeroCuotas].filter(Boolean);
     const actualizar = () => {
       const esCredito = metodo.selectedOptions[0]?.dataset.tipo === "credito";
       const visible = esCredito || camposCredito.some(campo => Boolean(campo.value));
       camposCredito.forEach(campo => { campo.closest(".unfold-field").hidden = !visible; });
       fechaPago.required = esCredito;
+      if (numeroCuotas) numeroCuotas.required = esCredito;
     };
     metodo.addEventListener("change", actualizar);
     actualizar();

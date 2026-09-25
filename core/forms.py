@@ -393,7 +393,7 @@ class MovimientoFinancieroForm(UserScopedModelForm):
 
     class Meta:
         model = MovimientoFinanciero
-        fields = ["categoria", "cuenta", "metodo_pago", "acreedor_credito", "nuevo_acreedor_credito", "etiquetas", "monto", "fecha", "fecha_pago", "concepto", "comprobante"]
+        fields = ["categoria", "cuenta", "metodo_pago", "acreedor_credito", "nuevo_acreedor_credito", "numero_cuotas_credito", "etiquetas", "monto", "fecha", "fecha_pago", "concepto", "comprobante"]
         labels = {
             "concepto": "Descripción",
             "comprobante": "Comprobante",
@@ -401,11 +401,13 @@ class MovimientoFinancieroForm(UserScopedModelForm):
             "fecha": "Fecha de compra",
             "fecha_pago": "Fecha máxima de pago",
             "acreedor_credito": "Acreedor",
+            "numero_cuotas_credito": "Número de cuotas",
         }
         help_texts = {
             "comprobante": "Opcional: sube una captura, foto o archivo del pago.",
             "fecha": "Día en que realizaste la compra.",
             "fecha_pago": "Obligatoria si el método de pago es crédito. Se usa para proyectar tus compromisos futuros.",
+            "numero_cuotas_credito": "La fecha máxima de pago corresponde a la primera cuota; las siguientes se programan mensualmente.",
         }
         widgets = {
             "fecha": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
@@ -414,6 +416,7 @@ class MovimientoFinancieroForm(UserScopedModelForm):
             "comprobante": forms.ClearableFileInput(attrs={"accept": "image/*,.pdf"}),
             "etiquetas": forms.SelectMultiple(attrs={"size": "1", "data-compact-multiple": "true"}),
             "metodo_pago": MetodoPagoSelect(),
+            "numero_cuotas_credito": forms.NumberInput(attrs={"min": "1"}),
         }
 
     def __init__(self, *args, user=None, tipo=None, **kwargs):
@@ -439,6 +442,7 @@ class MovimientoFinancieroForm(UserScopedModelForm):
             self.fields.pop("fecha_pago", None)
             self.fields.pop("acreedor_credito", None)
             self.fields.pop("nuevo_acreedor_credito", None)
+            self.fields.pop("numero_cuotas_credito", None)
         if not self.is_bound and not self.instance.pk:
             self.fields["fecha"].initial = timezone.localdate().isoformat()
             self.fields["cuenta"].initial = get_general_account(user)
@@ -450,6 +454,7 @@ class MovimientoFinancieroForm(UserScopedModelForm):
         cuenta = cleaned_data.get("cuenta")
         acreedor_credito = cleaned_data.get("acreedor_credito")
         nuevo_acreedor = (cleaned_data.get("nuevo_acreedor_credito") or "").strip()
+        numero_cuotas = cleaned_data.get("numero_cuotas_credito")
         fecha = cleaned_data.get("fecha")
         fecha_pago = cleaned_data.get("fecha_pago")
 
@@ -464,12 +469,15 @@ class MovimientoFinancieroForm(UserScopedModelForm):
                 self.add_error("nuevo_acreedor_credito", "Selecciona un acreedor o crea uno nuevo, no ambos.")
             elif not acreedor_credito and not nuevo_acreedor:
                 self.add_error("acreedor_credito", "Selecciona un acreedor o escribe uno nuevo para la compra a crédito.")
+            if not numero_cuotas or numero_cuotas < 1:
+                self.add_error("numero_cuotas_credito", "Indica al menos una cuota.")
         if fecha and fecha_pago and fecha_pago < fecha:
             self.add_error("fecha_pago", "La fecha máxima de pago no puede ser anterior a la fecha de compra.")
         if self.tipo == MovimientoFinanciero.Tipo.GASTO and not es_credito:
             cleaned_data["fecha_pago"] = None
             cleaned_data["acreedor_credito"] = None
             cleaned_data["nuevo_acreedor_credito"] = ""
+            cleaned_data["numero_cuotas_credito"] = 1
 
         return cleaned_data
 
