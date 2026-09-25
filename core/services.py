@@ -56,6 +56,7 @@ def sincronizar_deuda_compra_credito(movimiento):
             saldo_actual=movimiento.monto,
             numero_cuotas=numero_cuotas,
             fecha_inicio=movimiento.fecha,
+            fecha_primera_cuota=movimiento.fecha_pago,
             fecha_vencimiento=fecha_ultima_cuota,
             nota="Generada automáticamente desde una compra con tarjeta de crédito.",
         )
@@ -67,6 +68,7 @@ def sincronizar_deuda_compra_credito(movimiento):
         deuda.monto_inicial = movimiento.monto
         deuda.saldo_actual = movimiento.monto
         deuda.fecha_inicio = movimiento.fecha
+        deuda.fecha_primera_cuota = movimiento.fecha_pago
         deuda.numero_cuotas = numero_cuotas
         deuda.fecha_vencimiento = fecha_ultima_cuota
         deuda.estado = Deuda.Estado.ACTIVA
@@ -169,6 +171,11 @@ def sumar_meses(fecha, meses):
     return fecha.replace(year=anio, month=mes, day=dia)
 
 
+def fecha_cuota_deuda(deuda, cuota_numero):
+    primera_cuota = deuda.fecha_primera_cuota or sumar_meses(deuda.fecha_inicio, 1)
+    return sumar_meses(primera_cuota, cuota_numero - 1)
+
+
 @transaction.atomic
 def crear_historial_inicial_deuda(deuda, hasta_fecha=None):
     """Reconstruct confirmed installments from the opening and current balances.
@@ -191,7 +198,7 @@ def crear_historial_inicial_deuda(deuda, hasta_fecha=None):
         (total_pagado / cuota_teorica).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
     )
     cuotas_vencidas = sum(
-        sumar_meses(deuda.fecha_inicio, numero) <= hasta_fecha
+        fecha_cuota_deuda(deuda, numero) <= hasta_fecha
         for numero in range(1, deuda.numero_cuotas + 1)
     )
     cuotas_pagadas = min(deuda.numero_cuotas, cuotas_vencidas, cuotas_por_saldo)
@@ -211,7 +218,7 @@ def crear_historial_inicial_deuda(deuda, hasta_fecha=None):
         pago = PagoDeuda.objects.create(
             deuda=deuda,
             monto=monto,
-            fecha=sumar_meses(deuda.fecha_inicio, numero),
+            fecha=fecha_cuota_deuda(deuda, numero),
             cuota_numero=numero,
             estado=PagoDeuda.Estado.CONFIRMADO,
             confirmado_en=timezone.now(),
@@ -228,7 +235,7 @@ def reprogramar_fechas_cuotas(deuda):
     deuda = Deuda.objects.select_for_update().get(pk=deuda.pk)
     actualizados = []
     for pago in deuda.pagos.filter(cuota_numero__isnull=False):
-        nueva_fecha = sumar_meses(deuda.fecha_inicio, pago.cuota_numero)
+        nueva_fecha = fecha_cuota_deuda(deuda, pago.cuota_numero)
         if pago.fecha == nueva_fecha:
             continue
         pago.fecha = nueva_fecha
@@ -342,7 +349,7 @@ def iter_cuotas_deuda_vencidas(deuda, hasta_fecha):
     for cuota_numero in range(pagos_manuales + 1, deuda.numero_cuotas + 1):
         if cuota_numero in cuotas_registradas:
             continue
-        fecha = sumar_meses(deuda.fecha_inicio, cuota_numero)
+        fecha = fecha_cuota_deuda(deuda, cuota_numero)
         if fecha > hasta_fecha:
             break
 
@@ -465,7 +472,7 @@ def cuotas_deudas_programadas(usuario, fecha_inicio, fecha_fin, categoria_id=Non
         for cuota_numero in range(pagos_manuales + 1, deuda.numero_cuotas + 1):
             if cuota_numero in cuotas_registradas:
                 continue
-            fecha = sumar_meses(deuda.fecha_inicio, cuota_numero)
+            fecha = fecha_cuota_deuda(deuda, cuota_numero)
             vence_en = timezone.make_aware(
                 datetime.combine(fecha, time.min),
                 timezone.get_current_timezone(),

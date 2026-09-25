@@ -25,10 +25,11 @@
 <script>
   (() => {
     const fechaInicioInput = document.getElementById("id_fecha_inicio");
+    const primeraCuotaInput = document.getElementById("id_fecha_primera_cuota");
     const cuotasInput = document.getElementById("id_numero_cuotas");
     const fechaVencimientoInput = document.getElementById("id_fecha_vencimiento");
 
-    if (!fechaInicioInput || !cuotasInput || !fechaVencimientoInput) {
+    if (!fechaInicioInput || !primeraCuotaInput || !cuotasInput || !fechaVencimientoInput) {
       return;
     }
 
@@ -53,7 +54,7 @@
     }
 
     function updateFechaVencimiento() {
-      const fechaInicio = fechaInicioInput.value;
+      const fechaInicio = primeraCuotaInput.value;
       const cuotas = Number.parseInt(cuotasInput.value, 10);
 
       if (!fechaInicio || !Number.isFinite(cuotas) || cuotas < 1) {
@@ -63,10 +64,11 @@
 
       const [year, month, day] = fechaInicio.split("-").map(Number);
       const startDate = new Date(year, month - 1, day);
-      fechaVencimientoInput.value = formatDate(addMonths(startDate, cuotas));
+      fechaVencimientoInput.value = formatDate(addMonths(startDate, cuotas - 1));
     }
 
     fechaInicioInput.addEventListener("change", updateFechaVencimiento);
+    primeraCuotaInput.addEventListener("change", updateFechaVencimiento);
     cuotasInput.addEventListener("input", updateFechaVencimiento);
     updateFechaVencimiento();
   })();

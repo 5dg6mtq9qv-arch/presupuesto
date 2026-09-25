@@ -416,6 +416,7 @@ class Deuda(models.Model):
     saldo_actual = models.DecimalField(max_digits=12, decimal_places=2)
     numero_cuotas = models.PositiveIntegerField(default=1)
     fecha_inicio = models.DateField()
+    fecha_primera_cuota = models.DateField(null=True, blank=True)
     fecha_vencimiento = models.DateField(null=True, blank=True)
     estado = models.CharField(
         max_length=20,

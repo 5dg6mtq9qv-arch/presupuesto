@@ -237,6 +237,7 @@ class GastoTarjetaCreditoTests(TestCase):
             saldo_actual="2408.60",
             numero_cuotas=36,
             fecha_inicio=sumar_meses(inicio_siguiente.replace(day=4), -1),
+            fecha_primera_cuota=inicio_siguiente.replace(day=4),
         )
         self.client.force_login(self.user)
 

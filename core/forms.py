@@ -727,12 +727,14 @@ class DeudaForm(UserScopedModelForm):
             "saldo_actual",
             "numero_cuotas",
             "fecha_inicio",
+            "fecha_primera_cuota",
             "fecha_vencimiento",
             "estado",
             "nota",
         ]
         widgets = {
             "fecha_inicio": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
+            "fecha_primera_cuota": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
             "fecha_vencimiento": forms.DateInput(
                 format="%Y-%m-%d",
                 attrs={
@@ -768,6 +770,7 @@ class DeudaForm(UserScopedModelForm):
         if not self.is_bound and not self.instance.pk:
             fecha_inicio = timezone.localdate()
             self.fields["fecha_inicio"].initial = fecha_inicio.isoformat()
+            self.fields["fecha_primera_cuota"].initial = add_months(fecha_inicio, 1).isoformat()
             self.fields["numero_cuotas"].initial = 1
             self.fields["fecha_vencimiento"].initial = add_months(fecha_inicio, 1).isoformat()
 
@@ -782,6 +785,7 @@ class DeudaForm(UserScopedModelForm):
         elif acreedor and acreedor.usuario_id != self.user.id:
             self.add_error("acreedor_existente", "El acreedor seleccionado no es valido.")
         fecha_inicio = cleaned_data.get("fecha_inicio")
+        fecha_primera_cuota = cleaned_data.get("fecha_primera_cuota")
         numero_cuotas = cleaned_data.get("numero_cuotas")
         monto_inicial = cleaned_data.get("monto_inicial")
         saldo_actual = cleaned_data.get("saldo_actual")
@@ -793,8 +797,10 @@ class DeudaForm(UserScopedModelForm):
         if monto_inicial is not None and saldo_actual is not None and saldo_actual > monto_inicial:
             self.add_error("saldo_actual", "El saldo actual no puede superar el monto inicial.")
 
-        if fecha_inicio and numero_cuotas:
-            cleaned_data["fecha_vencimiento"] = add_months(fecha_inicio, numero_cuotas)
+        if fecha_inicio and fecha_primera_cuota and fecha_primera_cuota < fecha_inicio:
+            self.add_error("fecha_primera_cuota", "La primera cuota no puede ser anterior al inicio de la deuda.")
+        if fecha_primera_cuota and numero_cuotas:
+            cleaned_data["fecha_vencimiento"] = add_months(fecha_primera_cuota, numero_cuotas - 1)
 
         return cleaned_data
 

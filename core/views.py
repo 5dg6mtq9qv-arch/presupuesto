@@ -2135,6 +2135,7 @@ def deuda_update(request, pk):
     deuda = get_object_or_404(Deuda, pk=pk, usuario=request.user)
     if request.method == "POST":
         fecha_inicio_anterior = deuda.fecha_inicio
+        fecha_primera_cuota_anterior = deuda.fecha_primera_cuota
         fecha_vencimiento_anterior = deuda.fecha_vencimiento
         saldo_anterior = deuda.saldo_actual
         form = DeudaForm(request.POST, instance=deuda, user=request.user)
@@ -2143,7 +2144,7 @@ def deuda_update(request, pk):
             form.save()
             pagos_historicos = [] if tenia_pagos else crear_historial_inicial_deuda(deuda)
             pagos_reprogramados = []
-            if fecha_inicio_anterior != deuda.fecha_inicio:
+            if fecha_primera_cuota_anterior != deuda.fecha_primera_cuota:
                 pagos_reprogramados = reprogramar_fechas_cuotas(deuda)
             registrar_auditoria(
                 request,
@@ -2154,6 +2155,8 @@ def deuda_update(request, pk):
                     "saldo_actual": str(deuda.saldo_actual),
                     "fecha_inicio_anterior": str(fecha_inicio_anterior),
                     "fecha_inicio_nueva": str(deuda.fecha_inicio),
+                    "fecha_primera_cuota_anterior": str(fecha_primera_cuota_anterior),
+                    "fecha_primera_cuota_nueva": str(deuda.fecha_primera_cuota),
                     "fecha_vencimiento_anterior": str(fecha_vencimiento_anterior),
                     "fecha_vencimiento_nueva": str(deuda.fecha_vencimiento),
                     "cuotas_historicas_reconstruidas": len(pagos_historicos),
