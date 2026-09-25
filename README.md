@@ -6,7 +6,8 @@ Gestor web de finanzas personales construido con Django y PostgreSQL.
 
 1. Crea la base PostgreSQL indicada por `POSTGRES_DB`.
 2. Copia `.env.example` a `.env` y reemplaza los valores de ejemplo.
-3. Exporta las variables de `.env` en el servicio que ejecuta Django.
+3. Django carga automáticamente el archivo `.env` al iniciar. Las variables
+   definidas explícitamente por el sistema o el servicio tienen prioridad.
 4. Ejecuta las migraciones y arranca el servidor:
 
 ```bash
