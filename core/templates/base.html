@@ -993,13 +993,14 @@
             <li><a class="nav-link {% if 'tarea' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'tarea_list' %}"><span class="material-symbols-outlined">task_alt</span> Tareas</a></li>
           {% endif %}
           <li><a class="nav-link {% if 'movimiento' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'movimiento_list' %}"><span class="material-symbols-outlined">sync_alt</span> Ingresos y gastos</a></li>
+          <li><a class="nav-link {% if request.resolver_match.url_name == 'cuenta_transferir' %}active{% endif %}" href="{% url 'cuenta_transferir' %}"><span class="material-symbols-outlined">swap_horiz</span> Transferir</a></li>
           <li><a class="nav-link {% if 'deuda' in request.resolver_match.url_name or 'pago' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'deuda_list' %}"><span class="material-symbols-outlined">receipt_long</span> Deudas</a></li>
           <li><a class="nav-link {% if 'presupuesto' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'presupuesto_list' %}"><span class="material-symbols-outlined">price_check</span> Presupuestos</a></li>
           <li><a class="nav-link {% if 'recurrente' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'recurrente_list' %}"><span class="material-symbols-outlined">event_repeat</span> Recurrentes</a></li>
         </ul>
         <div class="nav-section">Organizar</div>
         <ul class="nav-list">
-          <li><a class="nav-link {% if 'cuenta' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'cuenta_list' %}"><span class="material-symbols-outlined">account_balance_wallet</span> Cuentas</a></li>
+          <li><a class="nav-link {% if request.resolver_match.url_name == 'cuenta_list' or request.resolver_match.url_name == 'cuenta_ajustar_saldo' %}active{% endif %}" href="{% url 'cuenta_list' %}"><span class="material-symbols-outlined">account_balance_wallet</span> Cuentas</a></li>
           <li><a class="nav-link {% if 'metodo_pago' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'metodo_pago_list' %}"><span class="material-symbols-outlined">payments</span> Métodos</a></li>
           <li><a class="nav-link {% if 'etiqueta' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'etiqueta_list' %}"><span class="material-symbols-outlined">label</span> Etiquetas</a></li>
           <li><a class="nav-link {% if 'categoria' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'categoria_list' %}"><span class="material-symbols-outlined">sell</span> Categorías</a></li>
