@@ -347,12 +347,22 @@ def saldos_por_cuenta(user):
     cuentas = []
     for cuenta in CuentaFinanciera.objects.filter(usuario=user, activa=True).order_by("nombre"):
         ingresos = movimientos.filter(cuenta=cuenta, tipo=MovimientoFinanciero.Tipo.INGRESO).aggregate(total=Sum("monto"))["total"] or Decimal("0")
-        gastos = movimientos.filter(cuenta=cuenta, tipo=MovimientoFinanciero.Tipo.GASTO).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+        gastos = movimientos.filter(
+            cuenta=cuenta,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+        ).exclude(
+            metodo_pago__tipo=MetodoPago.Tipo.CREDITO,
+        ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+        pagos_deuda = PagoDeuda.objects.filter(
+            deuda__usuario=user,
+            cuenta=cuenta,
+            estado=PagoDeuda.Estado.CONFIRMADO,
+        ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
         cuentas.append(
             {
                 "nombre": cuenta.nombre,
                 "color": cuenta.color or "#38bdf8",
-                "saldo": cuenta.saldo_inicial + ingresos - gastos,
+                "saldo": cuenta.saldo_inicial + ingresos - gastos - pagos_deuda,
             }
         )
     return cuentas
@@ -2046,7 +2056,7 @@ def movimiento_delete(request, pk):
 
 @login_required
 def deuda_list(request):
-    pagos_ordenados = PagoDeuda.objects.order_by("fecha", "cuota_numero", "creado")
+    pagos_ordenados = PagoDeuda.objects.select_related("cuenta").order_by("fecha", "cuota_numero", "creado")
     deudas = Deuda.objects.filter(usuario=request.user).select_related("categoria__parent").prefetch_related(
         Prefetch("pagos", queryset=pagos_ordenados)
     )
@@ -2069,6 +2079,7 @@ def deuda_list(request):
         pagos = list(deuda.pagos.all())
         deuda.pagos_confirmados_count = sum(pago.estado == PagoDeuda.Estado.CONFIRMADO for pago in pagos)
         deuda.cuotas_pendientes_count = sum(pago.estado == PagoDeuda.Estado.PENDIENTE for pago in pagos)
+    cuentas_pago = CuentaFinanciera.objects.filter(usuario=request.user, activa=True).order_by("nombre")
     categorias = Categoria.objects.filter(
         usuario=request.user,
         tipo=Categoria.Tipo.FINANZAS,
@@ -2081,6 +2092,7 @@ def deuda_list(request):
             "page_obj": page_obj,
             "list_querystring": list_querystring,
             "categorias": categorias,
+            "cuentas_pago": cuentas_pago,
             "filters": {"q": q, "estado": estado, "categoria": categoria_id},
         },
     )
@@ -2220,11 +2232,21 @@ def pago_confirmar(request, pk):
         messages.error(request, "Esta deuda ya no admite pagos.")
         return redirect("deuda_list")
 
+    cuenta = CuentaFinanciera.objects.filter(
+        pk=request.POST.get("cuenta"),
+        usuario=request.user,
+        activa=True,
+    ).first()
+    if not cuenta:
+        messages.error(request, "Selecciona la cuenta desde la que pagaste la cuota.")
+        return redirect("deuda_list")
+
     monto_aplicado = min(pago.monto, deuda.saldo_actual)
     pago.monto = monto_aplicado
+    pago.cuenta = cuenta
     pago.estado = PagoDeuda.Estado.CONFIRMADO
     pago.confirmado_en = timezone.now()
-    pago.save(update_fields=["monto", "estado", "confirmado_en"])
+    pago.save(update_fields=["monto", "cuenta", "estado", "confirmado_en"])
     deuda.saldo_actual = max(Decimal("0"), deuda.saldo_actual - monto_aplicado)
     if deuda.saldo_actual == 0:
         deuda.estado = Deuda.Estado.PAGADA

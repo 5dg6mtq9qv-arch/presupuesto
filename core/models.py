@@ -439,6 +439,13 @@ class PagoDeuda(models.Model):
         CONFIRMADO = "confirmado", "Confirmado"
 
     deuda = models.ForeignKey(Deuda, on_delete=models.CASCADE, related_name="pagos")
+    cuenta = models.ForeignKey(
+        CuentaFinanciera,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="pagos_deuda",
+    )
     monto = models.DecimalField(max_digits=12, decimal_places=2)
     fecha = models.DateField()
     cuota_numero = models.PositiveIntegerField(null=True, blank=True)

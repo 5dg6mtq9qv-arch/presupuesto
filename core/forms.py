@@ -836,7 +836,8 @@ class AjusteSaldoForm(forms.Form):
 class PagoDeudaForm(UserScopedModelForm):
     class Meta:
         model = PagoDeuda
-        fields = ["monto", "fecha", "nota"]
+        fields = ["cuenta", "monto", "fecha", "nota"]
+        labels = {"cuenta": "Cuenta de pago"}
         widgets = {
             "fecha": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
             "monto": forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
@@ -844,6 +845,9 @@ class PagoDeudaForm(UserScopedModelForm):
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, user=user, **kwargs)
+        self.fields["cuenta"].queryset = CuentaFinanciera.objects.filter(usuario=user, activa=True).order_by("nombre")
+        self.fields["cuenta"].empty_label = "Selecciona de dónde sale el dinero"
+        self.fields["cuenta"].required = True
         if not self.is_bound and not self.instance.pk:
             self.fields["fecha"].initial = timezone.localdate().isoformat()
 
