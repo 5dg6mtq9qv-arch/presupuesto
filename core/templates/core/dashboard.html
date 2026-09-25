@@ -72,8 +72,8 @@
     <p class="metric-help">Solo obligaciones de este mes que todavía no has pagado.</p>
   </section>
   <section class="panel panel-interactive metric orange">
-    <div class="metric-head"><span class="metric-icon"><span class="material-symbols-outlined">credit_card</span></span><div class="metric-copy"><div class="metric-label">Tarjeta · próximo mes</div><div class="metric-value">{{ tarjeta_vence_mes_siguiente }}</div></div></div>
-    <p class="metric-help">Compras a crédito que vencen en {{ inicio_mes_siguiente|date:"F Y" }}.</p>
+    <div class="metric-head"><span class="metric-icon"><span class="material-symbols-outlined">credit_card</span></span><div class="metric-copy"><div class="metric-label">Cuotas · próximo mes</div><div class="metric-value">{{ tarjeta_vence_mes_siguiente }}</div></div></div>
+    <p class="metric-help">Cuotas pendientes que vencen en {{ inicio_mes_siguiente|date:"F Y" }}.</p>
   </section>
   <section class="panel panel-interactive metric blue">
     <div class="metric-head"><span class="metric-icon"><span class="material-symbols-outlined">savings</span></span><div class="metric-copy"><div class="metric-label">Presupuesto disponible</div><div class="metric-value">{{ presupuesto.total_restante }}</div></div></div>
@@ -85,7 +85,7 @@
 <section class="panel">
   <div class="panel-heading">
     <div>
-      <h2>Próximos pagos de tarjeta</h2>
+      <h2>Próximos pagos de deudas y tarjetas</h2>
       <p class="muted mb-0">Vencimientos desde hoy hasta el final del próximo mes. Total futuro registrado: <strong>{{ tarjeta_pendiente_futuro }}</strong>.</p>
     </div>
   </div>

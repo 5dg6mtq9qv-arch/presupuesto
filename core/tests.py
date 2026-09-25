@@ -193,7 +193,7 @@ class GastoTarjetaCreditoTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["tarjeta_vence_mes_siguiente"], Decimal("125.50"))
-        self.assertContains(response, "Próximos pagos de tarjeta")
+        self.assertContains(response, "Próximos pagos de deudas y tarjetas")
 
     def test_dashboard_incluye_cuotas_virtuales_de_tarjetas_existentes(self):
         hoy = timezone.localdate()
@@ -228,7 +228,7 @@ class GastoTarjetaCreditoTests(TestCase):
                 cuota_numero=numero,
                 estado=PagoDeuda.Estado.CONFIRMADO,
             )
-        Deuda.objects.create(
+        avance = Deuda.objects.create(
             usuario=self.user,
             categoria=categoria,
             acreedor="Tarjeta Visa Pacífico",
@@ -240,11 +240,16 @@ class GastoTarjetaCreditoTests(TestCase):
         )
         self.client.force_login(self.user)
 
+        self.client.get(reverse("deuda_list"))
+        self.assertTrue(vivi.pagos.filter(cuota_numero=5, estado=PagoDeuda.Estado.PENDIENTE).exists())
+        self.assertTrue(avance.pagos.filter(cuota_numero=1, estado=PagoDeuda.Estado.PENDIENTE).exists())
+
         response = self.client.get(reverse("dashboard"))
 
         cuotas = response.context["proximos_pagos_tarjeta"]
-        self.assertCountEqual([cuota["cuota_numero"] for cuota in cuotas], [5, 1])
+        self.assertCountEqual([cuota.cuota_numero for cuota in cuotas], [5, 1])
         self.assertEqual(response.context["tarjeta_vence_mes_siguiente"], Decimal("96.17"))
+
 
 
 class PasswordPermissionTests(TestCase):
@@ -496,12 +501,45 @@ class MovimientoRecurrenteServiceTests(TestCase):
         )
         self.client.force_login(self.user)
 
-        self.client.post(reverse("pago_confirmar", args=[cuota.pk]))
+        response = self.client.post(reverse("pago_confirmar", args=[cuota.pk]))
 
         cuota.refresh_from_db()
         deuda.refresh_from_db()
         self.assertEqual(cuota.estado, PagoDeuda.Estado.PENDIENTE)
         self.assertEqual(deuda.saldo_actual, Decimal("100.00"))
+        self.assertIn("cuenta", response.context["form"].errors)
+
+    def test_pagar_cuota_abre_formulario_con_saldo_de_cuenta(self):
+        cuenta = CuentaFinanciera.objects.create(
+            usuario=self.user,
+            nombre="Efectivo",
+            tipo=CuentaFinanciera.Tipo.EFECTIVO,
+            saldo_inicial="250.00",
+        )
+        deuda = Deuda.objects.create(
+            usuario=self.user,
+            acreedor="Banco",
+            concepto="Préstamo",
+            monto_inicial="100.00",
+            saldo_actual="100.00",
+            numero_cuotas=1,
+            fecha_inicio=datetime(2026, 7, 5).date(),
+        )
+        cuota = PagoDeuda.objects.create(
+            deuda=deuda,
+            monto="100.00",
+            fecha=datetime(2026, 8, 5).date(),
+            cuota_numero=1,
+            estado=PagoDeuda.Estado.PENDIENTE,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("pago_confirmar", args=[cuota.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Saldo de la cuenta")
+        self.assertContains(response, cuenta.nombre)
+        self.assertEqual(response.context["saldos_cuenta"][str(cuenta.pk)], 250.0)
 
     def test_otro_usuario_no_puede_confirmar_cuota(self):
         otro = get_user_model().objects.create_user(username="otro", password="test")

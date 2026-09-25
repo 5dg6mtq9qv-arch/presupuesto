@@ -8,16 +8,9 @@
   </div>
   <div class="debt-payment-actions">
     {% if pago.estado == "pendiente" %}
-      <form method="post" action="{% url 'pago_confirmar' pago.pk %}" onsubmit="return confirm('¿Confirmas que esta cuota ya fue pagada?');">
-        {% csrf_token %}
-        <select class="form-select form-select-sm mb-2" name="cuenta" required aria-label="Cuenta de pago">
-          <option value="">Cuenta de pago</option>
-          {% for cuenta in cuentas_pago %}<option value="{{ cuenta.pk }}">{{ cuenta.nombre }}</option>{% endfor %}
-        </select>
-        <button class="btn btn-sm btn-primary" type="submit">
-          <span class="material-symbols-outlined">check</span><span>Confirmar pago</span>
-        </button>
-      </form>
+      <a class="btn btn-sm btn-primary" href="{% url 'pago_confirmar' pago.pk %}">
+        <span class="material-symbols-outlined">payments</span><span>Pagar cuota</span>
+      </a>
     {% endif %}
     <button class="btn btn-sm btn-outline-danger btn-icon" type="button" title="Eliminar esta cuota" aria-label="Eliminar esta cuota" data-delete-trigger="delete-pago-{{ pago.pk }}">
       <span class="material-symbols-outlined">delete</span>

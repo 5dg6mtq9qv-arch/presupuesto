@@ -856,3 +856,19 @@ class PagoDeudaForm(UserScopedModelForm):
         if monto <= 0:
             raise forms.ValidationError("El monto debe ser mayor que cero.")
         return monto
+
+
+class ConfirmarPagoDeudaForm(BootstrapFormMixin, forms.Form):
+    cuenta = forms.ModelChoiceField(
+        label="Cuenta de pago",
+        queryset=CuentaFinanciera.objects.none(),
+        empty_label="Selecciona de dónde sale el dinero",
+    )
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["cuenta"].queryset = CuentaFinanciera.objects.filter(
+            usuario=user,
+            activa=True,
+        ).order_by("nombre")
+        self.apply_bootstrap_classes()

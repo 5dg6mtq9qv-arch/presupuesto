@@ -23,6 +23,7 @@ from django.utils.dateparse import parse_date
 from .forms import (
     AjusteSaldoForm,
     CategoriaForm,
+    ConfirmarPagoDeudaForm,
     CuentaFinancieraForm,
     DeudaForm,
     EtiquetaForm,
@@ -64,6 +65,7 @@ from .services import (
     crear_historial_inicial_deuda,
     cuotas_deudas_programadas,
     ensure_user_finance_setup,
+    generar_pagos_deudas,
     movimientos_recurrentes_programados,
     reprogramar_fechas_cuotas,
     sincronizar_deuda_compra_credito,
@@ -360,6 +362,7 @@ def saldos_por_cuenta(user):
         ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
         cuentas.append(
             {
+                "id": cuenta.pk,
                 "nombre": cuenta.nombre,
                 "color": cuenta.color or "#38bdf8",
                 "saldo": cuenta.saldo_inicial + ingresos - gastos - pagos_deuda,
@@ -943,6 +946,7 @@ def dashboard(request):
     fin_mes_siguiente = inicio_mes_siguiente.replace(
         day=calendar.monthrange(inicio_mes_siguiente.year, inicio_mes_siguiente.month)[1]
     )
+    generar_pagos_deudas(hasta_fecha=fin_mes_siguiente, usuario=request.user)
     tareas_hoy = Tarea.objects.none()
     tareas = Tarea.objects.none()
     if request.user.is_staff:
@@ -963,7 +967,6 @@ def dashboard(request):
     pagos_tarjeta = PagoDeuda.objects.filter(
         deuda__usuario=request.user,
         deuda__estado=Deuda.Estado.ACTIVA,
-        deuda__movimiento_origen__estado=MovimientoFinanciero.Estado.CONFIRMADO,
         estado=PagoDeuda.Estado.PENDIENTE,
     )
     tarjeta_vence_mes = pagos_tarjeta.filter(
@@ -2056,6 +2059,15 @@ def movimiento_delete(request, pk):
 
 @login_required
 def deuda_list(request):
+    hoy = timezone.localdate()
+    if hoy.month == 12:
+        inicio_mes_siguiente = hoy.replace(year=hoy.year + 1, month=1, day=1)
+    else:
+        inicio_mes_siguiente = hoy.replace(month=hoy.month + 1, day=1)
+    fin_mes_siguiente = inicio_mes_siguiente.replace(
+        day=calendar.monthrange(inicio_mes_siguiente.year, inicio_mes_siguiente.month)[1]
+    )
+    generar_pagos_deudas(hasta_fecha=fin_mes_siguiente, usuario=request.user)
     pagos_ordenados = PagoDeuda.objects.select_related("cuenta").order_by("fecha", "cuota_numero", "creado")
     deudas = Deuda.objects.filter(usuario=request.user).select_related("categoria__parent").prefetch_related(
         Prefetch("pagos", queryset=pagos_ordenados)
@@ -2079,7 +2091,6 @@ def deuda_list(request):
         pagos = list(deuda.pagos.all())
         deuda.pagos_confirmados_count = sum(pago.estado == PagoDeuda.Estado.CONFIRMADO for pago in pagos)
         deuda.cuotas_pendientes_count = sum(pago.estado == PagoDeuda.Estado.PENDIENTE for pago in pagos)
-    cuentas_pago = CuentaFinanciera.objects.filter(usuario=request.user, activa=True).order_by("nombre")
     categorias = Categoria.objects.filter(
         usuario=request.user,
         tipo=Categoria.Tipo.FINANZAS,
@@ -2092,7 +2103,6 @@ def deuda_list(request):
             "page_obj": page_obj,
             "list_querystring": list_querystring,
             "categorias": categorias,
-            "cuentas_pago": cuentas_pago,
             "filters": {"q": q, "estado": estado, "categoria": categoria_id},
         },
     )
@@ -2216,9 +2226,6 @@ def pago_create(request, deuda_id):
 @login_required
 @transaction.atomic
 def pago_confirmar(request, pk):
-    if request.method != "POST":
-        return redirect("deuda_list")
-
     pago = get_object_or_404(
         PagoDeuda.objects.select_for_update().select_related("deuda"),
         pk=pk,
@@ -2232,14 +2239,22 @@ def pago_confirmar(request, pk):
         messages.error(request, "Esta deuda ya no admite pagos.")
         return redirect("deuda_list")
 
-    cuenta = CuentaFinanciera.objects.filter(
-        pk=request.POST.get("cuenta"),
-        usuario=request.user,
-        activa=True,
-    ).first()
-    if not cuenta:
-        messages.error(request, "Selecciona la cuenta desde la que pagaste la cuota.")
-        return redirect("deuda_list")
+    form = ConfirmarPagoDeudaForm(
+        request.POST if request.method == "POST" else None,
+        user=request.user,
+    )
+    if request.method != "POST" or not form.is_valid():
+        saldos_cuenta = {
+            str(item["id"]): float(item["saldo"])
+            for item in saldos_por_cuenta(request.user)
+        }
+        return render(
+            request,
+            "core/pago_confirmar_form.html",
+            {"form": form, "pago": pago, "saldos_cuenta": saldos_cuenta},
+        )
+
+    cuenta = form.cleaned_data["cuenta"]
 
     monto_aplicado = min(pago.monto, deuda.saldo_actual)
     pago.monto = monto_aplicado
