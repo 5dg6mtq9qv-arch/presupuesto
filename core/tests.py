@@ -132,6 +132,7 @@ class GastoTarjetaCreditoTests(TestCase):
             html=False,
         )
         self.assertContains(response, "[hidden] { display: none !important; }", html=False)
+        self.assertContains(response, 'on("change.camposCredito", actualizar)', html=False)
         self.assertNotContains(response, "esCredito || camposCredito.some")
 
     def test_gasto_no_crediticio_descarta_campos_de_credito(self):

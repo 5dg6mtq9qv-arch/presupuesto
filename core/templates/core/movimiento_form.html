@@ -54,6 +54,9 @@
       if (numeroCuotas) numeroCuotas.required = esCredito;
     };
     metodo.addEventListener("change", actualizar);
+    if (window.jQuery) {
+      window.jQuery(metodo).on("change.camposCredito", actualizar);
+    }
     actualizar();
   })();
 </script>
