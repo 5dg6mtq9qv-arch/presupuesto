@@ -39,6 +39,8 @@
 <script>
   (() => {
     const metodo = document.getElementById("id_metodo_pago");
+    const cuenta = document.getElementById("id_cuenta");
+    const fechaCompra = document.getElementById("id_fecha");
     const fechaPago = document.getElementById("id_fecha_pago");
     const acreedor = document.getElementById("id_acreedor_credito");
     const nuevoAcreedor = document.getElementById("id_nuevo_acreedor_credito");
@@ -50,6 +52,21 @@
       camposCredito.forEach(campo => {
         campo.closest(".unfold-field").hidden = !esCredito;
       });
+      if (cuenta) {
+        cuenta.closest(".unfold-field").hidden = esCredito;
+        cuenta.required = !esCredito;
+      }
+      if (esCredito && !fechaPago.value && fechaCompra?.value) {
+        const [anio, mes, dia] = fechaCompra.value.split("-").map(Number);
+        const anioSiguiente = anio + Math.floor(mes / 12);
+        const mesSiguiente = (mes % 12) + 1;
+        const ultimoDia = new Date(anioSiguiente, mesSiguiente, 0).getDate();
+        fechaPago.value = [
+          anioSiguiente,
+          String(mesSiguiente).padStart(2, "0"),
+          String(Math.min(dia, ultimoDia)).padStart(2, "0"),
+        ].join("-");
+      }
       fechaPago.required = esCredito;
       if (numeroCuotas) numeroCuotas.required = esCredito;
     };

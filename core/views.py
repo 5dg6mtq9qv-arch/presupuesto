@@ -539,6 +539,8 @@ def cuenta_list(request):
         cuenta.gastos_confirmados = movimientos.filter(
             cuenta=cuenta,
             tipo=MovimientoFinanciero.Tipo.GASTO,
+        ).exclude(
+            metodo_pago__tipo=MetodoPago.Tipo.CREDITO,
         ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
         cuenta.saldo_actual = saldo_actual_cuenta(cuenta)
 
@@ -1016,9 +1018,10 @@ def dashboard(request):
     ingresos = movimientos_mes.filter(
         tipo=MovimientoFinanciero.Tipo.INGRESO,
     ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
-    gastos = movimientos_mes.filter(
+    gastos_mes_reales = movimientos_mes.filter(
         tipo=MovimientoFinanciero.Tipo.GASTO,
-    ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    ).exclude(metodo_pago__tipo=MetodoPago.Tipo.CREDITO)
+    gastos = gastos_mes_reales.aggregate(total=Sum("monto"))["total"] or Decimal("0")
     pagos_tarjeta = PagoDeuda.objects.filter(
         deuda__usuario=request.user,
         deuda__estado=Deuda.Estado.ACTIVA,
@@ -1105,7 +1108,7 @@ def dashboard(request):
         8,
     )
     gastos_categoria = gastos_por_categoria(
-        movimientos_mes.filter(tipo=MovimientoFinanciero.Tipo.GASTO),
+        gastos_mes_reales,
         8,
     )
     presupuesto = resumen_presupuesto(request.user, hoy)
@@ -1119,7 +1122,7 @@ def dashboard(request):
             "patrimonio_neto": patrimonio_neto,
         }
     )
-    top_gastos = movimientos_mes.filter(tipo=MovimientoFinanciero.Tipo.GASTO).select_related("categoria__parent").order_by("-monto")[:5]
+    top_gastos = gastos_mes_reales.select_related("categoria__parent").order_by("-monto")[:5]
     proyeccion = proyeccion_recurrente(request.user, hoy)
 
     def add_months(fecha, months):
@@ -1148,6 +1151,8 @@ def dashboard(request):
                 tipo=MovimientoFinanciero.Tipo.GASTO,
                 fecha__year=mes.year,
                 fecha__month=mes.month,
+            ).exclude(
+                metodo_pago__tipo=MetodoPago.Tipo.CREDITO,
             ).aggregate(total=Sum("monto"))["total"]
             or Decimal("0")
         )

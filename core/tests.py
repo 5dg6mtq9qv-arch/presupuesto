@@ -183,12 +183,48 @@ class GastoTarjetaCreditoTests(TestCase):
 
         self.assertRedirects(response, f"{reverse('movimiento_list')}?tipo=gasto")
         movimiento = MovimientoFinanciero.objects.get(concepto="Compra con tarjeta")
+        self.assertIsNone(movimiento.cuenta)
         deuda = Deuda.objects.get(movimiento_origen=movimiento)
         self.assertEqual(deuda.acreedor, "Visa Pichincha")
         self.assertEqual(deuda.saldo_actual, Decimal("125.50"))
         pago = deuda.pagos.get(cuota_numero=1)
         self.assertEqual(pago.fecha, datetime(2026, 10, 15).date())
         self.assertEqual(pago.estado, PagoDeuda.Estado.PENDIENTE)
+
+    def test_gasto_no_crediticio_exige_cuenta_de_origen(self):
+        transferencia = MetodoPago.objects.get(
+            usuario=self.user,
+            tipo=MetodoPago.Tipo.TRANSFERENCIA,
+        )
+        form = MovimientoFinancieroForm(
+            self.datos(metodo_pago=transferencia.pk, cuenta=""),
+            user=self.user,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("cuenta", form.errors)
+
+    def test_credito_no_sale_de_una_cuenta_hasta_pagar_la_cuota(self):
+        self.client.force_login(self.user)
+        hoy = timezone.localdate()
+        fecha_pago = sumar_meses(hoy, 1)
+
+        response = self.client.post(
+            reverse("movimiento_gasto_create"),
+            self.datos(
+                fecha=hoy.isoformat(),
+                fecha_pago=fecha_pago.isoformat(),
+                nuevo_acreedor_credito="Visa diferida",
+            ),
+        )
+
+        self.assertRedirects(response, f"{reverse('movimiento_list')}?tipo=gasto")
+        movimiento = MovimientoFinanciero.objects.get(concepto="Compra con tarjeta")
+        self.assertIsNone(movimiento.cuenta)
+        dashboard = self.client.get(reverse("dashboard"))
+        self.assertEqual(dashboard.context["gastos"], Decimal("0"))
+        self.assertEqual(dashboard.context["tarjeta_vence_mes_siguiente"], Decimal("125.50"))
 
     def test_compra_en_cuotas_programa_los_meses_siguientes(self):
         self.client.force_login(self.user)

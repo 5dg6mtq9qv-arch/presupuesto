@@ -445,7 +445,7 @@ class MovimientoFinancieroForm(UserScopedModelForm):
         self.fields["categoria"].empty_label = "Selecciona una categoría"
         self.fields["categoria"].help_text = "El color de la categoría se utilizará en las gráficas."
         self.fields["cuenta"].queryset = CuentaFinanciera.objects.filter(usuario=user, activa=True).order_by("nombre")
-        self.fields["cuenta"].required = True
+        self.fields["cuenta"].required = self.tipo != MovimientoFinanciero.Tipo.GASTO
         if self.tipo == MovimientoFinanciero.Tipo.INGRESO:
             self.fields["cuenta"].label = "Cuenta de destino"
             self.fields["cuenta"].empty_label = "Selecciona dónde entra el dinero"
@@ -483,6 +483,8 @@ class MovimientoFinancieroForm(UserScopedModelForm):
             self.add_error("categoria", "Selecciona una categoría para que el gasto aparezca correctamente en las gráficas.")
 
         es_credito = metodo_pago and metodo_pago.tipo == MetodoPago.Tipo.CREDITO
+        if self.tipo == MovimientoFinanciero.Tipo.GASTO and not es_credito and not cuenta:
+            self.add_error("cuenta", "Selecciona la cuenta de donde sale el dinero.")
         if self.tipo == MovimientoFinanciero.Tipo.GASTO and es_credito and not fecha_pago:
             self.add_error("fecha_pago", "Indica la fecha máxima de pago de la tarjeta.")
         if self.tipo == MovimientoFinanciero.Tipo.GASTO and es_credito:
@@ -499,6 +501,8 @@ class MovimientoFinancieroForm(UserScopedModelForm):
             cleaned_data["acreedor_credito"] = None
             cleaned_data["nuevo_acreedor_credito"] = ""
             cleaned_data["numero_cuotas_credito"] = 1
+        elif self.tipo == MovimientoFinanciero.Tipo.GASTO and es_credito:
+            cleaned_data["cuenta"] = None
 
         return cleaned_data
 
@@ -512,7 +516,14 @@ class MovimientoFinancieroForm(UserScopedModelForm):
             instance.acreedor_credito = acreedor
         if instance.categoria_id and not instance.categoria.parent_id:
             instance.categoria = get_general_subcategory(instance.categoria)
-        if not instance.cuenta_id:
+        es_credito = (
+            self.tipo == MovimientoFinanciero.Tipo.GASTO
+            and instance.metodo_pago_id
+            and instance.metodo_pago.tipo == MetodoPago.Tipo.CREDITO
+        )
+        if es_credito:
+            instance.cuenta = None
+        elif not instance.cuenta_id:
             instance.cuenta = get_general_account(self.user)
         if self.tipo:
             instance.tipo = self.tipo
