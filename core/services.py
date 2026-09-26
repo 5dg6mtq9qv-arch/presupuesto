@@ -276,16 +276,16 @@ def movimientos_recurrentes_programados(usuario, fecha_inicio, fecha_fin, tipo=N
 
     programados = []
     for recurrente in recurrentes:
-        fechas_confirmadas = set(
+        meses_confirmados = set(
             MovimientoFinanciero.objects.filter(
                 usuario=usuario,
                 estado=MovimientoFinanciero.Estado.CONFIRMADO,
                 recurrente=recurrente,
-                fecha__range=(fecha_inicio, fecha_fin),
-            ).values_list("fecha", flat=True)
+                fecha__lte=fecha_fin,
+            ).values_list("fecha__year", "fecha__month")
         )
         for fecha in iter_fechas_recurrentes_vencidas(recurrente, fecha_fin):
-            if fecha < fecha_inicio or fecha in fechas_confirmadas:
+            if fecha < fecha_inicio or (fecha.year, fecha.month) in meses_confirmados:
                 continue
             programados.append(
                 {
@@ -316,6 +316,14 @@ def generar_movimientos_recurrentes(hasta_fecha=None, usuario=None):
 
     for recurrente in recurrentes:
         for fecha in iter_fechas_recurrentes_vencidas(recurrente, hasta_fecha):
+            if MovimientoFinanciero.objects.filter(
+                usuario=recurrente.usuario,
+                recurrente=recurrente,
+                fecha__year=fecha.year,
+                fecha__month=fecha.month,
+            ).exists():
+                omitidos += 1
+                continue
             movimiento = MovimientoFinanciero(
                 usuario=recurrente.usuario,
                 tipo=recurrente.tipo,

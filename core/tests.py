@@ -398,6 +398,31 @@ class MovimientoRecurrenteServiceTests(TestCase):
         self.assertEqual(omitidos, 1)
         self.assertEqual(MovimientoFinanciero.objects.count(), 1)
 
+    def test_cambiar_dia_no_duplica_el_recurrente_del_mismo_mes(self):
+        recurrente = MovimientoRecurrente.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+            concepto="Internet",
+            monto="30.00",
+            dia_mes=9,
+        )
+        self.set_creado(recurrente, 2026, 7, 27)
+        generar_movimientos_recurrentes(
+            hasta_fecha=datetime(2026, 8, 9).date(),
+            usuario=self.user,
+        )
+        recurrente.dia_mes = 4
+        recurrente.save(update_fields=["dia_mes"])
+
+        creados, omitidos = generar_movimientos_recurrentes(
+            hasta_fecha=datetime(2026, 8, 31).date(),
+            usuario=self.user,
+        )
+
+        self.assertEqual(creados, [])
+        self.assertEqual(omitidos, 1)
+        self.assertEqual(MovimientoFinanciero.objects.filter(recurrente=recurrente).count(), 1)
+
     def test_recurrente_manual_se_genera_pendiente_y_no_afecta_saldo(self):
         cuenta = CuentaFinanciera.objects.create(
             usuario=self.user,
