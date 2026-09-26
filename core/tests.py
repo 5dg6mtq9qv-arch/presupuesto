@@ -131,6 +131,7 @@ class GastoTarjetaCreditoTests(TestCase):
             'const esCredito = metodo.selectedOptions[0]?.dataset.tipo === "credito";',
             html=False,
         )
+        self.assertContains(response, "[hidden] { display: none !important; }", html=False)
         self.assertNotContains(response, "esCredito || camposCredito.some")
 
     def test_gasto_no_crediticio_descarta_campos_de_credito(self):
