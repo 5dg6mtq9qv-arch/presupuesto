@@ -28,7 +28,7 @@
 <section class="panel">
   <div class="table-wrap">
     <table class="table table-hover align-middle mb-0">
-      <thead><tr><th>Tipo</th><th>Concepto</th><th>Categoría</th><th>Monto</th><th>Día</th><th>Cuenta</th><th>Estado</th><th></th></tr></thead>
+      <thead><tr><th>Tipo</th><th>Concepto</th><th>Categoría</th><th>Monto</th><th>Día</th><th>Cuenta</th><th>Aplicación</th><th>Estado</th><th></th></tr></thead>
       <tbody>
         {% for recurrente in recurrentes %}
           <tr>
@@ -38,6 +38,7 @@
             <td class="amount">{{ recurrente.monto }}</td>
             <td>{{ recurrente.dia_mes }}</td>
             <td>{{ recurrente.cuenta|default:"" }}</td>
+            <td>{% if recurrente.aplicar_automaticamente %}<span class="badge rounded-pill text-bg-info">Automática</span>{% else %}<span class="badge rounded-pill text-bg-light border">Confirmación manual</span>{% endif %}</td>
             <td><span class="badge rounded-pill {% if recurrente.activo %}text-bg-success{% else %}text-bg-secondary{% endif %}">{% if recurrente.activo %}Activo{% else %}Inactivo{% endif %}</span></td>
             <td class="text-nowrap">
               <span class="action-icons">
@@ -48,7 +49,7 @@
             </td>
           </tr>
         {% empty %}
-          <tr><td colspan="8" class="muted">Sin movimientos recurrentes.</td></tr>
+          <tr><td colspan="9" class="muted">Sin movimientos recurrentes.</td></tr>
         {% endfor %}
       </tbody>
     </table>

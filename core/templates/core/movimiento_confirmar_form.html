@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block page_title %}{% if movimiento.tipo == "ingreso" %}Confirmar ingreso{% else %}Confirmar gasto{% endif %}{% endblock %}
+{% block page_subtitle %}{{ movimiento.concepto }} · {{ movimiento.fecha|date:"d/m/Y" }}{% endblock %}
+
+{% block content %}
+{{ saldos_cuenta|json_script:"saldos-cuenta-data" }}
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>{% if movimiento.tipo == "ingreso" %}Dinero recibido{% else %}Pago realizado{% endif %}</h2>
+      <p class="muted mb-0">Monto <strong>{{ movimiento.monto }}</strong>. El saldo cambiará solo después de confirmar la cuenta.</p>
+    </div>
+  </div>
+  <form class="form-grid" method="post">
+    {% csrf_token %}
+    {% include "core/includes/unfold_form_fields.html" %}
+    <div class="unfold-field">
+      <span class="form-label">Saldo actual</span>
+      <div id="saldo-cuenta" class="form-control bg-light">Selecciona una cuenta</div>
+      <div id="saldo-resultante" class="form-text"></div>
+    </div>
+    <div class="form-actions actions">
+      <button class="btn btn-primary" type="submit">
+        <span class="material-symbols-outlined">check</span><span>{% if movimiento.tipo == "ingreso" %}Confirmar recepción{% else %}Confirmar pago{% endif %}</span>
+      </button>
+      <a class="btn btn-outline-secondary" href="{% url 'movimiento_list' %}?tipo={{ movimiento.tipo }}">Cancelar</a>
+    </div>
+  </form>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (() => {
+    const saldos = JSON.parse(document.getElementById("saldos-cuenta-data").textContent);
+    const cuenta = document.getElementById("id_cuenta");
+    const saldo = document.getElementById("saldo-cuenta");
+    const resultante = document.getElementById("saldo-resultante");
+    const monto = Number("{{ movimiento.monto|stringformat:'f' }}".replace(",", "."));
+    const esIngreso = "{{ movimiento.tipo }}" === "ingreso";
+    const formato = new Intl.NumberFormat("es-EC", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    const actualizar = () => {
+      if (!cuenta.value || saldos[cuenta.value] === undefined) {
+        saldo.textContent = "Selecciona una cuenta";
+        resultante.textContent = "";
+        return;
+      }
+      const disponible = Number(saldos[cuenta.value]);
+      const despues = disponible + (esIngreso ? monto : -monto);
+      saldo.textContent = formato.format(disponible);
+      resultante.textContent = `Después de confirmar quedarían ${formato.format(despues)}.`;
+      resultante.classList.toggle("text-danger", despues < 0);
+    };
+    cuenta.addEventListener("change", actualizar);
+    cuenta.addEventListener("input", actualizar);
+    if (window.jQuery) window.jQuery(cuenta).on("change", actualizar);
+    window.setTimeout(actualizar, 0);
+  })();
+</script>
+{% endblock %}

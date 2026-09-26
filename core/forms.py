@@ -434,7 +434,15 @@ class MovimientoFinancieroForm(UserScopedModelForm):
         self.fields["categoria"].empty_label = "Selecciona una categoria"
         self.fields["categoria"].help_text = "Los colores de la categoria se usan en las graficas."
         self.fields["cuenta"].queryset = CuentaFinanciera.objects.filter(usuario=user, activa=True).order_by("nombre")
-        self.fields["cuenta"].empty_label = None
+        self.fields["cuenta"].required = True
+        if self.tipo == MovimientoFinanciero.Tipo.INGRESO:
+            self.fields["cuenta"].label = "Cuenta de destino"
+            self.fields["cuenta"].empty_label = "Selecciona dónde entra el dinero"
+            self.fields["fecha"].label = "Fecha de ingreso"
+            self.fields["fecha"].help_text = "Día en que recibiste el dinero."
+        else:
+            self.fields["cuenta"].label = "Cuenta de origen"
+            self.fields["cuenta"].empty_label = "Selecciona de dónde sale el dinero"
         self.fields["metodo_pago"].queryset = MetodoPago.objects.filter(usuario=user, activo=True).order_by("nombre")
         self.fields["metodo_pago"].empty_label = "Sin método"
         self.fields["acreedor_credito"].queryset = Acreedor.objects.filter(usuario=user, activo=True).order_by("nombre")
@@ -659,10 +667,16 @@ class PresupuestoMensualForm(UserScopedModelForm):
 class MovimientoRecurrenteForm(UserScopedModelForm):
     class Meta:
         model = MovimientoRecurrente
-        fields = ["tipo", "categoria", "cuenta", "metodo_pago", "concepto", "monto", "dia_mes", "activo", "nota"]
+        fields = ["tipo", "categoria", "cuenta", "metodo_pago", "concepto", "monto", "dia_mes", "aplicar_automaticamente", "activo", "nota"]
         labels = {
             "metodo_pago": "Método de pago",
             "dia_mes": "Día del mes",
+            "cuenta": "Cuenta prevista",
+            "aplicar_automaticamente": "Aplicar automáticamente al saldo",
+        }
+        help_texts = {
+            "cuenta": "Se propondrá al confirmar. Si activas la aplicación automática, esta cuenta se usará directamente.",
+            "aplicar_automaticamente": "Actívalo solo si el cobro o débito ocurre siempre sin intervención.",
         }
         widgets = {
             "monto": forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
@@ -680,7 +694,7 @@ class MovimientoRecurrenteForm(UserScopedModelForm):
         )
         self.fields["categoria"].empty_label = "Sin categoría"
         self.fields["cuenta"].queryset = CuentaFinanciera.objects.filter(usuario=user, activa=True).order_by("nombre")
-        self.fields["cuenta"].empty_label = None
+        self.fields["cuenta"].empty_label = "Selecciona una cuenta"
         self.fields["metodo_pago"].queryset = MetodoPago.objects.filter(usuario=user, activo=True).order_by("nombre")
         self.fields["metodo_pago"].empty_label = "Sin método"
         if not self.is_bound and not self.instance.pk:
@@ -691,6 +705,12 @@ class MovimientoRecurrenteForm(UserScopedModelForm):
         if not 1 <= dia <= 31:
             raise forms.ValidationError("Debe estar entre 1 y 31.")
         return dia
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if cleaned_data.get("aplicar_automaticamente") and not cleaned_data.get("cuenta"):
+            self.add_error("cuenta", "Selecciona la cuenta que se afectará automáticamente.")
+        return cleaned_data
 
     def save(self, commit=True):
         instance = super().save(commit=False)
@@ -916,4 +936,34 @@ class ConfirmarPagoDeudaForm(BootstrapFormMixin, forms.Form):
         self.fields["cuenta"].label_from_instance = lambda cuenta: (
             f"{cuenta.nombre} · disponible {saldos.get(cuenta.pk, Decimal('0')):.2f}"
         )
+        self.apply_bootstrap_classes()
+
+
+class ConfirmarMovimientoForm(BootstrapFormMixin, forms.Form):
+    cuenta = forms.ModelChoiceField(
+        label="Cuenta",
+        queryset=CuentaFinanciera.objects.none(),
+    )
+
+    def __init__(self, *args, user=None, movimiento=None, saldos=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        saldos = saldos or {}
+        es_ingreso = movimiento and movimiento.tipo == MovimientoFinanciero.Tipo.INGRESO
+        self.fields["cuenta"].label = "Cuenta de destino" if es_ingreso else "Cuenta de origen"
+        self.fields["cuenta"].empty_label = (
+            "Selecciona dónde entra el dinero" if es_ingreso else "Selecciona de dónde sale el dinero"
+        )
+        self.fields["cuenta"].queryset = CuentaFinanciera.objects.filter(
+            usuario=user,
+            activa=True,
+        ).order_by("nombre")
+        self.fields["cuenta"].label_from_instance = lambda cuenta: (
+            f"{cuenta.nombre} · saldo {saldos.get(cuenta.pk, Decimal('0')):.2f}"
+        )
+        if movimiento:
+            cuenta_sugerida_id = movimiento.cuenta_id
+            if not cuenta_sugerida_id and movimiento.recurrente_id:
+                cuenta_sugerida_id = movimiento.recurrente.cuenta_id
+            if cuenta_sugerida_id:
+                self.fields["cuenta"].initial = cuenta_sugerida_id
         self.apply_bootstrap_classes()

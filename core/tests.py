@@ -398,6 +398,102 @@ class MovimientoRecurrenteServiceTests(TestCase):
         self.assertEqual(omitidos, 1)
         self.assertEqual(MovimientoFinanciero.objects.count(), 1)
 
+    def test_recurrente_manual_se_genera_pendiente_y_no_afecta_saldo(self):
+        cuenta = CuentaFinanciera.objects.create(
+            usuario=self.user,
+            nombre="Banco",
+            tipo=CuentaFinanciera.Tipo.BANCO,
+            saldo_inicial="100.00",
+        )
+        recurrente = MovimientoRecurrente.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+            cuenta=cuenta,
+            concepto="Internet",
+            monto="30.00",
+            dia_mes=5,
+        )
+        self.set_creado(recurrente, 2026, 7, 4)
+
+        creados, _ = generar_movimientos_recurrentes(
+            hasta_fecha=datetime(2026, 7, 5).date(),
+            usuario=self.user,
+        )
+
+        self.assertEqual(creados[0].estado, MovimientoFinanciero.Estado.PENDIENTE)
+        self.client.force_login(self.user)
+        dashboard = self.client.get(reverse("dashboard"))
+        saldo = next(item["saldo"] for item in dashboard.context["cuentas_resumen"] if item["id"] == cuenta.pk)
+        self.assertEqual(saldo, Decimal("100.00"))
+
+    def test_recurrente_automatico_se_confirma_en_su_cuenta(self):
+        cuenta = CuentaFinanciera.objects.create(
+            usuario=self.user,
+            nombre="Nómina",
+            tipo=CuentaFinanciera.Tipo.BANCO,
+            saldo_inicial="10.00",
+        )
+        recurrente = MovimientoRecurrente.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.INGRESO,
+            cuenta=cuenta,
+            concepto="Sueldo",
+            monto="500.00",
+            dia_mes=5,
+            aplicar_automaticamente=True,
+        )
+        self.set_creado(recurrente, 2026, 7, 4)
+
+        creados, _ = generar_movimientos_recurrentes(
+            hasta_fecha=datetime(2026, 7, 5).date(),
+            usuario=self.user,
+        )
+
+        self.assertEqual(creados[0].estado, MovimientoFinanciero.Estado.CONFIRMADO)
+        self.assertEqual(creados[0].cuenta, cuenta)
+
+    def test_confirmar_recurrente_elige_cuenta_y_actualiza_saldo(self):
+        cuenta = CuentaFinanciera.objects.create(
+            usuario=self.user,
+            nombre="Ahorros",
+            tipo=CuentaFinanciera.Tipo.BANCO,
+            saldo_inicial="100.00",
+        )
+        movimiento = MovimientoFinanciero.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.INGRESO,
+            estado=MovimientoFinanciero.Estado.PENDIENTE,
+            concepto="Sueldo",
+            monto="500.00",
+            fecha=datetime(2026, 7, 5).date(),
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("movimiento_confirmar", args=[movimiento.pk]),
+            {"cuenta": cuenta.pk},
+        )
+
+        movimiento.refresh_from_db()
+        self.assertRedirects(response, f"{reverse('movimiento_list')}?tipo=ingreso")
+        self.assertEqual(movimiento.estado, MovimientoFinanciero.Estado.CONFIRMADO)
+        self.assertEqual(movimiento.cuenta, cuenta)
+        dashboard = self.client.get(reverse("dashboard"))
+        saldo = next(item["saldo"] for item in dashboard.context["cuentas_resumen"] if item["id"] == cuenta.pk)
+        self.assertEqual(saldo, Decimal("600.00"))
+
+    def test_ingreso_usa_fecha_de_ingreso_y_cuenta_de_destino(self):
+        ensure_user_finance_setup(self.user)
+        self.client.force_login(self.user)
+
+        formulario = self.client.get(reverse("movimiento_ingreso_create"))
+        listado = self.client.get(reverse("movimiento_list"), {"tipo": "ingreso"})
+
+        self.assertContains(formulario, "Fecha de ingreso")
+        self.assertContains(formulario, "Cuenta de destino")
+        self.assertNotContains(formulario, "Fecha de compra")
+        self.assertContains(listado, "Fecha de ingreso")
+
     def test_deuda_no_genera_cuotas_anteriores_a_la_creacion(self):
         deuda = Deuda.objects.create(
             usuario=self.user,

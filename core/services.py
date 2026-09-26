@@ -327,6 +327,11 @@ def generar_movimientos_recurrentes(hasta_fecha=None, usuario=None):
                 monto=recurrente.monto,
                 fecha=fecha,
                 nota=recurrente.nota,
+                estado=(
+                    MovimientoFinanciero.Estado.CONFIRMADO
+                    if recurrente.aplicar_automaticamente and recurrente.cuenta_id
+                    else MovimientoFinanciero.Estado.PENDIENTE
+                ),
             )
             try:
                 with transaction.atomic():

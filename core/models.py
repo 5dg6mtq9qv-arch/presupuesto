@@ -281,6 +281,7 @@ class MovimientoFinanciero(models.Model):
         GASTO = "gasto", "Gasto"
 
     class Estado(models.TextChoices):
+        PENDIENTE = "pendiente", "Pendiente"
         CONFIRMADO = "confirmado", "Confirmado"
         ELIMINADO = "eliminado", "Eliminado"
 
@@ -382,6 +383,7 @@ class MovimientoRecurrente(models.Model):
     monto = models.DecimalField(max_digits=12, decimal_places=2)
     frecuencia = models.CharField(max_length=20, choices=Frecuencia.choices, default=Frecuencia.MENSUAL)
     dia_mes = models.PositiveSmallIntegerField(default=1)
+    aplicar_automaticamente = models.BooleanField(default=False)
     activo = models.BooleanField(default=True)
     nota = models.TextField(blank=True)
     creado = models.DateTimeField(auto_now_add=True)

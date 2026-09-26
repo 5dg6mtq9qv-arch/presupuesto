@@ -23,6 +23,7 @@ from django.utils.dateparse import parse_date
 from .forms import (
     AjusteSaldoForm,
     CategoriaForm,
+    ConfirmarMovimientoForm,
     ConfirmarPagoDeudaForm,
     CuentaFinancieraForm,
     DeudaForm,
@@ -1930,7 +1931,11 @@ def movimiento_list(request):
             | Q(categoria__nombre__icontains=q)
             | Q(categoria__parent__nombre__icontains=q)
         )
-    if estado in {MovimientoFinanciero.Estado.CONFIRMADO, MovimientoFinanciero.Estado.ELIMINADO}:
+    if estado in {
+        MovimientoFinanciero.Estado.PENDIENTE,
+        MovimientoFinanciero.Estado.CONFIRMADO,
+        MovimientoFinanciero.Estado.ELIMINADO,
+    }:
         movimientos = movimientos.filter(estado=estado)
     if categoria_id.isdigit():
         categoria = Categoria.objects.filter(
@@ -2091,6 +2096,55 @@ def movimiento_update(request, pk):
             "tiene_categorias": tiene_categorias,
         },
     )
+
+
+@login_required
+@transaction.atomic
+def movimiento_confirmar(request, pk):
+    movimiento = get_object_or_404(
+        MovimientoFinanciero.objects.select_for_update(),
+        pk=pk,
+        usuario=request.user,
+    )
+    if movimiento.estado == MovimientoFinanciero.Estado.CONFIRMADO:
+        messages.info(request, "El movimiento ya estaba confirmado.")
+        return redirect(f"{reverse('movimiento_list')}?tipo={movimiento.tipo}")
+    if movimiento.estado == MovimientoFinanciero.Estado.ELIMINADO:
+        messages.error(request, "No puedes confirmar un movimiento eliminado.")
+        return redirect(f"{reverse('movimiento_list')}?tipo={movimiento.tipo}")
+
+    resumen_cuentas = saldos_por_cuenta(request.user)
+    saldos_por_id = {item["id"]: item["saldo"] for item in resumen_cuentas}
+    form = ConfirmarMovimientoForm(
+        request.POST if request.method == "POST" else None,
+        user=request.user,
+        movimiento=movimiento,
+        saldos=saldos_por_id,
+    )
+    if request.method != "POST" or not form.is_valid():
+        return render(
+            request,
+            "core/movimiento_confirmar_form.html",
+            {
+                "form": form,
+                "movimiento": movimiento,
+                "saldos_cuenta": {str(pk): float(saldo) for pk, saldo in saldos_por_id.items()},
+            },
+        )
+
+    movimiento.cuenta = form.cleaned_data["cuenta"]
+    movimiento.estado = MovimientoFinanciero.Estado.CONFIRMADO
+    movimiento.save(update_fields=["cuenta", "estado"])
+    sincronizar_deuda_compra_credito(movimiento)
+    registrar_auditoria(
+        request,
+        RegistroAuditoria.Accion.CONFIRMAR,
+        movimiento,
+        cambios={"cuenta": movimiento.cuenta.nombre, "monto": str(movimiento.monto)},
+    )
+    accion = "Ingreso recibido" if movimiento.tipo == MovimientoFinanciero.Tipo.INGRESO else "Gasto pagado"
+    messages.success(request, f"{accion}; el saldo de {movimiento.cuenta.nombre} fue actualizado.")
+    return redirect(f"{reverse('movimiento_list')}?tipo={movimiento.tipo}")
 
 
 @login_required
