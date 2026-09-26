@@ -71,6 +71,7 @@ from .services import (
     generar_pagos_deudas,
     movimientos_recurrentes_programados,
     reprogramar_fechas_cuotas,
+    sincronizar_cuotas_pendientes_deuda,
     sincronizar_deuda_compra_credito,
 )
 
@@ -2196,6 +2197,17 @@ def deuda_list(request):
     page_obj, list_querystring = paginate_queryset(request, deudas)
     for deuda in page_obj:
         pagos = list(deuda.pagos.all())
+        cuotas_numeradas = {pago.cuota_numero for pago in pagos if pago.cuota_numero is not None}
+        plan_esperado = set(range(1, deuda.numero_cuotas + 1))
+        if deuda.estado == Deuda.Estado.ACTIVA and cuotas_numeradas != plan_esperado:
+            sincronizar_cuotas_pendientes_deuda(deuda)
+            deuda._prefetched_objects_cache.pop("pagos", None)
+            pagos = list(
+                PagoDeuda.objects.filter(deuda=deuda)
+                .select_related("cuenta")
+                .order_by("fecha", "cuota_numero", "creado")
+            )
+        deuda.pagos_ordenados = pagos
         deuda.pagos_confirmados_count = sum(pago.estado == PagoDeuda.Estado.CONFIRMADO for pago in pagos)
         deuda.cuotas_pendientes_count = sum(pago.estado == PagoDeuda.Estado.PENDIENTE for pago in pagos)
     categorias = Categoria.objects.filter(
@@ -2223,11 +2235,15 @@ def deuda_create(request):
         if form.is_valid():
             deuda = assign_user_and_save(form, request.user)
             pagos_historicos = crear_historial_inicial_deuda(deuda)
+            cuotas_programadas = sincronizar_cuotas_pendientes_deuda(deuda)
             registrar_auditoria(
                 request,
                 RegistroAuditoria.Accion.CREAR,
                 deuda,
-                cambios={"cuotas_historicas_reconstruidas": len(pagos_historicos)},
+                cambios={
+                    "cuotas_historicas_reconstruidas": len(pagos_historicos),
+                    "cuotas_programadas": len(cuotas_programadas),
+                },
             )
             messages.success(request, "Deuda creada.")
             return redirect("deuda_list")
@@ -2253,6 +2269,7 @@ def deuda_update(request, pk):
             pagos_reprogramados = []
             if fecha_primera_cuota_anterior != deuda.fecha_primera_cuota:
                 pagos_reprogramados = reprogramar_fechas_cuotas(deuda)
+            cuotas_programadas = sincronizar_cuotas_pendientes_deuda(deuda)
             registrar_auditoria(
                 request,
                 RegistroAuditoria.Accion.ACTUALIZAR,
@@ -2268,6 +2285,7 @@ def deuda_update(request, pk):
                     "fecha_vencimiento_nueva": str(deuda.fecha_vencimiento),
                     "cuotas_historicas_reconstruidas": len(pagos_historicos),
                     "cuotas_reprogramadas": len(pagos_reprogramados),
+                    "cuotas_programadas": len(cuotas_programadas),
                 },
             )
             if pagos_reprogramados:

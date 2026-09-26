@@ -112,6 +112,15 @@ class MetodoPagoSelect(forms.Select):
         return option
 
 
+class EtiquetaSelectMultiple(forms.SelectMultiple):
+    def create_option(self, name, value, label, selected, index, subindex=None, attrs=None):
+        option = super().create_option(name, value, label, selected, index, subindex=subindex, attrs=attrs)
+        instance = getattr(value, "instance", None)
+        if instance:
+            option["attrs"]["data-color"] = instance.color or "#6366f1"
+        return option
+
+
 class BootstrapFormMixin:
     def apply_bootstrap_classes(self):
         for field in self.fields.values():
@@ -418,7 +427,7 @@ class MovimientoFinancieroForm(UserScopedModelForm):
             "fecha_pago": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
             "monto": forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
             "comprobante": forms.ClearableFileInput(attrs={"accept": "image/*,.pdf"}),
-            "etiquetas": forms.SelectMultiple(attrs={"size": "1", "data-compact-multiple": "true"}),
+            "etiquetas": EtiquetaSelectMultiple(attrs={"size": "1", "data-compact-multiple": "true"}),
             "metodo_pago": MetodoPagoSelect(),
             "numero_cuotas_credito": forms.NumberInput(attrs={"min": "1"}),
         }
@@ -827,6 +836,17 @@ class DeudaForm(UserScopedModelForm):
             self.add_error("fecha_primera_cuota", "La primera cuota no puede ser anterior al inicio de la deuda.")
         if fecha_primera_cuota and numero_cuotas:
             cleaned_data["fecha_vencimiento"] = add_months(fecha_primera_cuota, numero_cuotas - 1)
+
+        if self.instance.pk and numero_cuotas:
+            ultima_cuota_confirmada = self.instance.pagos.filter(
+                estado=PagoDeuda.Estado.CONFIRMADO,
+                cuota_numero__isnull=False,
+            ).order_by("-cuota_numero").values_list("cuota_numero", flat=True).first()
+            if ultima_cuota_confirmada and numero_cuotas < ultima_cuota_confirmada:
+                self.add_error(
+                    "numero_cuotas",
+                    f"No puede ser menor que la última cuota pagada ({ultima_cuota_confirmada}).",
+                )
 
         return cleaned_data
 

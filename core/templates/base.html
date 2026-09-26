@@ -404,6 +404,22 @@
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    .select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
+      color: inherit;
+      border-right-color: rgba(255, 255, 255, .35);
+    }
+    .select2-color-option {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .select2-color-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      flex: 0 0 auto;
+      background: var(--tag-color);
+    }
     .select2-container--default .select2-search--inline .select2-search__field {
       margin: 0;
       height: 28px;
@@ -885,7 +901,16 @@
 
     .debt-table { min-width: 1120px; }
     .debt-table .payments-cell { min-width: 390px; width: 390px; }
-    .debt-table .debt-actions-cell { width: 92px; }
+    .debt-table .debt-actions-cell,
+    .debt-table th:last-child {
+      position: sticky;
+      right: 0;
+      width: 92px;
+      background: var(--surface);
+      box-shadow: -8px 0 12px rgba(26, 42, 68, .04);
+      z-index: 2;
+    }
+    .debt-table th:last-child { background: #fbfcfd; z-index: 3; }
     .installment-summary { display: flex; flex-wrap: wrap; gap: 6px; }
     .debt-payments { display: grid; gap: 8px; }
     .debt-payment {
@@ -1509,12 +1534,48 @@
   <script>
     (() => {
       if (!window.jQuery || !jQuery.fn.select2) return;
+
+      const contrastColor = (color) => {
+        const hex = color.replace("#", "");
+        if (!/^[0-9a-f]{6}$/i.test(hex)) return "#ffffff";
+        const red = parseInt(hex.slice(0, 2), 16);
+        const green = parseInt(hex.slice(2, 4), 16);
+        const blue = parseInt(hex.slice(4, 6), 16);
+        return ((red * 299 + green * 587 + blue * 114) / 1000) > 155 ? "#1b2431" : "#ffffff";
+      };
+
+      const renderOption = (option) => {
+        const color = option.element?.dataset.color;
+        if (!color) return option.text;
+        const label = document.createElement("span");
+        label.className = "select2-color-option";
+        label.style.setProperty("--tag-color", color);
+        const dot = document.createElement("span");
+        dot.className = "select2-color-dot";
+        label.append(dot, document.createTextNode(option.text));
+        return jQuery(label);
+      };
+
+      const renderSelection = (option, container) => {
+        const color = option.element?.dataset.color;
+        if (color) {
+          jQuery(container).css({
+            backgroundColor: color,
+            borderColor: color,
+            color: contrastColor(color),
+          });
+        }
+        return option.text;
+      };
+
       jQuery("select").each(function () {
         const select = jQuery(this);
         if (select.data("select2")) return;
         select.select2({
           width: "100%",
           allowClear: false,
+          templateResult: renderOption,
+          templateSelection: renderSelection,
         });
       });
     })();

@@ -244,6 +244,55 @@ def reprogramar_fechas_cuotas(deuda):
     return actualizados
 
 
+@transaction.atomic
+def sincronizar_cuotas_pendientes_deuda(deuda):
+    """Build the complete outstanding installment plan for a debt."""
+    deuda = Deuda.objects.select_for_update().get(pk=deuda.pk)
+    deuda.pagos.filter(
+        estado=PagoDeuda.Estado.PENDIENTE,
+        cuota_numero__isnull=False,
+    ).delete()
+
+    if deuda.estado != Deuda.Estado.ACTIVA or deuda.saldo_actual <= 0:
+        return []
+
+    cuotas_confirmadas = set(
+        deuda.pagos.filter(
+            estado=PagoDeuda.Estado.CONFIRMADO,
+            cuota_numero__isnull=False,
+        ).values_list("cuota_numero", flat=True)
+    )
+    numeros_pendientes = [
+        numero
+        for numero in range(1, deuda.numero_cuotas + 1)
+        if numero not in cuotas_confirmadas
+    ]
+    if not numeros_pendientes:
+        return []
+
+    monto_base = (deuda.saldo_actual / Decimal(len(numeros_pendientes))).quantize(
+        Decimal("0.01"),
+        rounding=ROUND_HALF_UP,
+    )
+    creados = []
+    acumulado = Decimal("0")
+    for posicion, numero in enumerate(numeros_pendientes, start=1):
+        monto = monto_base
+        if posicion == len(numeros_pendientes):
+            monto = deuda.saldo_actual - acumulado
+        pago = PagoDeuda.objects.create(
+            deuda=deuda,
+            monto=monto,
+            fecha=fecha_cuota_deuda(deuda, numero),
+            cuota_numero=numero,
+            estado=PagoDeuda.Estado.PENDIENTE,
+            nota="Cuota programada según el plan de la deuda.",
+        )
+        creados.append(pago)
+        acumulado += monto
+    return creados
+
+
 def iter_fechas_recurrentes_vencidas(recurrente, hasta_fecha):
     creado_local = timezone.localtime(recurrente.creado)
     anio = creado_local.year

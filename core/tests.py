@@ -12,6 +12,7 @@ from .models import (
     Categoria,
     CuentaFinanciera,
     Deuda,
+    Etiqueta,
     MetodoPago,
     MovimientoFinanciero,
     MovimientoRecurrente,
@@ -25,6 +26,7 @@ from .services import (
     generar_movimientos_recurrentes,
     generar_pagos_deudas,
     reprogramar_fechas_cuotas,
+    sincronizar_cuotas_pendientes_deuda,
     sincronizar_deuda_compra_credito,
     sumar_meses,
 )
@@ -134,6 +136,19 @@ class GastoTarjetaCreditoTests(TestCase):
         self.assertContains(response, "[hidden] { display: none !important; }", html=False)
         self.assertContains(response, 'on("change.camposCredito", actualizar)', html=False)
         self.assertNotContains(response, "esCredito || camposCredito.some")
+
+    def test_selector_de_etiquetas_incluye_su_color(self):
+        etiqueta = Etiqueta.objects.create(
+            usuario=self.user,
+            nombre="Alimentación",
+            color="#ef4444",
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("movimiento_gasto_create"))
+
+        self.assertContains(response, f'value="{etiqueta.pk}" data-color="#ef4444"')
+        self.assertContains(response, "templateSelection: renderSelection", html=False)
 
     def test_gasto_no_crediticio_descarta_campos_de_credito(self):
         transferencia = MetodoPago.objects.get(
@@ -651,6 +666,60 @@ class MovimientoRecurrenteServiceTests(TestCase):
         self.assertEqual(len(creados), 0)
         self.assertEqual(omitidos, 0)
         self.assertEqual(PagoDeuda.objects.count(), 1)
+
+    def test_sincroniza_y_muestra_el_plan_completo_de_cuotas(self):
+        acreedor = Acreedor.objects.create(usuario=self.user, nombre="Banco")
+        deuda = Deuda.objects.create(
+            usuario=self.user,
+            acreedor="Banco",
+            acreedor_entidad=acreedor,
+            concepto="Compra en nueve cuotas",
+            monto_inicial="128.34",
+            saldo_actual="128.34",
+            numero_cuotas=9,
+            fecha_inicio=datetime(2026, 9, 26).date(),
+            fecha_primera_cuota=datetime(2026, 10, 18).date(),
+            fecha_vencimiento=datetime(2027, 6, 18).date(),
+        )
+
+        cuotas = sincronizar_cuotas_pendientes_deuda(deuda)
+
+        self.assertEqual(len(cuotas), 9)
+        self.assertEqual([cuota.cuota_numero for cuota in cuotas], list(range(1, 10)))
+        self.assertEqual(sum((cuota.monto for cuota in cuotas), Decimal("0")), Decimal("128.34"))
+        self.assertEqual(cuotas[-1].fecha, datetime(2027, 6, 18).date())
+
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("deuda_list"))
+        self.assertContains(response, "Cuota 1")
+        self.assertContains(response, "Cuota 9")
+        self.assertContains(response, "9 pendientes")
+        self.assertContains(response, "Editar plan de cuotas")
+
+        response = self.client.post(
+            reverse("deuda_update", args=[deuda.pk]),
+            {
+                "acreedor_existente": acreedor.pk,
+                "nuevo_acreedor": "",
+                "categoria": "",
+                "concepto": deuda.concepto,
+                "monto_inicial": "128.34",
+                "saldo_actual": "128.34",
+                "numero_cuotas": "3",
+                "fecha_inicio": "2026-09-26",
+                "fecha_primera_cuota": "2026-10-18",
+                "fecha_vencimiento": "2026-12-18",
+                "estado": Deuda.Estado.ACTIVA,
+                "nota": "",
+            },
+        )
+
+        self.assertRedirects(response, reverse("deuda_list"))
+        deuda.refresh_from_db()
+        cuotas = list(deuda.pagos.order_by("cuota_numero"))
+        self.assertEqual(deuda.numero_cuotas, 3)
+        self.assertEqual([cuota.cuota_numero for cuota in cuotas], [1, 2, 3])
+        self.assertEqual(sum((cuota.monto for cuota in cuotas), Decimal("0")), Decimal("128.34"))
 
     def test_confirmar_cuota_pendiente_descuenta_saldo_una_sola_vez(self):
         cuenta = CuentaFinanciera.objects.create(

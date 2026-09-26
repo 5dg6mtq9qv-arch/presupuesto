@@ -77,7 +77,7 @@
             </td>
             <td class="payments-cell">
               <div class="debt-payments">
-                {% for pago in deuda.pagos.all %}
+                {% for pago in deuda.pagos_ordenados %}
                   {% if pago.estado == "pendiente" %}
                     {% include "core/includes/debt_payment.html" %}
                   {% endif %}
@@ -90,7 +90,7 @@
                       <span class="material-symbols-outlined collapse-icon">expand_more</span>
                     </summary>
                     <div class="paid-installments-list">
-                      {% for pago in deuda.pagos.all %}
+                      {% for pago in deuda.pagos_ordenados %}
                         {% if pago.estado == "confirmado" %}
                           {% include "core/includes/debt_payment.html" %}
                         {% endif %}
