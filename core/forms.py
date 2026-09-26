@@ -483,7 +483,7 @@ class MovimientoFinancieroForm(UserScopedModelForm):
                 self.add_error("acreedor_credito", "Selecciona un acreedor o escribe uno nuevo para la compra a crédito.")
             if not numero_cuotas or numero_cuotas < 1:
                 self.add_error("numero_cuotas_credito", "Indica al menos una cuota.")
-        if fecha and fecha_pago and fecha_pago < fecha:
+        if self.tipo == MovimientoFinanciero.Tipo.GASTO and es_credito and fecha and fecha_pago and fecha_pago < fecha:
             self.add_error("fecha_pago", "La fecha máxima de pago no puede ser anterior a la fecha de compra.")
         if self.tipo == MovimientoFinanciero.Tipo.GASTO and not es_credito:
             cleaned_data["fecha_pago"] = None

@@ -47,8 +47,9 @@
     const camposCredito = [fechaPago, acreedor, nuevoAcreedor, numeroCuotas].filter(Boolean);
     const actualizar = () => {
       const esCredito = metodo.selectedOptions[0]?.dataset.tipo === "credito";
-      const visible = esCredito || camposCredito.some(campo => Boolean(campo.value));
-      camposCredito.forEach(campo => { campo.closest(".unfold-field").hidden = !visible; });
+      camposCredito.forEach(campo => {
+        campo.closest(".unfold-field").hidden = !esCredito;
+      });
       fechaPago.required = esCredito;
       if (numeroCuotas) numeroCuotas.required = esCredito;
     };

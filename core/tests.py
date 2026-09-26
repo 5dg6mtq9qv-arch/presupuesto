@@ -121,6 +121,41 @@ class GastoTarjetaCreditoTests(TestCase):
         self.assertContains(response, "Crédito")
         self.assertContains(response, 'data-tipo="credito"')
 
+    def test_campos_de_credito_solo_se_muestran_para_metodo_credito(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("movimiento_gasto_create"))
+
+        self.assertContains(
+            response,
+            'const esCredito = metodo.selectedOptions[0]?.dataset.tipo === "credito";',
+            html=False,
+        )
+        self.assertNotContains(response, "esCredito || camposCredito.some")
+
+    def test_gasto_no_crediticio_descarta_campos_de_credito(self):
+        transferencia = MetodoPago.objects.get(
+            usuario=self.user,
+            tipo=MetodoPago.Tipo.TRANSFERENCIA,
+        )
+        form = MovimientoFinancieroForm(
+            self.datos(
+                metodo_pago=transferencia.pk,
+                fecha_pago="2026-09-24",
+                numero_cuotas_credito="12",
+                nuevo_acreedor_credito="No debe guardarse",
+            ),
+            user=self.user,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        movimiento = form.save(commit=False)
+        self.assertIsNone(movimiento.fecha_pago)
+        self.assertIsNone(movimiento.acreedor_credito)
+        self.assertEqual(movimiento.numero_cuotas_credito, 1)
+        self.assertFalse(Acreedor.objects.filter(nombre="No debe guardarse").exists())
+
     def test_compra_credito_crea_deuda_y_pago_pendiente(self):
         self.client.force_login(self.user)
 
