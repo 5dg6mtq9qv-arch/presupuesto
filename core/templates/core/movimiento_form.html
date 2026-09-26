@@ -19,12 +19,48 @@
 {% endif %}
 
 <section class="panel form-panel">
-  <form class="form-grid" method="post" enctype="multipart/form-data">
+  <form class="expense-flow-form" id="expense-flow-form" data-movement-type="{{ tipo }}" method="post" enctype="multipart/form-data">
     {% csrf_token %}
-    {% include "core/includes/unfold_form_fields.html" %}
-    <div class="form-actions actions">
-      <button class="btn btn-primary btn-icon" type="submit" title="Guardar" aria-label="Guardar">
+      <nav class="expense-steps" aria-label="Pasos para registrar el {{ tipo }}">
+        <button class="expense-step-tab is-active" type="button" data-expense-go="1"><span>1</span><strong>{% if tipo == "gasto" %}Qué compraste{% else %}Origen del ingreso{% endif %}</strong></button>
+        <span class="expense-step-line"></span>
+        <button class="expense-step-tab" type="button" data-expense-go="2"><span>2</span><strong>{% if tipo == "gasto" %}Cómo pagaste{% else %}Dónde ingresó{% endif %}</strong></button>
+        <span class="expense-step-line"></span>
+        <button class="expense-step-tab" type="button" data-expense-go="3"><span>3</span><strong>Importe y fecha</strong></button>
+      </nav>
+
+      <div class="form-grid" data-expense-source>
+        {% include "core/includes/unfold_form_fields.html" %}
+      </div>
+
+      <section class="expense-step-panel" data-expense-panel="1">
+        <div class="expense-step-copy"><span class="material-symbols-outlined">{% if tipo == "gasto" %}shopping_bag{% else %}trending_up{% endif %}</span><div><h2>{% if tipo == "gasto" %}¿Qué compraste?{% else %}¿De dónde viene el ingreso?{% endif %}</h2><p>{% if tipo == "gasto" %}Clasifica el gasto y escribe una descripción clara.{% else %}Selecciona su categoría y describe el origen del dinero.{% endif %}</p></div></div>
+        <div class="form-grid" data-expense-target="1"></div>
+      </section>
+      <section class="expense-step-panel" data-expense-panel="2" hidden>
+        <div class="expense-step-copy"><span class="material-symbols-outlined">payments</span><div><h2>{% if tipo == "gasto" %}¿Cómo lo pagaste?{% else %}¿Dónde recibiste el dinero?{% endif %}</h2><p>{% if tipo == "gasto" %}Si eliges crédito, prepararemos automáticamente el plan de cuotas.{% else %}Elige la cuenta de destino y, si aplica, el método de ingreso.{% endif %}</p></div></div>
+        <div class="form-grid" data-expense-target="2"></div>
+      </section>
+      <section class="expense-step-panel" data-expense-panel="3" hidden>
+        <div class="expense-step-copy"><span class="material-symbols-outlined">receipt_long</span><div><h2>Completa el {{ tipo }}</h2><p>Indica el importe, la fecha y agrega un comprobante si lo tienes.</p></div></div>
+        <div class="expense-summary" aria-live="polite">
+          <span><small>Categoría</small><strong data-summary-category>Sin seleccionar</strong></span>
+          <span><small>{% if tipo == "gasto" %}Método{% else %}Cuenta de destino{% endif %}</small><strong data-summary-method>Sin seleccionar</strong></span>
+          <span><small>Monto</small><strong data-summary-amount>0.00</strong></span>
+        </div>
+        <div class="form-grid" data-expense-target="3"></div>
+      </section>
+      <div class="expense-step-error" data-expense-error role="alert" hidden></div>
+    <div class="form-actions actions expense-flow-actions">
+        <button class="btn btn-outline-secondary" type="button" data-expense-back hidden>
+          <span class="material-symbols-outlined">arrow_back</span><span>Anterior</span>
+        </button>
+        <button class="btn btn-primary" type="button" data-expense-next>
+          <span>Siguiente</span><span class="material-symbols-outlined">arrow_forward</span>
+        </button>
+      <button class="btn btn-primary" type="submit" title="Guardar" aria-label="Guardar">
         <span class="material-symbols-outlined">save</span>
+        <span>Guardar {{ tipo }}</span>
       </button>
       <a class="btn btn-outline-secondary btn-icon" href="{% url 'movimiento_list' %}?tipo={{ back_tipo }}" title="Cancelar" aria-label="Cancelar">
         <span class="material-symbols-outlined">close</span>
@@ -35,7 +71,6 @@
 {% endblock %}
 
 {% block scripts %}
-{% if tipo == "gasto" %}
 <script>
   (() => {
     const metodo = document.getElementById("id_metodo_pago");
@@ -76,6 +111,145 @@
     }
     actualizar();
   })();
+
+  (() => {
+    const form = document.getElementById("expense-flow-form");
+    const source = form?.querySelector("[data-expense-source]");
+    if (!form || !source) return;
+
+    const fieldSteps = {
+      categoria: 1,
+      concepto: 1,
+      etiquetas: 1,
+      metodo_pago: 2,
+      cuenta: 2,
+      acreedor_credito: 2,
+      nuevo_acreedor_credito: 2,
+      numero_cuotas_credito: 2,
+      fecha_pago: 2,
+      monto: 3,
+      fecha: 3,
+      comprobante: 3,
+    };
+    const panels = [...form.querySelectorAll("[data-expense-panel]")];
+    const tabs = [...form.querySelectorAll("[data-expense-go]")];
+    const targets = Object.fromEntries(
+      [...form.querySelectorAll("[data-expense-target]")].map(target => [target.dataset.expenseTarget, target])
+    );
+
+    Object.entries(fieldSteps).forEach(([fieldName, step]) => {
+      const field = source.querySelector(`.field-${fieldName}`);
+      if (field) targets[step].append(field);
+    });
+    [...source.children].forEach(node => {
+      if (node.matches('input[type="hidden"]')) form.append(node);
+      else targets[1].prepend(node);
+    });
+    source.remove();
+
+    const back = form.querySelector("[data-expense-back]");
+    const next = form.querySelector("[data-expense-next]");
+    const save = form.querySelector('button[type="submit"]');
+    const error = form.querySelector("[data-expense-error]");
+    let currentStep = 1;
+
+    const input = name => form.querySelector(`#id_${name}`);
+    const isCredit = () => input("metodo_pago")?.selectedOptions[0]?.dataset.tipo === "credito";
+    const selectedText = name => input(name)?.selectedOptions[0]?.text?.trim() || "Sin seleccionar";
+
+    const updateSummary = () => {
+      form.querySelector("[data-summary-category]").textContent = selectedText("categoria");
+      form.querySelector("[data-summary-method]").textContent = selectedText(
+        form.dataset.movementType === "gasto" ? "metodo_pago" : "cuenta"
+      );
+      form.querySelector("[data-summary-amount]").textContent = input("monto")?.value || "0.00";
+    };
+
+    const missingField = step => {
+      if (step === 1) {
+        if (!input("categoria")?.value) return ["categoria", "Selecciona una categoría para continuar."];
+        if (!input("concepto")?.value.trim()) return ["concepto", "Escribe una descripción del gasto."];
+      }
+      if (step === 2) {
+        if (isCredit()) {
+          if (!input("acreedor_credito")?.value && !input("nuevo_acreedor_credito")?.value.trim()) {
+            return ["acreedor_credito", "Selecciona un acreedor o escribe uno nuevo."];
+          }
+          if (!input("numero_cuotas_credito")?.value || Number(input("numero_cuotas_credito").value) < 1) {
+            return ["numero_cuotas_credito", "Indica el número de cuotas."];
+          }
+          if (!input("fecha_pago")?.value) return ["fecha_pago", "Indica la fecha de la primera cuota."];
+        } else if (!input("cuenta")?.value) {
+          return ["cuenta", "Selecciona la cuenta de donde sale el dinero."];
+        }
+      }
+      if (step === 3) {
+        if (!input("monto")?.value || Number(input("monto").value) <= 0) return ["monto", "Indica un monto mayor que cero."];
+        if (!input("fecha")?.value) return ["fecha", "Indica la fecha de la compra."];
+      }
+      return null;
+    };
+
+    const validateStep = step => {
+      const missing = missingField(step);
+      error.hidden = !missing;
+      error.textContent = missing?.[1] || "";
+      if (missing) {
+        const field = input(missing[0])?.closest(".unfold-field");
+        field?.scrollIntoView({ behavior: "smooth", block: "center" });
+        return false;
+      }
+      return true;
+    };
+
+    const showStep = step => {
+      currentStep = Math.max(1, Math.min(3, step));
+      panels.forEach(panel => { panel.hidden = Number(panel.dataset.expensePanel) !== currentStep; });
+      tabs.forEach(tab => {
+        const tabStep = Number(tab.dataset.expenseGo);
+        tab.classList.toggle("is-active", tabStep === currentStep);
+        tab.classList.toggle("is-complete", tabStep < currentStep);
+        tab.setAttribute("aria-current", tabStep === currentStep ? "step" : "false");
+      });
+      back.hidden = currentStep === 1;
+      next.hidden = currentStep === 3;
+      save.hidden = currentStep !== 3;
+      error.hidden = true;
+      updateSummary();
+    };
+
+    back.addEventListener("click", () => showStep(currentStep - 1));
+    next.addEventListener("click", () => {
+      if (validateStep(currentStep)) showStep(currentStep + 1);
+    });
+    tabs.forEach(tab => tab.addEventListener("click", () => {
+      const destination = Number(tab.dataset.expenseGo);
+      if (destination <= currentStep) return showStep(destination);
+      for (let step = currentStep; step < destination; step += 1) {
+        if (!validateStep(step)) {
+          showStep(step);
+          validateStep(step);
+          return;
+        }
+      }
+      showStep(destination);
+    }));
+    form.addEventListener("input", updateSummary);
+    form.addEventListener("change", updateSummary);
+    if (window.jQuery) window.jQuery(form).on("change.expenseSummary", "select", updateSummary);
+    form.addEventListener("submit", event => {
+      for (let step = 1; step <= 3; step += 1) {
+        if (!validateStep(step)) {
+          event.preventDefault();
+          showStep(step);
+          validateStep(step);
+          return;
+        }
+      }
+    });
+
+    const errorPanel = panels.find(panel => panel.querySelector(".has-error"));
+    showStep(errorPanel ? Number(errorPanel.dataset.expensePanel) : 1);
+  })();
 </script>
-{% endif %}
 {% endblock %}

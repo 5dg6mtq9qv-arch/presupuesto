@@ -444,6 +444,7 @@ class MovimientoFinancieroForm(UserScopedModelForm):
         )
         self.fields["categoria"].empty_label = "Selecciona una categoría"
         self.fields["categoria"].help_text = "El color de la categoría se utilizará en las gráficas."
+        self.fields["categoria"].required = True
         self.fields["cuenta"].queryset = CuentaFinanciera.objects.filter(usuario=user, activa=True).order_by("nombre")
         self.fields["cuenta"].required = self.tipo != MovimientoFinanciero.Tipo.GASTO
         if self.tipo == MovimientoFinanciero.Tipo.INGRESO:

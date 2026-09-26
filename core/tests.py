@@ -135,6 +135,10 @@ class GastoTarjetaCreditoTests(TestCase):
         )
         self.assertContains(response, "[hidden] { display: none !important; }", html=False)
         self.assertContains(response, 'on("change.camposCredito", actualizar)', html=False)
+        self.assertContains(response, 'data-expense-panel="1"')
+        self.assertContains(response, 'data-expense-panel="2"')
+        self.assertContains(response, 'data-expense-panel="3"')
+        self.assertContains(response, "Guardar gasto")
         self.assertNotContains(response, "esCredito || camposCredito.some")
 
     def test_selector_de_etiquetas_incluye_su_color(self):
@@ -604,8 +608,32 @@ class MovimientoRecurrenteServiceTests(TestCase):
 
         self.assertContains(formulario, "Fecha de ingreso")
         self.assertContains(formulario, "Cuenta de destino")
+        self.assertContains(formulario, "Origen del ingreso")
+        self.assertContains(formulario, "¿Dónde recibiste el dinero?")
+        self.assertContains(formulario, 'data-expense-panel="3"')
+        self.assertContains(formulario, "Guardar ingreso")
         self.assertNotContains(formulario, "Fecha de compra")
         self.assertContains(listado, "Fecha de ingreso")
+
+        categoria = Categoria.objects.filter(
+            usuario=self.user,
+            tipo=Categoria.Tipo.FINANZAS,
+            parent__isnull=False,
+        ).first()
+        cuenta = CuentaFinanciera.objects.filter(usuario=self.user, activa=True).first()
+        response = self.client.post(
+            reverse("movimiento_ingreso_create"),
+            {
+                "categoria": categoria.pk,
+                "cuenta": cuenta.pk,
+                "metodo_pago": "",
+                "concepto": "Ingreso desde flujo guiado",
+                "monto": "250.00",
+                "fecha": "2026-09-26",
+            },
+        )
+        self.assertRedirects(response, f"{reverse('movimiento_list')}?tipo=ingreso")
+        self.assertTrue(MovimientoFinanciero.objects.filter(concepto="Ingreso desde flujo guiado").exists())
 
     def test_deuda_no_genera_cuotas_anteriores_a_la_creacion(self):
         deuda = Deuda.objects.create(
