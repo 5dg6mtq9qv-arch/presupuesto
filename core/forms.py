@@ -377,6 +377,7 @@ class TareaForm(UserScopedModelForm):
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, user=user, **kwargs)
+        self.fields["categoria"].label = "Categoría"
         self.fields["categoria"].queryset = Categoria.objects.filter(
             usuario=user,
             tipo=Categoria.Tipo.TAREA,
@@ -397,6 +398,7 @@ class MovimientoFinancieroForm(UserScopedModelForm):
         model = MovimientoFinanciero
         fields = ["categoria", "cuenta", "metodo_pago", "acreedor_credito", "nuevo_acreedor_credito", "numero_cuotas_credito", "etiquetas", "monto", "fecha", "fecha_pago", "concepto", "comprobante"]
         labels = {
+            "categoria": "Categoría",
             "concepto": "Descripción",
             "comprobante": "Comprobante",
             "metodo_pago": "Método de pago",
@@ -431,8 +433,8 @@ class MovimientoFinancieroForm(UserScopedModelForm):
         self.fields["categoria"].label_from_instance = lambda obj: (
             f"{obj.parent.nombre} > {obj.nombre}" if obj.parent_id else obj.nombre
         )
-        self.fields["categoria"].empty_label = "Selecciona una categoria"
-        self.fields["categoria"].help_text = "Los colores de la categoria se usan en las graficas."
+        self.fields["categoria"].empty_label = "Selecciona una categoría"
+        self.fields["categoria"].help_text = "El color de la categoría se utilizará en las gráficas."
         self.fields["cuenta"].queryset = CuentaFinanciera.objects.filter(usuario=user, activa=True).order_by("nombre")
         self.fields["cuenta"].required = True
         if self.tipo == MovimientoFinanciero.Tipo.INGRESO:
@@ -469,7 +471,7 @@ class MovimientoFinancieroForm(UserScopedModelForm):
         fecha_pago = cleaned_data.get("fecha_pago")
 
         if self.tipo == MovimientoFinanciero.Tipo.GASTO and not categoria:
-            self.add_error("categoria", "Selecciona una categoria para que el gasto aparezca bien en las graficas.")
+            self.add_error("categoria", "Selecciona una categoría para que el gasto aparezca correctamente en las gráficas.")
 
         es_credito = metodo_pago and metodo_pago.tipo == MetodoPago.Tipo.CREDITO
         if self.tipo == MovimientoFinanciero.Tipo.GASTO and es_credito and not fecha_pago:
@@ -669,6 +671,7 @@ class MovimientoRecurrenteForm(UserScopedModelForm):
         model = MovimientoRecurrente
         fields = ["tipo", "categoria", "cuenta", "metodo_pago", "concepto", "monto", "dia_mes", "aplicar_automaticamente", "activo", "nota"]
         labels = {
+            "categoria": "Categoría",
             "metodo_pago": "Método de pago",
             "dia_mes": "Día del mes",
             "cuenta": "Cuenta prevista",
@@ -788,7 +791,8 @@ class DeudaForm(UserScopedModelForm):
         self.fields["categoria"].label_from_instance = lambda obj: (
             f"{obj.parent.nombre} > {obj.nombre}" if obj.parent_id else obj.nombre
         )
-        self.fields["categoria"].empty_label = "Sin categoria"
+        self.fields["categoria"].label = "Categoría"
+        self.fields["categoria"].empty_label = "Sin categoría"
         if not self.is_bound and not self.instance.pk:
             fecha_inicio = timezone.localdate()
             self.fields["fecha_inicio"].initial = fecha_inicio.isoformat()

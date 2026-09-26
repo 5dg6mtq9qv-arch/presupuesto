@@ -4,8 +4,8 @@
 {% block page_subtitle %}Controla saldo, vencimiento y estado de cada deuda{% endblock %}
 
 {% block content %}
-<section class="panel">
-  <p class="muted">Selecciona un acreedor guardado. Si aun no existe, escribe su nombre en “O crea uno nuevo” y quedara disponible para la proxima deuda.</p>
+<section class="panel form-panel">
+  <p class="muted">Selecciona un acreedor guardado. Si aún no existe, escribe su nombre en “O crea uno nuevo” y quedará disponible para la próxima deuda.</p>
   <form class="form-grid" method="post">
     {% csrf_token %}
     {% include "core/includes/unfold_form_fields.html" %}

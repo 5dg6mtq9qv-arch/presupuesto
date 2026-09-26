@@ -4,7 +4,7 @@
 {% block page_subtitle %}Crea usuarios y controla si pueden acceder al sistema{% endblock %}
 
 {% block content %}
-<section class="panel">
+<section class="panel form-panel">
   <form class="form-grid" method="post">
     {% csrf_token %}
     {% include "core/includes/unfold_form_fields.html" %}

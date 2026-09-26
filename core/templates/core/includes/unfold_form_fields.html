@@ -1,19 +1,50 @@
-{% for field in form %}
-  {% if field.field.widget.input_type == "checkbox" %}
-    <div class="unfold-field unfold-check">
+{% for hidden in form.hidden_fields %}{{ hidden }}{% endfor %}
+
+{% if form.non_field_errors %}
+  <div class="form-errors" role="alert">
+    <span class="material-symbols-outlined">error</span>
+    <div>
+      <strong>Revisa la información</strong>
+      {% for error in form.non_field_errors %}<div>{{ error }}</div>{% endfor %}
+    </div>
+  </div>
+{% endif %}
+
+{% for field in form.visible_fields %}
+  {% if field.name == "aplicar_automaticamente" %}
+    <div class="unfold-field recurring-mode-field field-{{ field.name }}{% if field.errors %} has-error{% endif %}">
+      <span class="form-label">Forma de aplicación</span>
+      <div class="recurring-mode-selector" role="group" aria-label="Forma de aplicación">
+        <button class="mode-option" type="button" data-recurring-mode="manual">
+          <span class="mode-option-icon material-symbols-outlined">task_alt</span>
+          <span><strong>Confirmar manualmente</strong><small>Crea un pendiente y tú eliges cuándo aplicarlo.</small></span>
+        </button>
+        <button class="mode-option" type="button" data-recurring-mode="automatic">
+          <span class="mode-option-icon material-symbols-outlined">bolt</span>
+          <span><strong>Aplicar automáticamente</strong><small>Modifica el saldo al llegar la fecha.</small></span>
+        </button>
+      </div>
+      <span class="visually-hidden">{{ field }}</span>
+      {% for error in field.errors %}<div class="field-error"><span class="material-symbols-outlined">error</span>{{ error }}</div>{% endfor %}
+    </div>
+  {% elif field.field.widget.input_type == "checkbox" %}
+    <div class="unfold-field unfold-check field-{{ field.name }}{% if field.errors %} has-error{% endif %}">
       <div class="form-check">
         {{ field }}
         <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
       </div>
       {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
-      {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+      {% for error in field.errors %}<div class="field-error"><span class="material-symbols-outlined">error</span>{{ error }}</div>{% endfor %}
     </div>
   {% else %}
-    <div class="unfold-field">
-      <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+    <div class="unfold-field field-{{ field.name }}{% if field.errors %} has-error{% endif %}">
+      <label for="{{ field.id_for_label }}">
+        {{ field.label }}
+        {% if field.field.required %}<span class="required-mark" title="Campo obligatorio">*</span>{% endif %}
+      </label>
       {{ field }}
       {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
-      {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+      {% for error in field.errors %}<div class="field-error"><span class="material-symbols-outlined">error</span>{{ error }}</div>{% endfor %}
     </div>
   {% endif %}
 {% endfor %}

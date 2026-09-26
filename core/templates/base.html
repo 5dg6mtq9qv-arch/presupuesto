@@ -15,6 +15,7 @@
       --text: #1b2431;
       --muted: #687588;
       --line: #e8ebf1;
+      --line-strong: #cbd5e1;
       --primary: #25a194;
       --primary-hover: #1c7f73;
       --primary-soft: #e6f7f5;
@@ -351,30 +352,36 @@
 
     .select2-container { width: 100% !important; }
     .select2-container--default .select2-selection--single {
-      min-height: 42px;
-      border-color: #d1d5db;
-      border-radius: 8px;
+      min-height: 46px;
+      border-color: var(--line-strong);
+      border-radius: 10px;
       display: flex;
       align-items: center;
     }
     .select2-container--default .select2-selection--single .select2-selection__rendered {
       color: var(--text);
-      line-height: 40px;
+      line-height: 44px;
       padding-left: 12px;
     }
     .select2-container--default .select2-selection--single .select2-selection__arrow {
-      height: 40px;
+      height: 44px;
+    }
+    .select2-container--default.select2-container--focus .select2-selection--single,
+    .select2-container--default.select2-container--focus .select2-selection--multiple,
+    .select2-container--default.select2-container--open .select2-selection--single {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37, 161, 148, .14);
     }
     select[data-compact-multiple] {
-      min-height: 42px;
-      height: 42px;
+      min-height: 46px;
+      height: 46px;
       overflow: hidden;
     }
     .select2-container--default .select2-selection--multiple {
-      min-height: 42px;
-      height: 42px;
-      border-color: #d1d5db;
-      border-radius: 8px;
+      min-height: 46px;
+      height: 46px;
+      border-color: var(--line-strong);
+      border-radius: 10px;
       display: flex;
       align-items: center;
       overflow: hidden;
@@ -386,7 +393,7 @@
       flex-wrap: nowrap;
       overflow: hidden;
       padding: 0 8px;
-      min-height: 40px;
+      min-height: 44px;
     }
     .select2-container--default .select2-selection--multiple .select2-selection__choice {
       margin: 0;
@@ -480,9 +487,20 @@
     .form-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 16px;
-      max-width: 980px;
+      column-gap: 20px;
+      row-gap: 18px;
+      max-width: 1020px;
+      align-items: start;
     }
+
+    .form-panel {
+      max-width: 1080px;
+      border-radius: 16px;
+      padding: 26px;
+    }
+
+    .form-panel .form-grid { max-width: none; }
+    .panel[id^="create-"] { max-width: 1080px; border-radius: 16px; }
 
     .unfold-field {
       display: grid;
@@ -491,16 +509,38 @@
     }
 
     .unfold-field:has(textarea),
+    .field-nota,
+    .field-descripcion,
+    .field-comprobante,
+    .field-etiquetas,
+    .recurring-mode-field,
     .unfold-check,
     .form-actions {
       grid-column: 1 / -1;
     }
 
+    .form-errors {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      border: 1px solid #fecaca;
+      border-radius: 12px;
+      background: #fff7f7;
+      color: #b42318;
+      padding: 13px 14px;
+    }
+
+    .form-errors .material-symbols-outlined { margin-top: 1px; }
+
+    .form-label,
     label {
       color: #374151;
       font-size: 13px;
-      font-weight: 650;
+      font-weight: 700;
     }
+
+    .required-mark { color: var(--danger); margin-left: 2px; }
 
     .form-control,
     .form-select,
@@ -508,18 +548,49 @@
     select,
     textarea {
       width: 100%;
-      min-height: 42px;
+      min-height: 46px;
       background: var(--surface);
-      border: 1px solid #d1d5db;
-      border-radius: 8px;
+      border: 1px solid var(--line-strong);
+      border-radius: 10px;
       color: var(--text);
       font: inherit;
-      padding: 9px 12px;
+      padding: 10px 13px;
       outline: 0;
-      transition: border-color .15s ease, box-shadow .15s ease;
+      transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
     }
 
+    .form-control:hover,
+    .form-select:hover,
+    input:not(.form-check-input):hover,
+    select:hover,
+    textarea:hover { border-color: #94a3b8; }
+
     textarea { min-height: 120px; resize: vertical; }
+
+    input::placeholder,
+    textarea::placeholder { color: #94a3b8; }
+
+    input:disabled,
+    select:disabled,
+    textarea:disabled {
+      background: #f1f5f9;
+      color: #64748b;
+      cursor: not-allowed;
+    }
+
+    input[type="file"] { padding: 6px; }
+    input[type="file"]::file-selector-button {
+      min-height: 32px;
+      border: 0;
+      border-radius: 7px;
+      background: var(--primary-soft);
+      color: var(--primary-hover);
+      cursor: pointer;
+      font: inherit;
+      font-weight: 700;
+      margin-right: 10px;
+      padding: 6px 10px;
+    }
 
     .form-control:focus,
     .form-select:focus,
@@ -536,19 +607,123 @@
     .form-text {
       color: var(--muted);
       font-size: 12px;
+      line-height: 1.45;
     }
+
+    .has-error .form-control,
+    .has-error .form-select,
+    .has-error input,
+    .has-error select,
+    .has-error textarea { border-color: #f87171; }
+    .has-error .select2-selection { border-color: #f87171 !important; }
+
+    .field-error {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      color: #b42318;
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .field-error .material-symbols-outlined { font-size: 16px; }
 
     .form-check {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 9px;
+    }
+
+    .unfold-check {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--surface-soft);
+      padding: 14px 16px;
+      transition: border-color .15s ease, background .15s ease;
+    }
+
+    .unfold-check:has(.form-check-input:checked) {
+      border-color: #9ddbd4;
+      background: var(--primary-soft);
     }
 
     .form-check-input {
-      width: 18px;
-      height: 18px;
+      width: 20px;
+      height: 20px;
       accent-color: var(--primary);
     }
+
+    .recurring-mode-selector {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .mode-option {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      min-height: 86px;
+      border: 1px solid var(--line-strong);
+      border-radius: 12px;
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      padding: 15px;
+      text-align: left;
+      transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+    }
+
+    .mode-option:hover { border-color: #9ddbd4; background: #fbfffe; }
+    .mode-option.is-selected {
+      border-color: var(--primary);
+      background: var(--primary-soft);
+      box-shadow: 0 0 0 3px rgba(37, 161, 148, .1);
+    }
+    .mode-option-icon {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      border-radius: 9px;
+      background: var(--surface-soft);
+      color: var(--muted);
+    }
+    .mode-option.is-selected .mode-option-icon { background: var(--primary); color: #fff; }
+    .mode-option strong, .mode-option small { display: block; }
+    .mode-option strong { font-size: 13px; }
+    .mode-option small { margin-top: 5px; color: var(--muted); font: 12px/1.4 Inter, sans-serif; }
+
+    .recurring-preview {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      border: 1px solid #bae6fd;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #f0f9ff, #f8fffe);
+      color: #164e63;
+      padding: 14px 16px;
+    }
+    .recurring-preview .material-symbols-outlined { color: #0891b2; }
+    .recurring-preview strong, .recurring-preview span { display: block; }
+    .recurring-preview span { margin-top: 3px; color: #456578; font-size: 12px; line-height: 1.5; }
+
+    .form-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      border-top: 1px solid var(--line);
+      margin-top: 4px;
+      margin-bottom: 0;
+      padding-top: 18px;
+      flex-wrap: wrap;
+    }
+    .form-actions .btn-primary { order: 2; min-width: 132px; }
+    .form-actions .btn-icon { width: auto; height: 40px; padding: 8px 14px; }
+    .form-actions .btn-icon::after { content: attr(aria-label); }
 
     .btn,
     button.btn {
@@ -948,6 +1123,9 @@
       .topbar { padding: 0 14px; }
       .content { padding: 18px 14px; }
       .dashboard-grid, .form-grid, .status-list { grid-template-columns: 1fr; }
+      .form-panel { padding: 20px; }
+      .recurring-mode-selector { grid-template-columns: 1fr; }
+      .form-actions .btn { flex: 1 1 150px; }
       .onboarding-grid { grid-template-columns: 1fr; }
       .chart-panel-wide { grid-column: auto; }
       .row { grid-template-columns: 1fr; }
@@ -1102,6 +1280,59 @@
           if (typeof input.showPicker === "function") input.showPicker();
           else input.focus();
         });
+      });
+    })();
+  </script>
+  <script>
+    (() => {
+      document.querySelectorAll(".recurring-mode-field").forEach((field) => {
+        const form = field.closest("form");
+        const checkbox = field.querySelector('input[type="checkbox"]');
+        const manual = field.querySelector('[data-recurring-mode="manual"]');
+        const automatic = field.querySelector('[data-recurring-mode="automatic"]');
+        if (!form || !checkbox || !manual || !automatic) return;
+
+        const day = form.querySelector("#id_dia_mes");
+        const amount = form.querySelector("#id_monto");
+        const account = form.querySelector("#id_cuenta");
+        const type = form.querySelector("#id_tipo");
+        const concept = form.querySelector("#id_concepto");
+        const actions = form.querySelector(".form-actions");
+        const preview = document.createElement("div");
+        preview.className = "recurring-preview";
+        preview.innerHTML = '<span class="material-symbols-outlined">event_repeat</span><div><strong>Resumen del recurrente</strong><span data-recurring-summary></span></div>';
+        actions?.insertAdjacentElement("beforebegin", preview);
+        const summary = preview.querySelector("[data-recurring-summary]");
+        const money = new Intl.NumberFormat("es-EC", {style: "currency", currency: "USD"});
+
+        const selectedText = (select) => select?.selectedOptions?.[0]?.textContent?.trim() || "la cuenta seleccionada";
+        const refresh = () => {
+          manual.classList.toggle("is-selected", !checkbox.checked);
+          automatic.classList.toggle("is-selected", checkbox.checked);
+          manual.setAttribute("aria-pressed", String(!checkbox.checked));
+          automatic.setAttribute("aria-pressed", String(checkbox.checked));
+
+          const isIncome = type?.value === "ingreso";
+          const value = Number(String(amount?.value || "0").replace(",", "."));
+          const movement = isIncome ? "ingreso" : "gasto";
+          const verb = isIncome ? "sumará a" : "descontará de";
+          const name = concept?.value?.trim() ? ` “${concept.value.trim()}”` : "";
+          const dateText = day?.value ? `el día ${day.value} de cada mes` : "cada mes";
+          if (checkbox.checked) {
+            summary.textContent = `${dateText} se aplicará automáticamente el ${movement}${name} por ${money.format(value || 0)} y se ${verb} ${selectedText(account)}.`;
+          } else {
+            summary.textContent = `${dateText} se creará un ${movement}${name} pendiente por ${money.format(value || 0)}. El saldo cambiará cuando lo confirmes.`;
+          }
+        };
+
+        manual.addEventListener("click", () => { checkbox.checked = false; checkbox.dispatchEvent(new Event("change", {bubbles: true})); });
+        automatic.addEventListener("click", () => { checkbox.checked = true; checkbox.dispatchEvent(new Event("change", {bubbles: true})); });
+        [checkbox, day, amount, account, type, concept].filter(Boolean).forEach((control) => {
+          control.addEventListener("change", refresh);
+          control.addEventListener("input", refresh);
+          if (window.jQuery && control.tagName === "SELECT") window.jQuery(control).on("change", refresh);
+        });
+        refresh();
       });
     })();
   </script>

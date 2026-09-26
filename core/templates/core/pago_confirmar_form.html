@@ -5,7 +5,7 @@
 
 {% block content %}
 {{ saldos_cuenta|json_script:"saldos-cuenta-data" }}
-<section class="panel">
+<section class="panel form-panel">
   <div class="panel-heading">
     <div>
       <h2>Cuota {{ pago.cuota_numero|default:"manual" }}</h2>

@@ -77,6 +77,18 @@
       gap: 6px;
       margin-bottom: 14px;
     }
+    .form-errors {
+      display:flex;
+      align-items:flex-start;
+      gap:8px;
+      border:1px solid #fecaca;
+      border-radius:10px;
+      background:#fff7f7;
+      color:#b42318;
+      margin-bottom:14px;
+      padding:11px 12px;
+    }
+    .form-errors .material-symbols-outlined { font-size:18px; }
     label {
       color: #374151;
       font-size: 13px;
@@ -84,9 +96,9 @@
     }
     input {
       width: 100%;
-      min-height: 42px;
-      border: 1px solid #d1d5db;
-      border-radius: 8px;
+      min-height: 46px;
+      border: 1px solid #cbd5e1;
+      border-radius: 10px;
       color: var(--text);
       font: inherit;
       padding: 9px 12px;
@@ -96,6 +108,11 @@
       border-color: var(--primary);
       box-shadow: 0 0 0 3px rgba(37, 99, 235, .12);
     }
+    .required-mark { color:var(--danger); }
+    .field-error { display:flex; align-items:center; gap:5px; color:var(--danger); font-size:12px; font-weight:650; }
+    .field-error .material-symbols-outlined { font-size:15px; }
+    .has-error input { border-color:#f87171; }
+    .form-text { color:var(--muted); font-size:12px; line-height:1.45; }
     .btn {
       width: 42px;
       height: 42px;
@@ -132,10 +149,6 @@
     <section class="panel">
       <h1>Ingresar</h1>
       <p>Accede a tu agenda y finanzas personales.</p>
-
-      {% if form.errors %}
-        <div class="alert">Usuario o contraseña incorrectos.</div>
-      {% endif %}
 
       <form method="post">
         {% csrf_token %}
