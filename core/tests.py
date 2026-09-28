@@ -12,6 +12,7 @@ from .forms import MovimientoFinancieroForm
 from .ai_assistant import (
     AI_TOOLS,
     _parse_assistant_answer,
+    analyze_spending,
     _provider_message,
     ask_financial_assistant,
     build_financial_context,
@@ -843,8 +844,81 @@ class FinancialAssistantTests(TestCase):
                 "consultar_transferencias",
                 "consultar_movimientos_recurrentes",
                 "consultar_catalogo_financiero",
+                "analizar_gastos_avanzado",
             }.issubset(tool_names)
         )
+
+    def test_analisis_avanzado_compara_meses_y_proyecta_con_datos_confirmados(self):
+        for month, amount in ((6, "100.00"), (7, "200.00"), (8, "300.00")):
+            MovimientoFinanciero.objects.create(
+                usuario=self.user,
+                tipo=MovimientoFinanciero.Tipo.GASTO,
+                estado=MovimientoFinanciero.Estado.CONFIRMADO,
+                categoria=self.category,
+                concepto=f"Gasto {month}",
+                monto=amount,
+                fecha=datetime(2026, month, 10).date(),
+            )
+        MovimientoFinanciero.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+            estado=MovimientoFinanciero.Estado.CONFIRMADO,
+            categoria=self.category,
+            concepto="Gasto septiembre",
+            monto="150.00",
+            fecha=datetime(2026, 9, 10).date(),
+        )
+        MovimientoFinanciero.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+            estado=MovimientoFinanciero.Estado.PENDIENTE,
+            categoria=self.category,
+            concepto="No debe contar",
+            monto="999.00",
+            fecha=datetime(2026, 9, 10).date(),
+        )
+
+        result = analyze_spending(
+            self.user,
+            {"fecha_corte": "2026-09-15", "meses_historial": 4},
+        )
+
+        comparison = result["comparacion_mensual"]
+        self.assertEqual(comparison["gasto_actual"], "150.00")
+        self.assertEqual(comparison["gasto_mes_anterior_mismo_corte"], "300.00")
+        self.assertEqual(comparison["variacion_vs_mismo_corte_porcentual"], "-50.0")
+        self.assertEqual(result["proyecciones"]["gasto_estimado_proximo_mes"], "200.00")
+        self.assertEqual(result["proyecciones"]["gasto_estimado_cierre_mes_actual"], "300.00")
+
+    def test_analisis_avanzado_detecta_gasto_atipico_con_historial_suficiente(self):
+        for month, amount in ((4, "18.00"), (5, "20.00"), (6, "19.00"), (7, "21.00"), (8, "22.00")):
+            MovimientoFinanciero.objects.create(
+                usuario=self.user,
+                tipo=MovimientoFinanciero.Tipo.GASTO,
+                estado=MovimientoFinanciero.Estado.CONFIRMADO,
+                categoria=self.category,
+                concepto="Compra habitual",
+                monto=amount,
+                fecha=datetime(2026, month, 5).date(),
+            )
+        MovimientoFinanciero.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+            estado=MovimientoFinanciero.Estado.CONFIRMADO,
+            categoria=self.category,
+            concepto="Compra excepcional",
+            monto="150.00",
+            fecha=datetime(2026, 9, 8).date(),
+        )
+
+        result = analyze_spending(
+            self.user,
+            {"fecha_corte": "2026-09-15", "meses_historial": 6},
+        )
+
+        self.assertEqual(result["gastos_atipicos"]["cantidad"], 1)
+        self.assertEqual(result["gastos_atipicos"]["registros"][0]["concepto"], "Compra excepcional")
+        self.assertEqual(result["gastos_atipicos"]["registros"][0]["muestras_historicas"], 5)
 
     def test_parser_acepta_json_envuelto_por_el_proveedor(self):
         expected = {"respuesta": "Tienes 520.00 USD.", "evidencia": ["Banco: 520.00 USD"], "advertencia": ""}
