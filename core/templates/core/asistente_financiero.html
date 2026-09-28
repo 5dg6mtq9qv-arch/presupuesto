@@ -14,8 +14,8 @@
   .assistant-messages { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; max-height: 520px; padding: 4px; }
   .assistant-message { max-width: 86%; border-radius: 14px; padding: 12px 14px; line-height: 1.55; white-space: pre-wrap; }
   .assistant-message-user { align-self: flex-end; color: #fff; background: var(--primary); border-bottom-right-radius: 4px; }
-  .assistant-message-ai { align-self: flex-start; background: var(--surface-soft); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
-  .assistant-evidence { margin: 10px 0 0; padding-left: 18px; color: var(--muted); font-size: 12px; }
+  .assistant-message-ai { align-self: flex-start; background: var(--surface-soft); border: 0; border-bottom-left-radius: 4px; box-shadow: 0 1px 2px rgba(15, 23, 42, .08); }
+  .assistant-evidence { margin: 10px 0 0; padding: 10px 0 0 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
   .assistant-warning { margin-top: 10px; color: #92400e; font-size: 12px; }
   .assistant-form { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: end; border-top: 1px solid var(--line); padding-top: 16px; }
   .assistant-form textarea { min-height: 70px; max-height: 150px; }
@@ -40,7 +40,7 @@
 
     <div class="assistant-messages" id="assistant-messages" aria-live="polite">
       <div class="assistant-message assistant-message-ai">
-        {% if ai_configured %}Hola. Puedo ayudarte a entender tus ingresos, gastos, deudas y presupuesto del mes actual.{% else %}El asistente está instalado, pero falta configurar la clave privada del proveedor en el servidor.{% endif %}
+        {% if ai_configured %}¡Hola! Puedo ayudarte a entender tus ingresos, gastos, deudas y presupuesto. ¿Qué quieres revisar?{% else %}El asistente está instalado, pero falta configurar la clave privada del proveedor en el servidor.{% endif %}
       </div>
     </div>
 
@@ -120,7 +120,7 @@
       addMessage(value, "user");
       question.value = "";
       submit.disabled = true;
-      const pending = addMessage("Analizando tus cifras…", "ai");
+      const pending = addMessage("Déjame revisar tus cifras…", "ai");
       try {
         const response = await fetch("{% url 'asistente_financiero_preguntar' %}", {
           method: "POST",
@@ -150,7 +150,7 @@
     document.querySelectorAll("[data-question]").forEach(button => {
       button.addEventListener("click", () => {
         question.value = button.dataset.question;
-        question.focus();
+        form.requestSubmit();
       });
     });
   })();

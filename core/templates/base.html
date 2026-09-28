@@ -1346,16 +1346,16 @@
     .ai-drawer-head strong, .ai-drawer-head small { display: block; }
     .ai-drawer-head small { margin-top: 2px; opacity: .82; font-size: 11px; }
     .ai-drawer-head .btn { color: #fff; border-color: rgba(255,255,255,.35); background: transparent; }
-    .ai-drawer-messages { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 14px; background: var(--surface-soft); }
-    .ai-drawer-message { max-width: 88%; padding: 10px 12px; border-radius: 13px; font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
+    .ai-drawer-messages { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 16px 14px; background: var(--surface-soft); }
+    .ai-drawer-message { max-width: 92%; padding: 11px 13px; border-radius: 16px; font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
     .ai-drawer-message.user { align-self: flex-end; color: #fff; background: var(--primary); border-bottom-right-radius: 4px; }
-    .ai-drawer-message.assistant { align-self: flex-start; border: 1px solid var(--line); background: var(--surface); border-bottom-left-radius: 4px; }
-    .ai-drawer-evidence { margin: 8px 0 0; padding-left: 17px; color: var(--muted); font-size: 11px; }
+    .ai-drawer-message.assistant { align-self: flex-start; border: 0; background: var(--surface); border-bottom-left-radius: 4px; box-shadow: 0 1px 2px rgba(15, 23, 42, .08); }
+    .ai-drawer-evidence { margin: 9px 0 0; padding: 9px 0 0 17px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
     .ai-drawer-warning { margin-top: 8px; color: #92400e; font-size: 11px; }
     .ai-drawer-suggestions { display: flex; gap: 6px; overflow-x: auto; padding: 0 14px 10px; background: var(--surface-soft); }
     .ai-drawer-suggestions button { flex: 0 0 auto; border: 1px solid #b8e3de; border-radius: 999px; background: var(--primary-soft); color: var(--primary-hover); padding: 6px 9px; font: inherit; font-size: 11px; cursor: pointer; }
     .ai-drawer-form { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 12px; border-top: 1px solid var(--line); background: var(--surface); }
-    .ai-drawer-form textarea { min-height: 48px; max-height: 100px; resize: none; font-size: 13px; }
+    .ai-drawer-form textarea { min-height: 46px; max-height: 100px; resize: none; border-radius: 14px; font-size: 13px; }
     .ai-drawer-form .btn { align-self: end; width: 46px; height: 46px; padding: 0; }
 
     @media (max-width: 980px) {
@@ -1539,12 +1539,12 @@
       <aside class="ai-drawer" id="ai-drawer" aria-label="Asistente financiero" hidden>
         <div class="ai-drawer-head">
           <span class="material-symbols-outlined">smart_toy</span>
-          <span class="ai-drawer-head-copy"><strong>Asistente financiero</strong><small>Respuestas basadas en tus cifras</small></span>
+          <span class="ai-drawer-head-copy"><strong>Asistente financiero</strong><small>Pregúntame por tu dinero</small></span>
           <a class="btn btn-icon" href="{% url 'asistente_financiero' %}" aria-label="Abrir pantalla completa" title="Pantalla completa"><span class="material-symbols-outlined">open_in_full</span></a>
           <button class="btn btn-icon" type="button" data-ai-close aria-label="Cerrar" title="Cerrar"><span class="material-symbols-outlined">close</span></button>
         </div>
         <div class="ai-drawer-messages" id="ai-drawer-messages" aria-live="polite">
-          <div class="ai-drawer-message assistant">Hola. Pregúntame sobre tus gastos, balance o pagos próximos.</div>
+          <div class="ai-drawer-message assistant">¡Hola! Puedo ayudarte a entender tus gastos, tu balance o tus próximos pagos. ¿Qué quieres revisar?</div>
         </div>
         <div>
           <div class="ai-drawer-suggestions">
@@ -1633,7 +1633,7 @@
       document.querySelectorAll("[data-ai-question]").forEach(button => {
         button.addEventListener("click", () => {
           question.value = button.dataset.aiQuestion;
-          question.focus();
+          form.requestSubmit();
         });
       });
       question.addEventListener("keydown", event => {
@@ -1649,7 +1649,7 @@
         addMessage(value, "user");
         question.value = "";
         submit.disabled = true;
-        const pending = addMessage("Analizando tus cifras…", "assistant");
+        const pending = addMessage("Déjame revisar tus cifras…", "assistant");
         try {
           const response = await fetch("{% url 'asistente_financiero_preguntar' %}", {
             method: "POST",
