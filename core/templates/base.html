@@ -968,6 +968,20 @@
       color: var(--primary-hover);
       font-weight: 750;
     }
+    .recommendation-footer { display: flex; justify-content: flex-end; margin-top: 12px; }
+    .budget-guide {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 12px;
+      padding: 14px;
+      border: 1px solid #b8e3de;
+      border-radius: 12px;
+      background: var(--primary-soft);
+    }
+    .budget-guide > .material-symbols-outlined { color: var(--primary); font-size: 26px; }
+    .budget-guide p { margin-top: 3px; color: var(--muted); line-height: 1.45; }
 
     .btn-icon {
       width: 38px;
@@ -1328,6 +1342,8 @@
       .topbar { padding: 0 14px; }
       .content { padding: 18px 14px; }
       .dashboard-grid, .form-grid, .status-list, .recommendations-grid { grid-template-columns: 1fr; }
+      .budget-guide { grid-template-columns: auto minmax(0, 1fr); }
+      .budget-guide .btn { grid-column: 1 / -1; }
       .form-panel { padding: 20px; }
       .recurring-mode-selector { grid-template-columns: 1fr; }
       .form-actions .btn { flex: 1 1 150px; }

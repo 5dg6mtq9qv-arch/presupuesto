@@ -573,6 +573,21 @@ class FinancialAdviceTests(TestCase):
         exceso = next(item for item in sugerencias if item["tipo"] == "presupuesto")
         self.assertEqual(exceso["impacto"], Decimal("60.00"))
 
+    def test_prioriza_deuda_con_mayor_interes_registrado(self):
+        sugerencias = self.advice(
+            saldo_deudas=Decimal("500.00"),
+            deuda_prioritaria={
+                "concepto": "Tarjeta principal",
+                "tasa_interes_anual": Decimal("24.50"),
+                "pago_minimo": Decimal("45.00"),
+                "saldo_actual": Decimal("500.00"),
+            },
+        )
+
+        deuda = next(item for item in sugerencias if item["titulo"] == "Prioriza Tarjeta principal")
+        self.assertIn("24.50%", deuda["detalle"])
+        self.assertEqual(deuda["impacto"], Decimal("500.00"))
+
     def test_analisis_y_pdf_muestran_las_mismas_recomendaciones(self):
         user = get_user_model().objects.create_user(username="asesoria", password="test")
         MovimientoFinanciero.objects.create(
@@ -597,6 +612,64 @@ class FinancialAdviceTests(TestCase):
         self.assertEqual(analisis.context["sugerencias"][0]["titulo"], "Falta registrar ingresos")
         self.assertEqual(reporte.status_code, 200)
         self.assertEqual(reporte["Content-Type"], "application/pdf")
+
+
+class GuidedFinancialFlowsTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="guiado", password="test")
+        ensure_user_finance_setup(self.user)
+        self.client.force_login(self.user)
+
+    def test_deudas_y_recurrentes_exponen_flujos_guiados(self):
+        deuda = self.client.get(reverse("deuda_create"))
+        recurrentes = self.client.get(reverse("recurrente_list"))
+
+        self.assertContains(deuda, "Define las condiciones")
+        self.assertContains(deuda, "Revisa el plan")
+        self.assertContains(deuda, "id_tasa_interes_anual")
+        self.assertContains(recurrentes, "¿Qué se repite?")
+        self.assertContains(recurrentes, "¿Cómo debe aplicarse?")
+
+    def test_presupuesto_sugiere_limite_desde_tres_meses_reales(self):
+        parent = Categoria.objects.create(
+            usuario=self.user,
+            tipo=Categoria.Tipo.FINANZAS,
+            nombre="Educación",
+        )
+        child = Categoria.objects.create(
+            usuario=self.user,
+            tipo=Categoria.Tipo.FINANZAS,
+            parent=parent,
+            nombre="Cursos",
+        )
+        for month, amount in [(6, "100.00"), (7, "200.00"), (8, "300.00")]:
+            MovimientoFinanciero.objects.create(
+                usuario=self.user,
+                tipo=MovimientoFinanciero.Tipo.GASTO,
+                categoria=child,
+                concepto="Curso",
+                monto=amount,
+                fecha=datetime(2026, month, 10).date(),
+            )
+
+        with patch("core.views.timezone.localdate", return_value=datetime(2026, 9, 28).date()):
+            response = self.client.get(reverse("presupuesto_sugerencia"), {"categoria": parent.pk})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["promedio"], 200.0)
+        self.assertEqual(response.json()["sugerido"], 180.0)
+
+    def test_presupuesto_no_expone_historial_de_otro_usuario(self):
+        other = get_user_model().objects.create_user(username="otro-guiado", password="test")
+        category = Categoria.objects.create(
+            usuario=other,
+            tipo=Categoria.Tipo.FINANZAS,
+            nombre="Privada",
+        )
+
+        response = self.client.get(reverse("presupuesto_sugerencia"), {"categoria": category.pk})
+
+        self.assertEqual(response.status_code, 404)
 
 
 class MovimientoRecurrenteServiceTests(TestCase):
@@ -1259,6 +1332,7 @@ class MovimientoRecurrenteServiceTests(TestCase):
 
         flujo = response.context["chart_data"]["flujo"]
         self.assertEqual(flujo["ingresos"][:3], [100.0, 50.0, 0.0])
+        self.assertEqual(response.context["comparacion"]["diferencia_resultado"], Decimal("150.00"))
 
     def test_proyeccion_usa_recurrentes_y_cuotas_registradas_no_promedios(self):
         ingreso = MovimientoRecurrente.objects.create(
@@ -1303,6 +1377,60 @@ class MovimientoRecurrenteServiceTests(TestCase):
         self.assertEqual(proyeccion["gastos"], [40.0, 40.0, 40.0])
         self.assertEqual(proyeccion["deudas"], [100.0, 100.0, 100.0])
         self.assertEqual(proyeccion["margen"], [860.0, 860.0, 860.0])
+
+    def test_analisis_no_duplica_compra_credito_y_pago_de_cuota(self):
+        credito = MetodoPago.objects.create(
+            usuario=self.user,
+            nombre="Crédito",
+            tipo=MetodoPago.Tipo.CREDITO,
+        )
+        MovimientoFinanciero.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.INGRESO,
+            concepto="Ingreso",
+            monto="200.00",
+            fecha=datetime(2026, 9, 1).date(),
+        )
+        MovimientoFinanciero.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+            metodo_pago=credito,
+            concepto="Compra a crédito",
+            monto="100.00",
+            fecha=datetime(2026, 9, 2).date(),
+        )
+        deuda = Deuda.objects.create(
+            usuario=self.user,
+            acreedor="Banco",
+            concepto="Compra a crédito",
+            monto_inicial="100.00",
+            saldo_actual="0.00",
+            numero_cuotas=1,
+            fecha_inicio=datetime(2026, 9, 2).date(),
+            estado=Deuda.Estado.PAGADA,
+        )
+        PagoDeuda.objects.create(
+            deuda=deuda,
+            monto="100.00",
+            fecha=datetime(2026, 9, 10).date(),
+            estado=PagoDeuda.Estado.CONFIRMADO,
+        )
+        self.client.force_login(self.user)
+        filtros = {
+            "periodo": "personalizado",
+            "desde": "2026-09-01",
+            "hasta": "2026-09-30",
+        }
+
+        caja = self.client.get(reverse("analisis_financiero"), {**filtros, "vista": "caja"})
+        consumo = self.client.get(reverse("analisis_financiero"), {**filtros, "vista": "consumo"})
+
+        self.assertEqual(caja.context["gastos"], Decimal("0.00"))
+        self.assertEqual(caja.context["pagos_total"], Decimal("100.00"))
+        self.assertEqual(caja.context["posicion_neta"], Decimal("100.00"))
+        self.assertEqual(consumo.context["gastos"], Decimal("100.00"))
+        self.assertEqual(consumo.context["pagos_total"], Decimal("100.00"))
+        self.assertEqual(consumo.context["posicion_neta"], Decimal("100.00"))
 
     def test_analisis_anio_usa_anio_seleccionado(self):
         self.client.force_login(self.user)

@@ -447,6 +447,8 @@ class Deuda(models.Model):
     concepto = models.CharField(max_length=160)
     monto_inicial = models.DecimalField(max_digits=12, decimal_places=2)
     saldo_actual = models.DecimalField(max_digits=12, decimal_places=2)
+    tasa_interes_anual = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    pago_minimo = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     numero_cuotas = models.PositiveIntegerField(default=1)
     fecha_inicio = models.DateField()
     fecha_primera_cuota = models.DateField(null=True, blank=True)

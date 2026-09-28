@@ -771,6 +771,8 @@ class DeudaForm(UserScopedModelForm):
             "concepto",
             "monto_inicial",
             "saldo_actual",
+            "tasa_interes_anual",
+            "pago_minimo",
             "numero_cuotas",
             "fecha_inicio",
             "fecha_primera_cuota",
@@ -792,6 +794,12 @@ class DeudaForm(UserScopedModelForm):
             "monto_inicial": forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
             "saldo_actual": forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
             "numero_cuotas": forms.NumberInput(attrs={"min": "1"}),
+            "tasa_interes_anual": forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
+            "pago_minimo": forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
+        }
+        labels = {
+            "tasa_interes_anual": "Interés anual (%)",
+            "pago_minimo": "Pago mínimo",
         }
 
     def __init__(self, *args, user=None, **kwargs):
@@ -836,6 +844,8 @@ class DeudaForm(UserScopedModelForm):
         numero_cuotas = cleaned_data.get("numero_cuotas")
         monto_inicial = cleaned_data.get("monto_inicial")
         saldo_actual = cleaned_data.get("saldo_actual")
+        tasa_interes = cleaned_data.get("tasa_interes_anual")
+        pago_minimo = cleaned_data.get("pago_minimo")
 
         if monto_inicial is not None and monto_inicial <= 0:
             self.add_error("monto_inicial", "El monto inicial debe ser mayor que cero.")
@@ -843,6 +853,12 @@ class DeudaForm(UserScopedModelForm):
             self.add_error("saldo_actual", "El saldo actual no puede ser negativo.")
         if monto_inicial is not None and saldo_actual is not None and saldo_actual > monto_inicial:
             self.add_error("saldo_actual", "El saldo actual no puede superar el monto inicial.")
+        if tasa_interes is not None and tasa_interes < 0:
+            self.add_error("tasa_interes_anual", "La tasa no puede ser negativa.")
+        if pago_minimo is not None and pago_minimo < 0:
+            self.add_error("pago_minimo", "El pago mínimo no puede ser negativo.")
+        if saldo_actual is not None and pago_minimo is not None and pago_minimo > saldo_actual:
+            self.add_error("pago_minimo", "El pago mínimo no puede superar el saldo actual.")
 
         if fecha_inicio and fecha_primera_cuota and fecha_primera_cuota < fecha_inicio:
             self.add_error("fecha_primera_cuota", "La primera cuota no puede ser anterior al inicio de la deuda.")

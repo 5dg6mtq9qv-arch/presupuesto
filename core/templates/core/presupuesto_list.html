@@ -15,6 +15,14 @@
   <form class="form-grid" method="post">
     {% csrf_token %}
     {% include "core/includes/unfold_form_fields.html" %}
+    <aside class="budget-guide" data-budget-guide hidden>
+      <span class="material-symbols-outlined">auto_graph</span>
+      <div>
+        <strong data-budget-guide-title>Referencia histórica</strong>
+        <p data-budget-guide-copy class="mb-0"></p>
+      </div>
+      <button class="btn btn-outline-primary" type="button" data-use-budget-suggestion>Usar sugerencia</button>
+    </aside>
     <div class="form-actions"><button class="btn btn-primary" type="submit" title="Crear" aria-label="Crear"><span class="material-symbols-outlined">add</span><span>Crear</span></button></div>
   </form>
 </section>
@@ -67,7 +75,42 @@
   (() => {
     const category = document.getElementById("id_categoria");
     const subcategory = document.getElementById("id_subcategoria");
+    const amount = document.getElementById("id_monto");
+    const guide = document.querySelector("[data-budget-guide]");
+    const guideTitle = document.querySelector("[data-budget-guide-title]");
+    const guideCopy = document.querySelector("[data-budget-guide-copy]");
+    const useSuggestion = document.querySelector("[data-use-budget-suggestion]");
     if (!category || !subcategory || !window.jQuery) return;
+    let suggestedAmount = 0;
+    let suggestionRequest = 0;
+
+    const loadSuggestion = async () => {
+      const targetId = subcategory.value || category.value;
+      const requestId = ++suggestionRequest;
+      if (!targetId || !guide) {
+        if (guide) guide.hidden = true;
+        return;
+      }
+      try {
+        const url = new URL("{% url 'presupuesto_sugerencia' %}", window.location.origin);
+        url.searchParams.set("categoria", targetId);
+        const response = await fetch(url, { headers: { "X-Requested-With": "XMLHttpRequest" } });
+        const data = await response.json();
+        if (requestId !== suggestionRequest || !response.ok || !data.ok) return;
+        suggestedAmount = data.sugerido;
+        guideTitle.textContent = `Referencia para ${data.categoria}`;
+        if (data.promedio > 0) {
+          guideCopy.textContent = `Promedio de los últimos 3 meses: ${data.promedio.toFixed(2)}. Sugerencia con una mejora del 10%: ${data.sugerido.toFixed(2)}.`;
+          useSuggestion.hidden = false;
+        } else {
+          guideCopy.textContent = "Todavía no hay gasto histórico suficiente. Define un primer límite y el sistema aprenderá de los próximos meses.";
+          useSuggestion.hidden = true;
+        }
+        guide.hidden = false;
+      } catch (_error) {
+        guide.hidden = true;
+      }
+    };
 
     const refreshSubcategories = () => {
       const parentId = category.value;
@@ -91,9 +134,18 @@
         width: "100%",
         allowClear: false,
       });
+      loadSuggestion();
     };
 
     category.addEventListener("change", refreshSubcategories);
+    subcategory.addEventListener("change", loadSuggestion);
+    if (window.jQuery) jQuery(subcategory).on("select2:select select2:clear", loadSuggestion);
+    useSuggestion?.addEventListener("click", () => {
+      if (!amount || suggestedAmount <= 0) return;
+      amount.value = suggestedAmount.toFixed(2);
+      amount.dispatchEvent(new Event("input", { bubbles: true }));
+      amount.focus();
+    });
     refreshSubcategories();
   })();
 </script>

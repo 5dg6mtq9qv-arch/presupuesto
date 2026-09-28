@@ -11,10 +11,39 @@
 
 <section class="panel" id="create-recurring-panel"{% if not form.errors %} hidden{% endif %}>
   <h2>Nuevo recurrente</h2>
-  <form class="form-grid" method="post">
+  <form class="expense-flow-form" id="recurring-flow-form" method="post">
     {% csrf_token %}
-    {% include "core/includes/unfold_form_fields.html" %}
-    <div class="form-actions"><button class="btn btn-primary" type="submit" title="Crear" aria-label="Crear"><span class="material-symbols-outlined">add</span><span>Crear</span></button></div>
+    <nav class="expense-steps" aria-label="Pasos para crear el recurrente">
+      <button class="expense-step-tab is-active" type="button" data-recurring-go="1"><span>1</span><strong>Concepto</strong></button>
+      <span class="expense-step-line"></span>
+      <button class="expense-step-tab" type="button" data-recurring-go="2"><span>2</span><strong>Programación</strong></button>
+      <span class="expense-step-line"></span>
+      <button class="expense-step-tab" type="button" data-recurring-go="3"><span>3</span><strong>Aplicación</strong></button>
+    </nav>
+    <div class="form-grid" data-recurring-source>{% include "core/includes/unfold_form_fields.html" %}</div>
+    <section class="expense-step-panel" data-recurring-panel="1">
+      <div class="expense-step-copy"><span class="material-symbols-outlined">repeat</span><div><h2>¿Qué se repite?</h2><p>Define si es ingreso o gasto y clasifícalo.</p></div></div>
+      <div class="form-grid" data-recurring-target="1"></div>
+    </section>
+    <section class="expense-step-panel" data-recurring-panel="2" hidden>
+      <div class="expense-step-copy"><span class="material-symbols-outlined">event_repeat</span><div><h2>¿Cuándo y por cuánto?</h2><p>Programa el importe y el día esperado de cada mes.</p></div></div>
+      <div class="form-grid" data-recurring-target="2"></div>
+    </section>
+    <section class="expense-step-panel" data-recurring-panel="3" hidden>
+      <div class="expense-step-copy"><span class="material-symbols-outlined">rule</span><div><h2>¿Cómo debe aplicarse?</h2><p>Elige la cuenta y si deseas confirmación manual o aplicación automática.</p></div></div>
+      <div class="expense-summary" aria-live="polite">
+        <span><small>Concepto</small><strong data-recurring-summary-concept>Sin definir</strong></span>
+        <span><small>Monto mensual</small><strong data-recurring-summary-amount>0.00</strong></span>
+        <span><small>Día</small><strong data-recurring-summary-day>1</strong></span>
+      </div>
+      <div class="form-grid" data-recurring-target="3"></div>
+    </section>
+    <div class="expense-step-error" data-recurring-error role="alert" hidden></div>
+    <div class="form-actions expense-flow-actions">
+      <button class="btn btn-outline-secondary" type="button" data-recurring-back hidden><span class="material-symbols-outlined">arrow_back</span><span>Anterior</span></button>
+      <button class="btn btn-primary" type="button" data-recurring-next><span>Siguiente</span><span class="material-symbols-outlined">arrow_forward</span></button>
+      <button class="btn btn-primary" type="submit" title="Crear" aria-label="Crear"><span class="material-symbols-outlined">add</span><span>Crear recurrente</span></button>
+    </div>
   </form>
 </section>
 
@@ -56,4 +85,91 @@
   </div>
   {% include "core/includes/pagination.html" %}
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (() => {
+    const form = document.getElementById("recurring-flow-form");
+    const source = form?.querySelector("[data-recurring-source]");
+    if (!form || !source) return;
+    const fieldSteps = {
+      tipo: 1, categoria: 1, concepto: 1,
+      monto: 2, dia_mes: 2,
+      cuenta: 3, metodo_pago: 3, aplicar_automaticamente: 3, activo: 3, nota: 3,
+    };
+    const panels = [...form.querySelectorAll("[data-recurring-panel]")];
+    const tabs = [...form.querySelectorAll("[data-recurring-go]")];
+    const targets = Object.fromEntries([...form.querySelectorAll("[data-recurring-target]")].map(target => [target.dataset.recurringTarget, target]));
+    Object.entries(fieldSteps).forEach(([name, step]) => {
+      const field = source.querySelector(`.field-${name}`);
+      if (field) targets[step].append(field);
+    });
+    [...source.children].forEach(node => targets[1].prepend(node));
+    source.remove();
+    const input = name => form.querySelector(`#id_${name}`);
+    const error = form.querySelector("[data-recurring-error]");
+    const back = form.querySelector("[data-recurring-back]");
+    const next = form.querySelector("[data-recurring-next]");
+    const save = form.querySelector('button[type="submit"]');
+    let currentStep = 1;
+    const updateSummary = () => {
+      form.querySelector("[data-recurring-summary-concept]").textContent = input("concepto")?.value.trim() || "Sin definir";
+      form.querySelector("[data-recurring-summary-amount]").textContent = input("monto")?.value || "0.00";
+      form.querySelector("[data-recurring-summary-day]").textContent = input("dia_mes")?.value || "1";
+    };
+    const missingField = step => {
+      if (step === 1 && !input("concepto")?.value.trim()) return ["concepto", "Escribe el concepto recurrente."];
+      if (step === 2 && Number(input("monto")?.value) <= 0) return ["monto", "Indica un monto mayor que cero."];
+      if (step === 2 && (Number(input("dia_mes")?.value) < 1 || Number(input("dia_mes")?.value) > 31)) return ["dia_mes", "El día debe estar entre 1 y 31."];
+      if (step === 3 && input("aplicar_automaticamente")?.checked && !input("cuenta")?.value) return ["cuenta", "Selecciona la cuenta que se afectará automáticamente."];
+      return null;
+    };
+    const validateStep = step => {
+      const missing = missingField(step);
+      error.hidden = !missing;
+      error.textContent = missing?.[1] || "";
+      if (missing) input(missing[0])?.closest(".unfold-field")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return !missing;
+    };
+    const showStep = step => {
+      currentStep = Math.max(1, Math.min(3, step));
+      panels.forEach(panel => { panel.hidden = Number(panel.dataset.recurringPanel) !== currentStep; });
+      tabs.forEach(tab => {
+        const number = Number(tab.dataset.recurringGo);
+        tab.classList.toggle("is-active", number === currentStep);
+        tab.classList.toggle("is-complete", number < currentStep);
+      });
+      back.hidden = currentStep === 1;
+      next.hidden = currentStep === 3;
+      save.hidden = currentStep !== 3;
+      error.hidden = true;
+      updateSummary();
+    };
+    back.addEventListener("click", () => showStep(currentStep - 1));
+    next.addEventListener("click", () => { if (validateStep(currentStep)) showStep(currentStep + 1); });
+    tabs.forEach(tab => tab.addEventListener("click", () => {
+      const destination = Number(tab.dataset.recurringGo);
+      if (destination <= currentStep) return showStep(destination);
+      for (let step = currentStep; step < destination; step += 1) {
+        if (!validateStep(step)) return showStep(step);
+      }
+      showStep(destination);
+    }));
+    form.addEventListener("input", updateSummary);
+    form.addEventListener("change", updateSummary);
+    form.addEventListener("submit", event => {
+      for (let step = 1; step <= 3; step += 1) {
+        if (!validateStep(step)) {
+          event.preventDefault();
+          showStep(step);
+          validateStep(step);
+          return;
+        }
+      }
+    });
+    const errorPanel = panels.find(panel => panel.querySelector(".has-error"));
+    showStep(errorPanel ? Number(errorPanel.dataset.recurringPanel) : 1);
+  })();
+</script>
 {% endblock %}

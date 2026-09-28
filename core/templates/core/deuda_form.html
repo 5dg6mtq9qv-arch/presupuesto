@@ -5,11 +5,45 @@
 
 {% block content %}
 <section class="panel form-panel">
-  <p class="muted">Selecciona un acreedor guardado. Si aún no existe, escribe su nombre en “O crea uno nuevo” y quedará disponible para la próxima deuda.</p>
-  <form class="form-grid" method="post">
+  <form class="expense-flow-form" id="debt-flow-form" method="post">
     {% csrf_token %}
-    {% include "core/includes/unfold_form_fields.html" %}
-    <div class="form-actions actions">
+    <nav class="expense-steps" aria-label="Pasos para registrar la deuda">
+      <button class="expense-step-tab is-active" type="button" data-debt-go="1"><span>1</span><strong>Origen</strong></button>
+      <span class="expense-step-line"></span>
+      <button class="expense-step-tab" type="button" data-debt-go="2"><span>2</span><strong>Condiciones</strong></button>
+      <span class="expense-step-line"></span>
+      <button class="expense-step-tab" type="button" data-debt-go="3"><span>3</span><strong>Revisión</strong></button>
+    </nav>
+
+    <div class="form-grid" data-debt-source>
+      {% include "core/includes/unfold_form_fields.html" %}
+    </div>
+
+    <section class="expense-step-panel" data-debt-panel="1">
+      <div class="expense-step-copy"><span class="material-symbols-outlined">account_balance</span><div><h2>¿A quién debes?</h2><p>Selecciona un acreedor o créalo aquí y describe el origen de la deuda.</p></div></div>
+      <div class="form-grid" data-debt-target="1"></div>
+    </section>
+    <section class="expense-step-panel" data-debt-panel="2" hidden>
+      <div class="expense-step-copy"><span class="material-symbols-outlined">contract</span><div><h2>Define las condiciones</h2><p>Indica saldo, número de cuotas y fecha del primer vencimiento.</p></div></div>
+      <div class="form-grid" data-debt-target="2"></div>
+    </section>
+    <section class="expense-step-panel" data-debt-panel="3" hidden>
+      <div class="expense-step-copy"><span class="material-symbols-outlined">fact_check</span><div><h2>Revisa el plan</h2><p>Comprueba el resumen antes de generar las cuotas.</p></div></div>
+      <div class="expense-summary" aria-live="polite">
+        <span><small>Acreedor</small><strong data-debt-summary-creditor>Sin seleccionar</strong></span>
+        <span><small>Saldo pendiente</small><strong data-debt-summary-balance>0.00</strong></span>
+        <span><small>Plan</small><strong data-debt-summary-plan>1 cuota</strong></span>
+      </div>
+      <div class="form-grid" data-debt-target="3"></div>
+    </section>
+    <div class="expense-step-error" data-debt-error role="alert" hidden></div>
+    <div class="form-actions actions expense-flow-actions">
+      <button class="btn btn-outline-secondary" type="button" data-debt-back hidden>
+        <span class="material-symbols-outlined">arrow_back</span><span>Anterior</span>
+      </button>
+      <button class="btn btn-primary" type="button" data-debt-next>
+        <span>Siguiente</span><span class="material-symbols-outlined">arrow_forward</span>
+      </button>
       <button class="btn btn-primary btn-icon" type="submit" title="Guardar" aria-label="Guardar">
         <span class="material-symbols-outlined">save</span>
       </button>
@@ -71,6 +105,114 @@
     primeraCuotaInput.addEventListener("change", updateFechaVencimiento);
     cuotasInput.addEventListener("input", updateFechaVencimiento);
     updateFechaVencimiento();
+  })();
+
+  (() => {
+    const form = document.getElementById("debt-flow-form");
+    const source = form?.querySelector("[data-debt-source]");
+    if (!form || !source) return;
+    const fieldSteps = {
+      acreedor_existente: 1,
+      nuevo_acreedor: 1,
+      categoria: 1,
+      concepto: 1,
+      monto_inicial: 2,
+      saldo_actual: 2,
+      tasa_interes_anual: 2,
+      pago_minimo: 2,
+      numero_cuotas: 2,
+      fecha_inicio: 2,
+      fecha_primera_cuota: 2,
+      fecha_vencimiento: 3,
+      estado: 3,
+      nota: 3,
+    };
+    const panels = [...form.querySelectorAll("[data-debt-panel]")];
+    const tabs = [...form.querySelectorAll("[data-debt-go]")];
+    const targets = Object.fromEntries(
+      [...form.querySelectorAll("[data-debt-target]")].map(target => [target.dataset.debtTarget, target])
+    );
+    Object.entries(fieldSteps).forEach(([name, step]) => {
+      const field = source.querySelector(`.field-${name}`);
+      if (field) targets[step].append(field);
+    });
+    [...source.children].forEach(node => targets[1].prepend(node));
+    source.remove();
+
+    const input = name => form.querySelector(`#id_${name}`);
+    const error = form.querySelector("[data-debt-error]");
+    const back = form.querySelector("[data-debt-back]");
+    const next = form.querySelector("[data-debt-next]");
+    const save = form.querySelector('button[type="submit"]');
+    let currentStep = 1;
+
+    const updateSummary = () => {
+      const existing = input("acreedor_existente")?.selectedOptions[0]?.text?.trim();
+      form.querySelector("[data-debt-summary-creditor]").textContent = input("nuevo_acreedor")?.value.trim() || existing || "Sin seleccionar";
+      form.querySelector("[data-debt-summary-balance]").textContent = input("saldo_actual")?.value || "0.00";
+      const installments = Number(input("numero_cuotas")?.value || 1);
+      const dueDate = input("fecha_vencimiento")?.value || "sin fecha";
+      form.querySelector("[data-debt-summary-plan]").textContent = `${installments} ${installments === 1 ? "cuota" : "cuotas"} · hasta ${dueDate}`;
+    };
+    const missingField = step => {
+      if (step === 1) {
+        if (!input("acreedor_existente")?.value && !input("nuevo_acreedor")?.value.trim()) return ["acreedor_existente", "Selecciona o crea un acreedor."];
+        if (!input("concepto")?.value.trim()) return ["concepto", "Describe el origen de la deuda."];
+      }
+      if (step === 2) {
+        if (Number(input("monto_inicial")?.value) <= 0) return ["monto_inicial", "Indica un monto inicial mayor que cero."];
+        if (Number(input("saldo_actual")?.value) < 0 || !input("saldo_actual")?.value) return ["saldo_actual", "Indica el saldo pendiente actual."];
+        if (Number(input("numero_cuotas")?.value) < 1) return ["numero_cuotas", "Indica al menos una cuota."];
+        if (!input("fecha_inicio")?.value) return ["fecha_inicio", "Indica la fecha de inicio."];
+        if (!input("fecha_primera_cuota")?.value) return ["fecha_primera_cuota", "Indica la fecha de la primera cuota."];
+      }
+      return null;
+    };
+    const validateStep = step => {
+      const missing = missingField(step);
+      error.hidden = !missing;
+      error.textContent = missing?.[1] || "";
+      if (missing) input(missing[0])?.closest(".unfold-field")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return !missing;
+    };
+    const showStep = step => {
+      currentStep = Math.max(1, Math.min(3, step));
+      panels.forEach(panel => { panel.hidden = Number(panel.dataset.debtPanel) !== currentStep; });
+      tabs.forEach(tab => {
+        const number = Number(tab.dataset.debtGo);
+        tab.classList.toggle("is-active", number === currentStep);
+        tab.classList.toggle("is-complete", number < currentStep);
+      });
+      back.hidden = currentStep === 1;
+      next.hidden = currentStep === 3;
+      save.hidden = currentStep !== 3;
+      error.hidden = true;
+      updateSummary();
+    };
+    back.addEventListener("click", () => showStep(currentStep - 1));
+    next.addEventListener("click", () => { if (validateStep(currentStep)) showStep(currentStep + 1); });
+    tabs.forEach(tab => tab.addEventListener("click", () => {
+      const destination = Number(tab.dataset.debtGo);
+      if (destination <= currentStep) return showStep(destination);
+      for (let step = currentStep; step < destination; step += 1) {
+        if (!validateStep(step)) return showStep(step);
+      }
+      showStep(destination);
+    }));
+    form.addEventListener("input", updateSummary);
+    form.addEventListener("change", updateSummary);
+    form.addEventListener("submit", event => {
+      for (let step = 1; step <= 2; step += 1) {
+        if (!validateStep(step)) {
+          event.preventDefault();
+          showStep(step);
+          validateStep(step);
+          break;
+        }
+      }
+    });
+    const errorPanel = panels.find(panel => panel.querySelector(".has-error"));
+    showStep(errorPanel ? Number(errorPanel.dataset.debtPanel) : 1);
   })();
 </script>
 {% endblock %}

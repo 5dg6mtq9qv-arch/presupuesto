@@ -51,6 +51,13 @@
         <option value="gasto"{% if tipo == "gasto" %} selected{% endif %}>Gastos</option>
       </select>
     </div>
+    <div class="col-md-2">
+      <label for="vista">Lectura</label>
+      <select class="form-select" id="vista" name="vista" onchange="window.submitAnalysisFilters && window.submitAnalysisFilters()">
+        <option value="caja"{% if vista == "caja" %} selected{% endif %}>Flujo de caja</option>
+        <option value="consumo"{% if vista == "consumo" %} selected{% endif %}>Consumo</option>
+      </select>
+    </div>
     <div class="col-md-3">
       <label for="categoria">Categoría</label>
       <select class="form-select" id="categoria" name="categoria" onchange="window.submitAnalysisFilters && window.submitAnalysisFilters()">
@@ -71,7 +78,7 @@
       </a>
     </div>
     <div class="col-md-1">
-      <a class="btn btn-outline-danger btn-icon" href="{% url 'reporte_financiero_pdf' %}?fecha_inicio={{ fecha_inicio|date:'Y-m-d' }}&fecha_fin={{ fecha_fin|date:'Y-m-d' }}" title="Descargar informe PDF con sugerencias" aria-label="Descargar informe PDF">
+      <a class="btn btn-outline-danger btn-icon" href="{% url 'reporte_financiero_pdf' %}?fecha_inicio={{ fecha_inicio|date:'Y-m-d' }}&fecha_fin={{ fecha_fin|date:'Y-m-d' }}&vista={{ vista }}" title="Descargar informe PDF con sugerencias" aria-label="Descargar informe PDF">
         <span class="material-symbols-outlined">picture_as_pdf</span>
       </a>
     </div>
@@ -81,8 +88,14 @@
 <div class="wallet-hero">
   <div>
     <span class="badge rounded-pill {% if posicion_neta >= 0 %}text-bg-success{% else %}text-bg-warning{% endif %} mb-2">{{ estado }}</span>
-    <h2>Resultado de caja: <span class="{% if posicion_neta >= 0 %}text-success{% else %}text-warning{% endif %}">{{ posicion_neta }}</span></h2>
-    <p class="mb-0 text-muted">Ingresos y gastos confirmados, menos pagos de deuda confirmados, entre {{ fecha_inicio }} y {{ fecha_fin }}.</p>
+    <h2>{% if vista == "caja" %}Resultado de caja{% else %}Resultado de consumo{% endif %}: <span class="{% if posicion_neta >= 0 %}text-success{% else %}text-warning{% endif %}">{{ posicion_neta }}</span></h2>
+    <p class="mb-0 text-muted">
+      {% if vista == "caja" %}
+        Dinero efectivamente recibido y pagado; las compras a crédito se reflejan al pagar sus cuotas.
+      {% else %}
+        Ingresos menos todas las compras realizadas; los pagos de deuda se muestran, pero no se descuentan otra vez.
+      {% endif %}
+    </p>
   </div>
 </div>
 
@@ -92,7 +105,7 @@
     <div class="metric-value">{{ ingresos }}</div>
   </section>
   <section class="panel metric orange">
-    <div class="metric-label">Gastos confirmados</div>
+    <div class="metric-label">{% if vista == "caja" %}Salidas por gastos{% else %}Compras realizadas{% endif %}</div>
     <div class="metric-value">{{ gastos }}</div>
   </section>
   <section class="panel metric blue">
@@ -100,10 +113,25 @@
     <div class="metric-value">{{ uso_ingresos }}%</div>
   </section>
   <section class="panel metric gray">
-    <div class="metric-label">Pagos de deuda confirmados</div>
+    <div class="metric-label">Pagos de deuda {% if vista == "consumo" %}(informativos){% endif %}</div>
     <div class="metric-value">{{ pagos_total }}</div>
   </section>
 </div>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Comparación con el periodo anterior</h2>
+      <p class="muted mb-0">Rango equivalente: {{ comparacion.fecha_inicio }}–{{ comparacion.fecha_fin }}, con los mismos filtros y lectura.</p>
+    </div>
+  </div>
+  <div class="status-list">
+    <span><strong>{{ comparacion.resultado }}</strong> resultado anterior</span>
+    <span><strong class="{% if comparacion.diferencia_resultado >= 0 %}text-success{% else %}text-danger{% endif %}">{{ comparacion.diferencia_resultado }}</strong> variación del resultado</span>
+    <span><strong class="{% if comparacion.diferencia_ingresos >= 0 %}text-success{% else %}text-warning{% endif %}">{{ comparacion.diferencia_ingresos }}</strong> variación de ingresos</span>
+    <span><strong class="{% if comparacion.diferencia_gastos <= 0 %}text-success{% else %}text-warning{% endif %}">{{ comparacion.diferencia_gastos }}</strong> variación de gastos</span>
+  </div>
+</section>
 
 <section class="panel">
   <div class="panel-heading">
@@ -139,6 +167,21 @@
           {% if sugerencia.impacto is not None %}
             <p class="recommendation-impact">Monto orientativo: {{ sugerencia.impacto }}</p>
           {% endif %}
+          <div class="recommendation-footer">
+            {% if sugerencia.tipo == "presupuesto" %}
+              <a class="btn btn-sm btn-outline-primary" href="{% url 'presupuesto_list' %}">Revisar presupuestos</a>
+            {% elif sugerencia.tipo == "recurrente" %}
+              <a class="btn btn-sm btn-outline-primary" href="{% url 'recurrente_list' %}">Revisar recurrentes</a>
+            {% elif sugerencia.tipo == "deuda" %}
+              <a class="btn btn-sm btn-outline-primary" href="{% url 'deuda_list' %}">Ver plan de deudas</a>
+            {% elif sugerencia.tipo == "gasto" %}
+              <a class="btn btn-sm btn-outline-primary" href="{% url 'movimiento_list' %}?tipo=gasto">Revisar gastos</a>
+            {% elif sugerencia.tipo == "alerta" %}
+              <a class="btn btn-sm btn-outline-primary" href="{% url 'movimiento_ingreso_create' %}">Registrar ingreso</a>
+            {% elif sugerencia.tipo == "datos" %}
+              <a class="btn btn-sm btn-outline-primary" href="{% url 'movimiento_list' %}?tipo=gasto">Completar datos</a>
+            {% endif %}
+          </div>
         </article>
     {% empty %}
       <p class="muted mb-0">No hay suficiente información para formular recomendaciones.</p>
@@ -170,8 +213,14 @@
           <td class="amount">{{ calculo_balance.ingresos }}</td>
         </tr>
         <tr>
-          <td>Gastos confirmados</td>
-          <td>Movimientos de gasto confirmados entre {{ fecha_inicio }} y {{ fecha_fin }}.</td>
+          <td>{% if vista == "caja" %}Salidas por gastos{% else %}Compras realizadas{% endif %}</td>
+          <td>
+            {% if vista == "caja" %}
+              Gastos pagados sin incluir compras a crédito, que se reconocen mediante sus cuotas.
+            {% else %}
+              Todas las compras confirmadas, incluidas las realizadas a crédito.
+            {% endif %}
+          </td>
           <td class="amount">{{ calculo_balance.gastos }}</td>
         </tr>
         <tr>
@@ -181,12 +230,12 @@
         </tr>
         <tr>
           <td>Pagos de deuda confirmados</td>
-          <td>Pagos efectivamente confirmados dentro del periodo.</td>
+          <td>Pagos efectivamente confirmados dentro del periodo{% if vista == "consumo" %}; se muestran como información y no se descuentan nuevamente{% endif %}.</td>
           <td class="amount">{{ calculo_balance.pagos_confirmados }}</td>
         </tr>
         <tr>
           <td><strong>Resultado de caja</strong></td>
-          <td>Margen {{ calculo_balance.margen }} - pagos de deuda {{ calculo_balance.pagos_confirmados }}</td>
+          <td>Margen {{ calculo_balance.margen }} - pagos aplicados en esta lectura {{ calculo_balance.pagos_aplicados }}</td>
           <td class="amount"><strong>{{ calculo_balance.resultado_real }}</strong></td>
         </tr>
         <tr>
@@ -223,7 +272,7 @@
   <div class="panel-heading">
     <div>
       <h2>Tendencia del periodo</h2>
-      <p class="muted mb-0">Importes confirmados en cada día o mes; cada barra corresponde solo a ese segmento.</p>
+      <p class="muted mb-0">Importes confirmados por segmento bajo la lectura de {% if vista == "caja" %}flujo de caja{% else %}consumo{% endif %}.</p>
     </div>
   </div>
   <div class="chart-box">
@@ -358,9 +407,9 @@
         labels: data.flujo.labels,
         datasets: [
           { label: "Ingresos", data: data.flujo.ingresos, backgroundColor: "#22c55e", borderRadius: 8 },
-          { label: "Gastos", data: data.flujo.gastos, backgroundColor: "#fb8500", borderRadius: 8 },
+          { label: {% if vista == "caja" %}"Salidas por gastos"{% else %}"Compras realizadas"{% endif %}, data: data.flujo.gastos, backgroundColor: "#fb8500", borderRadius: 8 },
           { label: "Pagos de deuda", data: data.flujo.deudas, backgroundColor: "#64748b", borderRadius: 8 },
-          { label: "Resultado de caja", data: data.flujo.margen, type: "line", borderColor: "#5e35b1", backgroundColor: "#5e35b1", tension: .2 },
+          { label: {% if vista == "caja" %}"Resultado de caja"{% else %}"Resultado de consumo"{% endif %}, data: data.flujo.margen, type: "line", borderColor: "#5e35b1", backgroundColor: "#5e35b1", tension: .2 },
         ],
       },
       options: moneyOptions,

@@ -121,6 +121,7 @@ def generar_recomendaciones_financieras(
     movimientos_count,
     sin_categoria_count,
     presupuestos=None,
+    deuda_prioritaria=None,
 ):
     """Return deterministic, explainable advice from registered financial data."""
     dinero = Decimal("0.01")
@@ -219,6 +220,19 @@ def generar_recomendaciones_financieras(
                 impacto=cuotas_proximas,
                 accion="Reserva primero las cuotas y evita añadir nuevas obligaciones hasta recuperar margen.",
             )
+
+    if deuda_prioritaria and deuda_prioritaria.get("tasa_interes_anual"):
+        tasa = Decimal(deuda_prioritaria["tasa_interes_anual"])
+        minimo = deuda_prioritaria.get("pago_minimo")
+        detalle_minimo = f" Su pago mínimo registrado es {Decimal(minimo):.2f}." if minimo is not None else ""
+        agregar(
+            9,
+            "deuda",
+            f"Prioriza {deuda_prioritaria['concepto']}",
+            f"Es la deuda activa con mayor interés registrado ({tasa:.2f}% anual).{detalle_minimo}",
+            impacto=deuda_prioritaria["saldo_actual"],
+            accion="Cubre todas las cuotas mínimas y dirige cualquier abono adicional a esta deuda de mayor costo.",
+        )
 
     if gastos_categoria and gastos > 0:
         principal = gastos_categoria[0]

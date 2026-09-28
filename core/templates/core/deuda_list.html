@@ -63,7 +63,11 @@
               {% endif %}
             </td>
             <td>{{ deuda.concepto }}</td>
-            <td class="amount">{{ deuda.saldo_actual }}</td>
+            <td class="amount">
+              <strong>{{ deuda.saldo_actual }}</strong>
+              {% if deuda.tasa_interes_anual is not None %}<div class="small text-muted">Interés {{ deuda.tasa_interes_anual }}% anual</div>{% endif %}
+              {% if deuda.pago_minimo is not None %}<div class="small text-muted">Mínimo {{ deuda.pago_minimo }}</div>{% endif %}
+            </td>
             <td>
               <div class="installment-summary">
                 <span class="badge rounded-pill text-bg-light border"><strong>{{ deuda.pagos_confirmados_count }}</strong> de {{ deuda.numero_cuotas }} pagadas</span>
