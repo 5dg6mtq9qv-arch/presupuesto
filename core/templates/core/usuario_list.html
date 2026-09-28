@@ -50,6 +50,7 @@
           <th>Correo</th>
           <th>Estado</th>
           <th>Rol</th>
+          <th>Asistente IA</th>
           <th></th>
         </tr>
       </thead>
@@ -64,6 +65,13 @@
                 <span class="badge rounded-pill text-bg-success">Activo</span>
               {% else %}
                 <span class="badge rounded-pill text-bg-secondary">Inactivo</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if usuario.is_superuser or usuario.perfil.puede_usar_asistente_ia %}
+                <span class="badge rounded-pill text-bg-success">Autorizado</span>
+              {% else %}
+                <span class="badge rounded-pill text-bg-light border">Sin acceso</span>
               {% endif %}
             </td>
             <td>
@@ -87,7 +95,7 @@
             </td>
           </tr>
         {% empty %}
-          <tr><td colspan="6" class="muted">Sin usuarios.</td></tr>
+          <tr><td colspan="7" class="muted">Sin usuarios.</td></tr>
         {% endfor %}
       </tbody>
     </table>

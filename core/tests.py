@@ -20,6 +20,7 @@ from .models import (
     MovimientoFinanciero,
     MovimientoRecurrente,
     PagoDeuda,
+    PerfilUsuario,
     TransferenciaCuenta,
 )
 from .services import (
@@ -628,6 +629,7 @@ class FinancialAssistantTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(username="asistente", password="test")
         self.other = get_user_model().objects.create_user(username="otro-asistente", password="test")
+        PerfilUsuario.objects.create(usuario=self.user, puede_usar_asistente_ia=True)
         parent = Categoria.objects.create(usuario=self.user, tipo=Categoria.Tipo.FINANZAS, nombre="Alimentación")
         self.category = Categoria.objects.create(
             usuario=self.user,
@@ -708,6 +710,49 @@ class FinancialAssistantTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 302)
+
+    @override_settings(AI_ASSISTANT_ENABLED=True, AI_API_KEY="secreto-de-prueba")
+    def test_usuario_sin_permiso_no_ve_ni_consulta_asistente(self):
+        self.client.force_login(self.other)
+
+        page = self.client.get(reverse("dashboard"))
+        assistant = self.client.get(reverse("asistente_financiero"))
+        question = self.client.post(
+            reverse("asistente_financiero_preguntar"),
+            data=json.dumps({"pregunta": "¿Cómo está mi balance?"}),
+            content_type="application/json",
+        )
+
+        self.assertNotContains(page, "Asistente IA")
+        self.assertNotContains(page, 'id="ai-fab"', html=False)
+        self.assertEqual(assistant.status_code, 403)
+        self.assertEqual(question.status_code, 403)
+
+    @override_settings(AI_ASSISTANT_ENABLED=True, AI_API_KEY="secreto-de-prueba")
+    def test_usuario_autorizado_ve_asistente_flotante(self):
+        response = self.client.get(reverse("dashboard"))
+
+        self.assertContains(response, "Asistente IA")
+        self.assertContains(response, 'id="ai-fab"', html=False)
+
+    def test_admin_concede_permiso_desde_edicion_de_usuario(self):
+        admin = get_user_model().objects.create_user(username="admin-ia", password="test", is_staff=True)
+        self.client.force_login(admin)
+
+        response = self.client.post(
+            reverse("usuario_update", args=[self.other.pk]),
+            {
+                "username": self.other.username,
+                "first_name": "",
+                "last_name": "",
+                "email": "",
+                "is_active": "on",
+                "puede_usar_asistente_ia": "on",
+            },
+        )
+
+        self.assertRedirects(response, reverse("usuario_list"))
+        self.assertTrue(PerfilUsuario.objects.get(usuario=self.other).puede_usar_asistente_ia)
 
 
 class GuidedFinancialFlowsTests(TestCase):

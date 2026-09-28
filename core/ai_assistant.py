@@ -9,11 +9,19 @@ from django.db.models import Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
-from .models import Deuda, MetodoPago, MovimientoFinanciero, PagoDeuda, PresupuestoMensual
+from .models import Deuda, MetodoPago, MovimientoFinanciero, PagoDeuda, PerfilUsuario, PresupuestoMensual
 
 
 class AIAssistantError(Exception):
     """Safe error that can be shown without exposing provider internals."""
+
+
+def user_can_use_ai(user):
+    if not getattr(user, "is_authenticated", False) or not user.is_active:
+        return False
+    if user.is_superuser:
+        return True
+    return PerfilUsuario.objects.filter(usuario=user, puede_usar_asistente_ia=True).exists()
 
 
 def _money(value):

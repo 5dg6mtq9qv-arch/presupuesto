@@ -140,6 +140,11 @@ class BootstrapFormMixin:
 class UsuarioCreateForm(BootstrapFormMixin, forms.ModelForm):
     password1 = forms.CharField(label="Contraseña", widget=forms.PasswordInput)
     password2 = forms.CharField(label="Confirmar contraseña", widget=forms.PasswordInput)
+    puede_usar_asistente_ia = forms.BooleanField(
+        label="Autorizar asistente de IA",
+        required=False,
+        help_text="Permite consultar el asistente externo y consumir la cuota configurada.",
+    )
 
     class Meta:
         model = User
@@ -177,6 +182,10 @@ class UsuarioCreateForm(BootstrapFormMixin, forms.ModelForm):
         user.set_password(self.cleaned_data["password1"])
         if commit:
             user.save()
+            PerfilUsuario.objects.update_or_create(
+                usuario=user,
+                defaults={"puede_usar_asistente_ia": self.cleaned_data.get("puede_usar_asistente_ia", False)},
+            )
         return user
 
 
@@ -198,6 +207,12 @@ class RegistroUsuarioForm(BootstrapFormMixin, UserCreationForm):
 
 
 class UsuarioUpdateForm(BootstrapFormMixin, forms.ModelForm):
+    puede_usar_asistente_ia = forms.BooleanField(
+        label="Autorizar asistente de IA",
+        required=False,
+        help_text="Permite consultar el asistente externo y consumir la cuota configurada.",
+    )
+
     class Meta:
         model = User
         fields = ["username", "first_name", "last_name", "email", "is_active"]
@@ -211,10 +226,21 @@ class UsuarioUpdateForm(BootstrapFormMixin, forms.ModelForm):
 
     def __init__(self, *args, disable_is_active=False, **kwargs):
         super().__init__(*args, **kwargs)
+        perfil = PerfilUsuario.objects.filter(usuario=self.instance).first() if self.instance.pk else None
+        self.fields["puede_usar_asistente_ia"].initial = bool(perfil and perfil.puede_usar_asistente_ia)
         if disable_is_active:
             self.fields["is_active"].disabled = True
             self.fields["is_active"].help_text = "No puedes desactivar tu propio usuario."
         self.apply_bootstrap_classes()
+
+    def save(self, commit=True):
+        user = super().save(commit=commit)
+        if commit:
+            PerfilUsuario.objects.update_or_create(
+                usuario=user,
+                defaults={"puede_usar_asistente_ia": self.cleaned_data.get("puede_usar_asistente_ia", False)},
+            )
+        return user
 
 
 class UsuarioPasswordForm(BootstrapFormMixin, SetPasswordForm):

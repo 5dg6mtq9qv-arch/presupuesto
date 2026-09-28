@@ -23,7 +23,8 @@ from .models import (
 
 @admin.register(PerfilUsuario)
 class PerfilUsuarioAdmin(ModelAdmin):
-    list_display = ("usuario", "telefono", "actualizado")
+    list_display = ("usuario", "telefono", "puede_usar_asistente_ia", "actualizado")
+    list_filter = ("puede_usar_asistente_ia",)
     search_fields = ("usuario__username", "usuario__first_name", "usuario__last_name", "telefono")
 
 

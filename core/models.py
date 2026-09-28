@@ -18,6 +18,10 @@ class PerfilUsuario(models.Model):
     )
     imagen = models.ImageField(upload_to=user_profile_image_path, blank=True)
     telefono = models.CharField(max_length=30, blank=True)
+    puede_usar_asistente_ia = models.BooleanField(
+        default=False,
+        verbose_name="Puede usar el asistente de IA",
+    )
     creado = models.DateTimeField(auto_now_add=True)
     actualizado = models.DateTimeField(auto_now=True)
 

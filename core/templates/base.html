@@ -1308,6 +1308,55 @@
     }
     .kanban-add-card { color: #fff; display: inline-flex; padding: 8px 12px 12px; }
 
+    .ai-fab {
+      position: fixed;
+      right: 24px;
+      bottom: 24px;
+      z-index: 75;
+      width: 56px;
+      height: 56px;
+      border: 0;
+      border-radius: 999px;
+      display: grid;
+      place-items: center;
+      color: #fff;
+      background: linear-gradient(135deg, var(--primary), #2bc0b0);
+      box-shadow: 0 12px 30px rgba(37, 161, 148, .32);
+      cursor: pointer;
+    }
+    .ai-fab:hover { transform: translateY(-2px); background: linear-gradient(135deg, var(--primary-hover), var(--primary)); }
+    .ai-fab .material-symbols-outlined { font-size: 26px; }
+    .ai-drawer {
+      position: fixed;
+      right: 24px;
+      bottom: 92px;
+      z-index: 76;
+      width: min(390px, calc(100vw - 32px));
+      height: min(610px, calc(100dvh - 120px));
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--surface);
+      box-shadow: 0 22px 60px rgba(15, 23, 42, .2);
+    }
+    .ai-drawer-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px; color: #fff; background: var(--primary); }
+    .ai-drawer-head-copy { min-width: 0; flex: 1; }
+    .ai-drawer-head strong, .ai-drawer-head small { display: block; }
+    .ai-drawer-head small { margin-top: 2px; opacity: .82; font-size: 11px; }
+    .ai-drawer-head .btn { color: #fff; border-color: rgba(255,255,255,.35); background: transparent; }
+    .ai-drawer-messages { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 14px; background: var(--surface-soft); }
+    .ai-drawer-message { max-width: 88%; padding: 10px 12px; border-radius: 13px; font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
+    .ai-drawer-message.user { align-self: flex-end; color: #fff; background: var(--primary); border-bottom-right-radius: 4px; }
+    .ai-drawer-message.assistant { align-self: flex-start; border: 1px solid var(--line); background: var(--surface); border-bottom-left-radius: 4px; }
+    .ai-drawer-evidence { margin: 8px 0 0; padding-left: 17px; color: var(--muted); font-size: 11px; }
+    .ai-drawer-suggestions { display: flex; gap: 6px; overflow-x: auto; padding: 0 14px 10px; background: var(--surface-soft); }
+    .ai-drawer-suggestions button { flex: 0 0 auto; border: 1px solid #b8e3de; border-radius: 999px; background: var(--primary-soft); color: var(--primary-hover); padding: 6px 9px; font: inherit; font-size: 11px; cursor: pointer; }
+    .ai-drawer-form { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 12px; border-top: 1px solid var(--line); background: var(--surface); }
+    .ai-drawer-form textarea { min-height: 48px; max-height: 100px; resize: none; font-size: 13px; }
+    .ai-drawer-form .btn { align-self: end; width: 46px; height: 46px; padding: 0; }
+
     @media (max-width: 980px) {
       .app-shell { grid-template-columns: 1fr; }
       .sidebar {
@@ -1361,6 +1410,8 @@
       .debt-payment-actions { justify-content: flex-start; }
       .quick-action-label { display: none; }
       .topbar-username { display: none; }
+      .ai-fab { right: 16px; bottom: 16px; }
+      .ai-drawer { right: 16px; bottom: 82px; height: min(580px, calc(100dvh - 105px)); }
     }
   </style>
 </head>
@@ -1389,7 +1440,7 @@
         <ul class="nav-list">
           <li><a class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" href="{% url 'dashboard' %}"><span class="material-symbols-outlined">dashboard</span> Inicio</a></li>
           <li><a class="nav-link {% if request.resolver_match.url_name == 'analisis_financiero' %}active{% endif %}" href="{% url 'analisis_financiero' %}"><span class="material-symbols-outlined">monitoring</span> Análisis</a></li>
-          <li><a class="nav-link {% if 'asistente_financiero' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'asistente_financiero' %}"><span class="material-symbols-outlined">smart_toy</span> Asistente IA</a></li>
+          {% if can_use_ai %}<li><a class="nav-link {% if 'asistente_financiero' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'asistente_financiero' %}"><span class="material-symbols-outlined">smart_toy</span> Asistente IA</a></li>{% endif %}
         </ul>
         <div class="nav-section">Mi dinero</div>
         <ul class="nav-list">
@@ -1478,6 +1529,37 @@
     </footer>
   </div>
 
+  {% if user.is_authenticated and can_use_ai and ai_configured %}
+    {% if request.resolver_match.url_name != 'asistente_financiero' %}
+      <button class="ai-fab" id="ai-fab" type="button" aria-label="Abrir asistente financiero" aria-controls="ai-drawer" aria-expanded="false" title="Asistente financiero">
+        <span class="material-symbols-outlined">smart_toy</span>
+      </button>
+      <aside class="ai-drawer" id="ai-drawer" aria-label="Asistente financiero" hidden>
+        <div class="ai-drawer-head">
+          <span class="material-symbols-outlined">smart_toy</span>
+          <span class="ai-drawer-head-copy"><strong>Asistente financiero</strong><small>Respuestas basadas en tus cifras</small></span>
+          <a class="btn btn-icon" href="{% url 'asistente_financiero' %}" aria-label="Abrir pantalla completa" title="Pantalla completa"><span class="material-symbols-outlined">open_in_full</span></a>
+          <button class="btn btn-icon" type="button" data-ai-close aria-label="Cerrar" title="Cerrar"><span class="material-symbols-outlined">close</span></button>
+        </div>
+        <div class="ai-drawer-messages" id="ai-drawer-messages" aria-live="polite">
+          <div class="ai-drawer-message assistant">Hola. Pregúntame sobre tus gastos, balance o pagos próximos.</div>
+        </div>
+        <div>
+          <div class="ai-drawer-suggestions">
+            <button type="button" data-ai-question="¿Cómo está mi balance este mes?">Mi balance</button>
+            <button type="button" data-ai-question="¿En qué categoría gasté más?">Mayor gasto</button>
+            <button type="button" data-ai-question="¿Tengo pagos de deudas próximos?">Próximos pagos</button>
+          </div>
+          <form class="ai-drawer-form" id="ai-drawer-form">
+            {% csrf_token %}
+            <textarea id="ai-drawer-question" maxlength="600" aria-label="Pregunta para el asistente" placeholder="Escribe una pregunta…"></textarea>
+            <button class="btn btn-primary btn-icon" type="submit" aria-label="Enviar pregunta" title="Enviar"><span class="material-symbols-outlined">send</span></button>
+          </form>
+        </div>
+      </aside>
+    {% endif %}
+  {% endif %}
+
   <script>
     (() => {
       const openButton = document.querySelector("[data-sidebar-open]");
@@ -1495,6 +1577,87 @@
       });
       document.querySelectorAll(".sidebar .nav-link").forEach((link) => {
         link.addEventListener("click", () => setSidebar(false));
+      });
+    })();
+  </script>
+  <script>
+    (() => {
+      const trigger = document.getElementById("ai-fab");
+      const drawer = document.getElementById("ai-drawer");
+      const form = document.getElementById("ai-drawer-form");
+      const question = document.getElementById("ai-drawer-question");
+      const messages = document.getElementById("ai-drawer-messages");
+      if (!trigger || !drawer || !form || !question || !messages) return;
+      const submit = form.querySelector('button[type="submit"]');
+      const csrfToken = form.querySelector('input[name="csrfmiddlewaretoken"]').value;
+
+      const setOpen = open => {
+        drawer.hidden = !open;
+        trigger.setAttribute("aria-expanded", String(open));
+        trigger.querySelector(".material-symbols-outlined").textContent = open ? "close" : "smart_toy";
+        if (open) window.setTimeout(() => question.focus(), 0);
+      };
+      const addMessage = (text, type, evidence = []) => {
+        const node = document.createElement("div");
+        node.className = `ai-drawer-message ${type}`;
+        const copy = document.createElement("div");
+        copy.textContent = text;
+        node.append(copy);
+        if (Array.isArray(evidence) && evidence.length) {
+          const list = document.createElement("ul");
+          list.className = "ai-drawer-evidence";
+          evidence.forEach(item => {
+            const row = document.createElement("li");
+            row.textContent = item;
+            list.append(row);
+          });
+          node.append(list);
+        }
+        messages.append(node);
+        messages.scrollTop = messages.scrollHeight;
+        return node;
+      };
+
+      trigger.addEventListener("click", () => setOpen(drawer.hidden));
+      drawer.querySelector("[data-ai-close]").addEventListener("click", () => setOpen(false));
+      document.addEventListener("keydown", event => { if (event.key === "Escape" && !drawer.hidden) setOpen(false); });
+      document.querySelectorAll("[data-ai-question]").forEach(button => {
+        button.addEventListener("click", () => {
+          question.value = button.dataset.aiQuestion;
+          question.focus();
+        });
+      });
+      question.addEventListener("keydown", event => {
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          form.requestSubmit();
+        }
+      });
+      form.addEventListener("submit", async event => {
+        event.preventDefault();
+        const value = question.value.trim();
+        if (value.length < 3 || submit.disabled) return;
+        addMessage(value, "user");
+        question.value = "";
+        submit.disabled = true;
+        const pending = addMessage("Analizando tus cifras…", "assistant");
+        try {
+          const response = await fetch("{% url 'asistente_financiero_preguntar' %}", {
+            method: "POST",
+            headers: {"Content-Type": "application/json", "X-CSRFToken": csrfToken, "X-Requested-With": "XMLHttpRequest"},
+            body: JSON.stringify({pregunta: value}),
+          });
+          const data = await response.json();
+          pending.remove();
+          if (!response.ok || !data.ok) throw new Error(data.error || "No fue posible obtener una respuesta.");
+          addMessage(data.respuesta, "assistant", data.evidencia);
+        } catch (error) {
+          pending.remove();
+          addMessage(error.message || "No fue posible conectar con el asistente.", "assistant");
+        } finally {
+          submit.disabled = false;
+          question.focus();
+        }
       });
     })();
   </script>

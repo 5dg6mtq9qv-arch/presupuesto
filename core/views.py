@@ -15,7 +15,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.decorators import user_passes_test
 from django.core.paginator import Paginator
 from django.core.cache import cache
-from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse
+from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
 from django.db import transaction
 from django.db.models import Min, Prefetch, Q, Sum
 from django.shortcuts import get_object_or_404, redirect, render
@@ -24,7 +24,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.views.decorators.http import require_POST
 
-from .ai_assistant import AIAssistantError, ask_financial_assistant
+from .ai_assistant import AIAssistantError, ask_financial_assistant, user_can_use_ai
 
 from .forms import (
     AjusteSaldoForm,
@@ -88,6 +88,8 @@ User = get_user_model()
 
 @login_required
 def asistente_financiero(request):
+    if not user_can_use_ai(request.user):
+        return HttpResponseForbidden("No tienes autorización para utilizar el asistente de IA.")
     return render(
         request,
         "core/asistente_financiero.html",
@@ -101,6 +103,8 @@ def asistente_financiero(request):
 @login_required
 @require_POST
 def asistente_financiero_preguntar(request):
+    if not user_can_use_ai(request.user):
+        return JsonResponse({"ok": False, "error": "No tienes autorización para utilizar el asistente de IA."}, status=403)
     if int(request.META.get("CONTENT_LENGTH") or 0) > 5000:
         return JsonResponse({"ok": False, "error": "La consulta es demasiado extensa."}, status=400)
     try:
@@ -1042,7 +1046,7 @@ def reporte_financiero_pdf(request):
 
 @admin_required
 def usuario_list(request):
-    usuarios = User.objects.order_by("-is_active", "username")
+    usuarios = User.objects.select_related("perfil").order_by("-is_active", "username")
     q = request.GET.get("q", "").strip()
     estado = request.GET.get("estado", "")
     rol = request.GET.get("rol", "")
