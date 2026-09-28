@@ -1,5 +1,6 @@
 import calendar
 import csv
+import json
 from html import escape
 from ipaddress import ip_address
 from io import BytesIO
@@ -7,11 +8,13 @@ from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.contrib import messages
+from django.conf import settings
 from django.contrib.auth import login, update_session_auth_hash
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.decorators import user_passes_test
 from django.core.paginator import Paginator
+from django.core.cache import cache
 from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse
 from django.db import transaction
 from django.db.models import Min, Prefetch, Q, Sum
@@ -20,6 +23,8 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.views.decorators.http import require_POST
+
+from .ai_assistant import AIAssistantError, ask_financial_assistant
 
 from .forms import (
     AjusteSaldoForm,
@@ -79,6 +84,55 @@ from .services import (
 )
 
 User = get_user_model()
+
+
+@login_required
+def asistente_financiero(request):
+    return render(
+        request,
+        "core/asistente_financiero.html",
+        {
+            "ai_configured": settings.AI_ASSISTANT_ENABLED and bool(settings.AI_API_KEY),
+            "ai_provider": settings.AI_PROVIDER,
+        },
+    )
+
+
+@login_required
+@require_POST
+def asistente_financiero_preguntar(request):
+    if int(request.META.get("CONTENT_LENGTH") or 0) > 5000:
+        return JsonResponse({"ok": False, "error": "La consulta es demasiado extensa."}, status=400)
+    try:
+        body = json.loads(request.body or b"{}")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return JsonResponse({"ok": False, "error": "La solicitud no tiene un formato válido."}, status=400)
+    question = str(body.get("pregunta", "")).strip()
+    if len(question) < 3:
+        return JsonResponse({"ok": False, "error": "Escribe una pregunta un poco más clara."}, status=400)
+    if len(question) > 600:
+        return JsonResponse({"ok": False, "error": "La pregunta no puede superar 600 caracteres."}, status=400)
+
+    rate_key = f"ai-assistant:{request.user.pk}"
+    if cache.add(rate_key, 1, timeout=60):
+        requests_in_window = 1
+    else:
+        try:
+            requests_in_window = cache.incr(rate_key)
+        except ValueError:
+            cache.set(rate_key, 1, timeout=60)
+            requests_in_window = 1
+    if requests_in_window > 10:
+        return JsonResponse(
+            {"ok": False, "error": "Has realizado varias consultas seguidas. Espera un minuto para continuar."},
+            status=429,
+        )
+
+    try:
+        answer = ask_financial_assistant(request.user, question)
+    except AIAssistantError as exc:
+        return JsonResponse({"ok": False, "error": str(exc)}, status=503)
+    return JsonResponse({"ok": True, **answer})
 
 
 @transaction.atomic

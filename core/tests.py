@@ -1,13 +1,15 @@
+import json
 from datetime import datetime, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
 from .forms import MovimientoFinancieroForm
+from .ai_assistant import build_financial_context
 from .models import (
     Acreedor,
     Categoria,
@@ -620,6 +622,92 @@ class FinancialAdviceTests(TestCase):
         self.assertEqual(analisis.context["sugerencias"][0]["titulo"], "Falta registrar ingresos")
         self.assertEqual(reporte.status_code, 200)
         self.assertEqual(reporte["Content-Type"], "application/pdf")
+
+
+class FinancialAssistantTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="asistente", password="test")
+        self.other = get_user_model().objects.create_user(username="otro-asistente", password="test")
+        parent = Categoria.objects.create(usuario=self.user, tipo=Categoria.Tipo.FINANZAS, nombre="Alimentación")
+        self.category = Categoria.objects.create(
+            usuario=self.user,
+            tipo=Categoria.Tipo.FINANZAS,
+            parent=parent,
+            nombre="Supermercado",
+        )
+        self.client.force_login(self.user)
+
+    def test_contexto_usa_agregados_y_aisla_otros_usuarios(self):
+        date = datetime(2026, 9, 28).date()
+        MovimientoFinanciero.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.INGRESO,
+            concepto="Dato privado ingreso",
+            monto="1000.00",
+            fecha=date,
+        )
+        MovimientoFinanciero.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+            categoria=self.category,
+            concepto="Dato privado gasto",
+            monto="125.50",
+            fecha=date,
+        )
+        MovimientoFinanciero.objects.create(
+            usuario=self.other,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+            concepto="Movimiento ajeno",
+            monto="9999.00",
+            fecha=date,
+        )
+
+        context = build_financial_context(self.user, today=date)
+        serialized = json.dumps(context, ensure_ascii=False)
+
+        self.assertEqual(context["ingresos_confirmados"], "1000.00")
+        self.assertEqual(context["gastos_de_consumo_confirmados"], "125.50")
+        self.assertEqual(context["principales_categorias_de_gasto"][0]["categoria"], "Alimentación")
+        self.assertNotIn("Dato privado", serialized)
+        self.assertNotIn("9999", serialized)
+
+    def test_pagina_indica_si_falta_configurar_clave(self):
+        with override_settings(AI_ASSISTANT_ENABLED=True, AI_API_KEY=""):
+            response = self.client.get(reverse("asistente_financiero"))
+
+        self.assertContains(response, "Asistente financiero")
+        self.assertContains(response, "falta configurar la clave privada")
+
+    @override_settings(AI_ASSISTANT_ENABLED=True, AI_API_KEY="secreto-de-prueba")
+    @patch("core.views.ask_financial_assistant")
+    def test_endpoint_devuelve_respuesta_validada(self, mocked_assistant):
+        mocked_assistant.return_value = {
+            "respuesta": "Tu balance es positivo.",
+            "evidencia": ["Ingresos confirmados: 1000.00 USD."],
+            "advertencia": "",
+            "periodo": {"desde": "2026-09-01", "hasta": "2026-09-28"},
+        }
+
+        response = self.client.post(
+            reverse("asistente_financiero_preguntar"),
+            data=json.dumps({"pregunta": "¿Cómo está mi balance?"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["ok"])
+        self.assertEqual(response.json()["respuesta"], "Tu balance es positivo.")
+        mocked_assistant.assert_called_once_with(self.user, "¿Cómo está mi balance?")
+
+    def test_endpoint_requiere_autenticacion(self):
+        self.client.logout()
+        response = self.client.post(
+            reverse("asistente_financiero_preguntar"),
+            data=json.dumps({"pregunta": "¿Cómo está mi balance?"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 302)
 
 
 class GuidedFinancialFlowsTests(TestCase):

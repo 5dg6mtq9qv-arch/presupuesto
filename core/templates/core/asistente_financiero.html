@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+
+{% block page_title %}Asistente financiero{% endblock %}
+{% block page_subtitle %}Pregunta sobre tus datos y recibe explicaciones basadas en cifras verificadas{% endblock %}
+
+{% block content %}
+<style>
+  .assistant-layout { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(260px, .7fr); gap: 18px; align-items: start; }
+  .assistant-chat { min-height: 560px; display: grid; grid-template-rows: auto 1fr auto; gap: 16px; }
+  .assistant-heading { display: flex; gap: 12px; align-items: flex-start; }
+  .assistant-heading > .material-symbols-outlined { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 12px; color: var(--primary); background: var(--primary-soft); }
+  .assistant-heading h2 { margin: 0 0 4px; }
+  .assistant-heading p { margin: 0; color: var(--muted); font-size: 13px; }
+  .assistant-messages { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; max-height: 520px; padding: 4px; }
+  .assistant-message { max-width: 86%; border-radius: 14px; padding: 12px 14px; line-height: 1.55; white-space: pre-wrap; }
+  .assistant-message-user { align-self: flex-end; color: #fff; background: var(--primary); border-bottom-right-radius: 4px; }
+  .assistant-message-ai { align-self: flex-start; background: var(--surface-soft); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+  .assistant-evidence { margin: 10px 0 0; padding-left: 18px; color: var(--muted); font-size: 12px; }
+  .assistant-warning { margin-top: 10px; color: #92400e; font-size: 12px; }
+  .assistant-form { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: end; border-top: 1px solid var(--line); padding-top: 16px; }
+  .assistant-form textarea { min-height: 70px; max-height: 150px; }
+  .assistant-form .btn { min-height: 46px; }
+  .assistant-suggestions { display: grid; gap: 8px; }
+  .assistant-suggestion { width: 100%; text-align: left; justify-content: flex-start; white-space: normal; }
+  .assistant-privacy { display: flex; gap: 9px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+  .assistant-privacy .material-symbols-outlined { color: var(--success); }
+  @media (max-width: 900px) { .assistant-layout { grid-template-columns: 1fr; } .assistant-chat { min-height: 500px; } }
+  @media (max-width: 560px) { .assistant-form { grid-template-columns: 1fr; } .assistant-message { max-width: 95%; } }
+</style>
+
+<div class="assistant-layout">
+  <section class="panel assistant-chat">
+    <div class="assistant-heading">
+      <span class="material-symbols-outlined">smart_toy</span>
+      <div>
+        <h2>Consulta tus finanzas</h2>
+        <p>La IA explica los cálculos del sistema; no modifica tus registros.</p>
+      </div>
+    </div>
+
+    <div class="assistant-messages" id="assistant-messages" aria-live="polite">
+      <div class="assistant-message assistant-message-ai">
+        {% if ai_configured %}Hola. Puedo ayudarte a entender tus ingresos, gastos, deudas y presupuesto del mes actual.{% else %}El asistente está instalado, pero falta configurar la clave privada del proveedor en el servidor.{% endif %}
+      </div>
+    </div>
+
+    <form class="assistant-form" id="assistant-form">
+      {% csrf_token %}
+      <div class="unfold-field">
+        <label for="assistant-question">Tu pregunta</label>
+        <textarea id="assistant-question" maxlength="600" placeholder="Ej.: ¿En qué categoría gasté más este mes?" {% if not ai_configured %}disabled{% endif %}></textarea>
+        <div class="form-text">No escribas contraseñas, números de tarjeta ni otros datos sensibles.</div>
+      </div>
+      <button class="btn btn-primary" type="submit" {% if not ai_configured %}disabled{% endif %}>
+        <span class="material-symbols-outlined">send</span><span>Preguntar</span>
+      </button>
+    </form>
+  </section>
+
+  <aside>
+    <section class="panel">
+      <div class="panel-heading"><div><h2>Prueba preguntando</h2><p class="muted mb-0">Consultas sobre el mes actual</p></div></div>
+      <div class="assistant-suggestions">
+        <button class="btn btn-outline-secondary assistant-suggestion" type="button" data-question="¿En qué categoría gasté más este mes?" {% if not ai_configured %}disabled{% endif %}>¿En qué gasté más?</button>
+        <button class="btn btn-outline-secondary assistant-suggestion" type="button" data-question="¿Cómo está mi balance de caja este mes?" {% if not ai_configured %}disabled{% endif %}>¿Cómo está mi balance?</button>
+        <button class="btn btn-outline-secondary assistant-suggestion" type="button" data-question="¿Qué debería revisar para reducir mis gastos?" {% if not ai_configured %}disabled{% endif %}>¿Dónde puedo reducir gastos?</button>
+        <button class="btn btn-outline-secondary assistant-suggestion" type="button" data-question="¿Tengo pagos de deudas próximos?" {% if not ai_configured %}disabled{% endif %}>¿Qué pagos se aproximan?</button>
+      </div>
+    </section>
+    <section class="panel assistant-privacy">
+      <span class="material-symbols-outlined">shield_lock</span>
+      <span>Se envían tu pregunta, totales agregados, el periodo y hasta cinco categorías. No se envían tu identidad, correos, comprobantes, notas ni credenciales.</span>
+    </section>
+  </aside>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (() => {
+    const form = document.getElementById("assistant-form");
+    const question = document.getElementById("assistant-question");
+    const messages = document.getElementById("assistant-messages");
+    const submit = form?.querySelector('button[type="submit"]');
+    if (!form || !question || !messages || !submit || question.disabled) return;
+    const csrfToken = form.querySelector('input[name="csrfmiddlewaretoken"]').value;
+
+    const addMessage = (text, type, data = {}) => {
+      const node = document.createElement("div");
+      node.className = `assistant-message assistant-message-${type}`;
+      const copy = document.createElement("div");
+      copy.textContent = text;
+      node.append(copy);
+      if (Array.isArray(data.evidencia) && data.evidencia.length) {
+        const list = document.createElement("ul");
+        list.className = "assistant-evidence";
+        data.evidencia.forEach(item => {
+          const row = document.createElement("li");
+          row.textContent = item;
+          list.append(row);
+        });
+        node.append(list);
+      }
+      if (data.advertencia) {
+        const warning = document.createElement("div");
+        warning.className = "assistant-warning";
+        warning.textContent = data.advertencia;
+        node.append(warning);
+      }
+      messages.append(node);
+      messages.scrollTop = messages.scrollHeight;
+      return node;
+    };
+
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      const value = question.value.trim();
+      if (value.length < 3) return question.focus();
+      addMessage(value, "user");
+      question.value = "";
+      submit.disabled = true;
+      const pending = addMessage("Analizando tus cifras…", "ai");
+      try {
+        const response = await fetch("{% url 'asistente_financiero_preguntar' %}", {
+          method: "POST",
+          headers: {"Content-Type": "application/json", "X-CSRFToken": csrfToken, "X-Requested-With": "XMLHttpRequest"},
+          body: JSON.stringify({pregunta: value}),
+        });
+        const data = await response.json();
+        pending.remove();
+        if (!response.ok || !data.ok) throw new Error(data.error || "No fue posible obtener una respuesta.");
+        addMessage(data.respuesta, "ai", data);
+      } catch (error) {
+        pending.remove();
+        addMessage(error.message || "No fue posible conectar con el asistente.", "ai");
+      } finally {
+        submit.disabled = false;
+        question.focus();
+      }
+    });
+
+    document.querySelectorAll("[data-question]").forEach(button => {
+      button.addEventListener("click", () => {
+        question.value = button.dataset.question;
+        question.focus();
+      });
+    });
+  })();
+</script>
+{% endblock %}

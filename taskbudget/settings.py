@@ -72,6 +72,14 @@ SECURE_SSL_REDIRECT = os.getenv("DJANGO_SECURE_SSL_REDIRECT", "false").lower() i
 SESSION_COOKIE_SECURE = os.getenv("DJANGO_SESSION_COOKIE_SECURE", "false").lower() in {"1", "true", "yes", "on"}
 CSRF_COOKIE_SECURE = os.getenv("DJANGO_CSRF_COOKIE_SECURE", "false").lower() in {"1", "true", "yes", "on"}
 
+# External AI assistant. Secrets belong in .env, never in source control.
+AI_PROVIDER = os.getenv("AI_PROVIDER", "groq")
+AI_API_KEY = os.getenv("AI_API_KEY", "").strip()
+AI_MODEL = os.getenv("AI_MODEL", "openai/gpt-oss-20b")
+AI_BASE_URL = os.getenv("AI_BASE_URL", "https://api.groq.com/openai/v1")
+AI_TIMEOUT_SECONDS = max(5, min(int(os.getenv("AI_TIMEOUT_SECONDS", "25")), 60))
+AI_ASSISTANT_ENABLED = os.getenv("AI_ASSISTANT_ENABLED", "true").lower() in {"1", "true", "yes", "on"}
+
 
 # Application definition
 

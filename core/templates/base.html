@@ -1389,6 +1389,7 @@
         <ul class="nav-list">
           <li><a class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" href="{% url 'dashboard' %}"><span class="material-symbols-outlined">dashboard</span> Inicio</a></li>
           <li><a class="nav-link {% if request.resolver_match.url_name == 'analisis_financiero' %}active{% endif %}" href="{% url 'analisis_financiero' %}"><span class="material-symbols-outlined">monitoring</span> Análisis</a></li>
+          <li><a class="nav-link {% if 'asistente_financiero' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'asistente_financiero' %}"><span class="material-symbols-outlined">smart_toy</span> Asistente IA</a></li>
         </ul>
         <div class="nav-section">Mi dinero</div>
         <ul class="nav-list">
