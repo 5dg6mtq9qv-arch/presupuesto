@@ -11,6 +11,7 @@ from django.utils import timezone
 from .forms import MovimientoFinancieroForm
 from .ai_assistant import (
     AI_TOOLS,
+    _parse_assistant_answer,
     _provider_message,
     ask_financial_assistant,
     build_financial_context,
@@ -845,6 +846,15 @@ class FinancialAssistantTests(TestCase):
             }.issubset(tool_names)
         )
 
+    def test_parser_acepta_json_envuelto_por_el_proveedor(self):
+        expected = {"respuesta": "Tienes 520.00 USD.", "evidencia": ["Banco: 520.00 USD"], "advertencia": ""}
+
+        fenced = _parse_assistant_answer(f"```json\n{json.dumps(expected)}\n```")
+        content_parts = _parse_assistant_answer([{"type": "text", "text": json.dumps(expected)}])
+
+        self.assertEqual(fenced, expected)
+        self.assertEqual(content_parts, expected)
+
     @override_settings(AI_ASSISTANT_ENABLED=True, AI_API_KEY="secreto-de-prueba")
     @patch("core.ai_assistant._provider_message")
     def test_asistente_ejecuta_herramienta_solo_lectura_y_redacta_resultado(self, provider):
@@ -904,6 +914,20 @@ class FinancialAssistantTests(TestCase):
         self.assertTrue(response.json()["ok"])
         self.assertEqual(response.json()["respuesta"], "Tu balance es positivo.")
         mocked_assistant.assert_called_once_with(self.user, "¿Cómo está mi balance?")
+
+    @override_settings(AI_ASSISTANT_ENABLED=True, AI_API_KEY="secreto-de-prueba")
+    @patch("core.views.ask_financial_assistant", side_effect=RuntimeError("fallo inesperado"))
+    def test_endpoint_devuelve_json_aun_ante_error_inesperado(self, mocked_assistant):
+        response = self.client.post(
+            reverse("asistente_financiero_preguntar"),
+            data=json.dumps({"pregunta": "¿Cuánto tengo en mis cuentas?"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response["Content-Type"], "application/json")
+        self.assertFalse(response.json()["ok"])
+        self.assertIn("No fue posible completar", response.json()["error"])
 
     def test_endpoint_requiere_autenticacion(self):
         self.client.logout()

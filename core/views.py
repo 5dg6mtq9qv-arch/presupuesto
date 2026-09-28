@@ -1,6 +1,7 @@
 import calendar
 import csv
 import json
+import logging
 from html import escape
 from ipaddress import ip_address
 from io import BytesIO
@@ -84,6 +85,7 @@ from .services import (
 )
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 @login_required
@@ -137,6 +139,12 @@ def asistente_financiero_preguntar(request):
         answer = ask_financial_assistant(request.user, question)
     except AIAssistantError as exc:
         return JsonResponse({"ok": False, "error": str(exc)}, status=503)
+    except Exception:
+        logger.exception("Unexpected financial assistant error for user_id=%s", request.user.pk)
+        return JsonResponse(
+            {"ok": False, "error": "No fue posible completar la consulta en este momento. Intenta nuevamente."},
+            status=500,
+        )
     return JsonResponse({"ok": True, **answer})
 
 

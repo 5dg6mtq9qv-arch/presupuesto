@@ -711,6 +711,40 @@ def _execute_tool(user, tool_call):
         return {"error": str(exc) or "La consulta solicitada no es válida."}
 
 
+def _parse_assistant_answer(content):
+    """Parse a provider answer while tolerating common OpenAI-compatible wrappers."""
+    if isinstance(content, dict):
+        answer = content
+    else:
+        if isinstance(content, list):
+            text_parts = []
+            for part in content:
+                if isinstance(part, dict) and isinstance(part.get("text"), str):
+                    text_parts.append(part["text"])
+                elif isinstance(part, str):
+                    text_parts.append(part)
+            content = "\n".join(text_parts)
+        text = str(content or "").strip().lstrip("\ufeff")
+        if text.startswith("```"):
+            first_line_end = text.find("\n")
+            text = text[first_line_end + 1 :] if first_line_end >= 0 else ""
+            if text.rstrip().endswith("```"):
+                text = text.rstrip()[:-3].rstrip()
+        try:
+            answer = json.loads(text)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            object_start = text.find("{")
+            if object_start < 0:
+                raise AIAssistantError("La IA devolvió una respuesta que no se pudo validar.")
+            try:
+                answer, _ = json.JSONDecoder().raw_decode(text[object_start:])
+            except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                raise AIAssistantError("La IA devolvió una respuesta que no se pudo validar.") from exc
+    if not isinstance(answer, dict):
+        raise AIAssistantError("La IA devolvió una respuesta que no se pudo validar.")
+    return answer
+
+
 def ask_financial_assistant(user, question):
     config = get_ai_runtime_config()
     if not config.configured:
@@ -761,10 +795,7 @@ def ask_financial_assistant(user, question):
         )
     message = _provider_message(messages, config, max_tokens=1200)
 
-    try:
-        answer = json.loads(message.get("content") or "")
-    except (TypeError, ValueError, json.JSONDecodeError) as exc:
-        raise AIAssistantError("La IA devolvió una respuesta que no se pudo validar.") from exc
+    answer = _parse_assistant_answer(message.get("content"))
 
     response_text = str(answer.get("respuesta", "")).strip()
     evidence = answer.get("evidencia", [])
