@@ -79,6 +79,9 @@ AI_MODEL = os.getenv("AI_MODEL", "openai/gpt-oss-20b")
 AI_BASE_URL = os.getenv("AI_BASE_URL", "https://api.groq.com/openai/v1")
 AI_TIMEOUT_SECONDS = max(5, min(int(os.getenv("AI_TIMEOUT_SECONDS", "25")), 60))
 AI_ASSISTANT_ENABLED = os.getenv("AI_ASSISTANT_ENABLED", "true").lower() in {"1", "true", "yes", "on"}
+# Optional master key for encrypting provider tokens stored through Django Admin.
+# When omitted, DJANGO_SECRET_KEY is used as the encryption root.
+AI_CONFIG_ENCRYPTION_KEY = os.getenv("AI_CONFIG_ENCRYPTION_KEY", "").strip()
 
 
 # Application definition

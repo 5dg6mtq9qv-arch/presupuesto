@@ -1,5 +1,6 @@
 from django.db import models
 from django.conf import settings
+from django.core.exceptions import ValidationError
 
 
 def user_profile_image_path(instance, filename):
@@ -32,6 +33,54 @@ class PerfilUsuario(models.Model):
 
     def __str__(self):
         return f"Perfil de {self.usuario}"
+
+
+class ConfiguracionIA(models.Model):
+    class Proveedor(models.TextChoices):
+        GEMINI = "gemini", "Google Gemini"
+        GROQ = "groq", "Groq"
+        PERSONALIZADO = "personalizado", "Compatible con OpenAI"
+
+    unico = models.BooleanField(default=True, unique=True, editable=False)
+    activo = models.BooleanField(default=False, verbose_name="Asistente activo")
+    proveedor = models.CharField(max_length=30, choices=Proveedor.choices, default=Proveedor.GEMINI)
+    modelo = models.CharField(max_length=120, default="gemini-2.5-flash-lite")
+    url_base = models.URLField(default="https://generativelanguage.googleapis.com/v1beta/openai")
+    timeout_segundos = models.PositiveSmallIntegerField(default=25)
+    api_key_cifrada = models.TextField(blank=True, editable=False)
+    api_key_sufijo = models.CharField(max_length=8, blank=True, editable=False)
+    actualizado = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = '"configuracion"."configuracion_ia"'
+        verbose_name = "configuración de IA"
+        verbose_name_plural = "configuración de IA"
+
+    def clean(self):
+        super().clean()
+        if not 5 <= self.timeout_segundos <= 60:
+            raise ValidationError({"timeout_segundos": "El timeout debe estar entre 5 y 60 segundos."})
+        if self.activo and not self.api_key_cifrada:
+            raise ValidationError("Configura una clave de API antes de activar el asistente.")
+
+    def set_api_key(self, value):
+        from .ai_config import encrypt_api_key
+
+        token = str(value or "").strip()
+        self.api_key_cifrada = encrypt_api_key(token) if token else ""
+        self.api_key_sufijo = token[-4:] if token else ""
+
+    def get_api_key(self):
+        from .ai_config import decrypt_api_key
+
+        return decrypt_api_key(self.api_key_cifrada) if self.api_key_cifrada else ""
+
+    @property
+    def tiene_api_key(self):
+        return bool(self.api_key_cifrada)
+
+    def __str__(self):
+        return f"{self.get_proveedor_display()} · {self.modelo}"
 
 
 class EliminacionRegistro(models.Model):

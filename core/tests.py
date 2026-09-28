@@ -10,10 +10,13 @@ from django.utils import timezone
 
 from .forms import MovimientoFinancieroForm
 from .ai_assistant import ask_financial_assistant, build_financial_context, query_debt_payments, query_movements
+from .ai_config import get_ai_runtime_config
+from .admin import ConfiguracionIAAdminForm
 from .models import (
     Acreedor,
     Categoria,
     CuentaFinanciera,
+    ConfiguracionIA,
     Deuda,
     Etiqueta,
     MetodoPago,
@@ -883,6 +886,58 @@ class FinancialAssistantTests(TestCase):
 
         self.assertRedirects(response, reverse("usuario_list"))
         self.assertTrue(PerfilUsuario.objects.get(usuario=self.other).puede_usar_asistente_ia)
+
+    @override_settings(AI_CONFIG_ENCRYPTION_KEY="clave-maestra-de-prueba")
+    def test_configuracion_admin_cifra_token_y_tiene_prioridad_sobre_env(self):
+        form = ConfiguracionIAAdminForm(
+            data={
+                "activo": "on",
+                "proveedor": "gemini",
+                "modelo": "gemini-2.5-flash-lite",
+                "url_base": "https://generativelanguage.googleapis.com/v1beta/openai",
+                "timeout_segundos": "30",
+                "api_key": "token-super-secreto",
+            }
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        config = form.save()
+        self.assertNotIn("token-super-secreto", config.api_key_cifrada)
+        self.assertEqual(config.api_key_sufijo, "reto")
+        self.assertEqual(config.get_api_key(), "token-super-secreto")
+        runtime = get_ai_runtime_config()
+        self.assertEqual(runtime.source, "database")
+        self.assertEqual(runtime.provider, "gemini")
+        self.assertEqual(runtime.api_key, "token-super-secreto")
+        self.assertTrue(runtime.configured)
+
+    @override_settings(AI_CONFIG_ENCRYPTION_KEY="clave-maestra-de-prueba")
+    def test_editar_configuracion_sin_token_conserva_credencial(self):
+        config = ConfiguracionIA(
+            activo=True,
+            proveedor="gemini",
+            modelo="gemini-2.5-flash-lite",
+            url_base="https://generativelanguage.googleapis.com/v1beta/openai",
+            timeout_segundos=25,
+        )
+        config.set_api_key("clave-existente")
+        config.save()
+        form = ConfiguracionIAAdminForm(
+            instance=config,
+            data={
+                "activo": "on",
+                "proveedor": "gemini",
+                "modelo": "gemini-2.5-flash-lite",
+                "url_base": "https://generativelanguage.googleapis.com/v1beta/openai",
+                "timeout_segundos": "35",
+                "api_key": "",
+            },
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        updated = form.save()
+        self.assertEqual(updated.get_api_key(), "clave-existente")
+        self.assertEqual(updated.timeout_segundos, 35)
 
 
 class GuidedFinancialFlowsTests(TestCase):

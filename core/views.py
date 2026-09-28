@@ -8,7 +8,6 @@ from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.contrib import messages
-from django.conf import settings
 from django.contrib.auth import login, update_session_auth_hash
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
@@ -25,6 +24,7 @@ from django.utils.dateparse import parse_date
 from django.views.decorators.http import require_POST
 
 from .ai_assistant import AIAssistantError, ask_financial_assistant, user_can_use_ai
+from .ai_config import get_ai_runtime_config
 
 from .forms import (
     AjusteSaldoForm,
@@ -90,12 +90,13 @@ User = get_user_model()
 def asistente_financiero(request):
     if not user_can_use_ai(request.user):
         return HttpResponseForbidden("No tienes autorización para utilizar el asistente de IA.")
+    ai_config = get_ai_runtime_config()
     return render(
         request,
         "core/asistente_financiero.html",
         {
-            "ai_configured": settings.AI_ASSISTANT_ENABLED and bool(settings.AI_API_KEY),
-            "ai_provider": settings.AI_PROVIDER,
+            "ai_configured": ai_config.configured,
+            "ai_provider": ai_config.provider,
         },
     )
 

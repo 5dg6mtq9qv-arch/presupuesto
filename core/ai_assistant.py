@@ -4,12 +4,12 @@ from decimal import Decimal
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from django.conf import settings
 from django.db.models import Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 
+from .ai_config import get_ai_runtime_config
 from .models import Deuda, MetodoPago, MovimientoFinanciero, PagoDeuda, PerfilUsuario, PresupuestoMensual
 
 MAX_UPCOMING_PAYMENT_DETAILS = 25
@@ -379,9 +379,9 @@ TOOL_HANDLERS = {
 }
 
 
-def _provider_message(messages, *, tools=None, max_tokens=600):
+def _provider_message(messages, config, *, tools=None, max_tokens=600):
     payload = {
-        "model": settings.AI_MODEL,
+        "model": config.model,
         "temperature": 0.2,
         "max_tokens": max_tokens,
         "response_format": {"type": "json_object"},
@@ -391,17 +391,17 @@ def _provider_message(messages, *, tools=None, max_tokens=600):
         payload["tools"] = tools
         payload["tool_choice"] = "auto"
     request = Request(
-        settings.AI_BASE_URL.rstrip("/") + "/chat/completions",
+        config.base_url + "/chat/completions",
         data=json.dumps(payload).encode("utf-8"),
         headers={
-            "Authorization": f"Bearer {settings.AI_API_KEY}",
+            "Authorization": f"Bearer {config.api_key}",
             "Content-Type": "application/json",
             "User-Agent": "TaskBudget/1.0",
         },
         method="POST",
     )
     try:
-        with urlopen(request, timeout=settings.AI_TIMEOUT_SECONDS) as response:
+        with urlopen(request, timeout=config.timeout_seconds) as response:
             provider_data = json.loads(response.read().decode("utf-8"))
         return provider_data["choices"][0]["message"]
     except HTTPError as exc:
@@ -431,7 +431,8 @@ def _execute_tool(user, tool_call):
 
 
 def ask_financial_assistant(user, question):
-    if not settings.AI_ASSISTANT_ENABLED or not settings.AI_API_KEY:
+    config = get_ai_runtime_config()
+    if not config.configured:
         raise AIAssistantError("El asistente de IA todavía no está configurado.")
 
     context = build_financial_context(user)
@@ -455,7 +456,7 @@ def ask_financial_assistant(user, question):
             "content": f"PREGUNTA:\n{question}\n\nCONTEXTO_FINANCIERO:\n{json.dumps(context, ensure_ascii=False)}",
         },
     ]
-    message = _provider_message(messages, tools=AI_TOOLS)
+    message = _provider_message(messages, config, tools=AI_TOOLS)
     tool_calls = message.get("tool_calls") or []
     if tool_calls:
         selected_calls = tool_calls[:3]
@@ -469,7 +470,7 @@ def ask_financial_assistant(user, question):
                     "content": json.dumps(result, ensure_ascii=False),
                 }
             )
-        message = _provider_message(messages, max_tokens=1200)
+        message = _provider_message(messages, config, max_tokens=1200)
 
     try:
         answer = json.loads(message.get("content") or "")

@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django import forms
 from unfold.admin import ModelAdmin, TabularInline
 
 from .models import (
@@ -6,6 +7,7 @@ from .models import (
     AjusteSaldo,
     Categoria,
     CuentaFinanciera,
+    ConfiguracionIA,
     Deuda,
     EliminacionRegistro,
     Etiqueta,
@@ -19,6 +21,86 @@ from .models import (
     Tarea,
     TransferenciaCuenta,
 )
+
+
+class ConfiguracionIAAdminForm(forms.ModelForm):
+    api_key = forms.CharField(
+        label="Nueva clave de API",
+        required=False,
+        widget=forms.PasswordInput(render_value=False, attrs={"autocomplete": "new-password"}),
+        help_text="Déjala vacía para conservar la clave actual. Nunca se vuelve a mostrar completa.",
+    )
+    eliminar_api_key = forms.BooleanField(
+        label="Eliminar clave guardada",
+        required=False,
+        help_text="Desactiva primero el asistente si deseas eliminar la clave.",
+    )
+
+    class Meta:
+        model = ConfiguracionIA
+        fields = ["activo", "proveedor", "modelo", "url_base", "timeout_segundos"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["proveedor"].help_text = "Gemini, Groq u otro endpoint compatible con OpenAI."
+        self.fields["modelo"].help_text = "Ej.: gemini-2.5-flash-lite u openai/gpt-oss-20b."
+        self.fields["url_base"].help_text = (
+            "Gemini: https://generativelanguage.googleapis.com/v1beta/openai · "
+            "Groq: https://api.groq.com/openai/v1"
+        )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        token = (cleaned_data.get("api_key") or "").strip()
+        clear_token = cleaned_data.get("eliminar_api_key", False)
+        if token and clear_token:
+            self.add_error("eliminar_api_key", "Elige entre reemplazar o eliminar la clave.")
+        elif token:
+            self.instance.set_api_key(token)
+        elif clear_token:
+            self.instance.set_api_key("")
+        if cleaned_data.get("activo") and not self.instance.tiene_api_key:
+            self.add_error("api_key", "Configura una clave antes de activar el asistente.")
+        return cleaned_data
+
+
+@admin.register(ConfiguracionIA)
+class ConfiguracionIAAdmin(ModelAdmin):
+    form = ConfiguracionIAAdminForm
+    list_display = ("proveedor", "modelo", "activo", "estado_clave", "actualizado")
+    readonly_fields = ("estado_clave", "actualizado")
+    fieldsets = (
+        (
+            "Proveedor",
+            {"fields": ("activo", "proveedor", "modelo", "url_base", "timeout_segundos")},
+        ),
+        (
+            "Credencial cifrada",
+            {"fields": ("estado_clave", "api_key", "eliminar_api_key")},
+        ),
+        ("Auditoría", {"fields": ("actualizado",)}),
+    )
+
+    @admin.display(description="Clave")
+    def estado_clave(self, obj):
+        if obj and obj.tiene_api_key:
+            return f"Configurada · termina en {obj.api_key_sufijo}"
+        return "Sin configurar"
+
+    def has_module_permission(self, request):
+        return request.user.is_staff
+
+    def has_view_permission(self, request, obj=None):
+        return request.user.is_staff
+
+    def has_change_permission(self, request, obj=None):
+        return request.user.is_staff
+
+    def has_add_permission(self, request):
+        return request.user.is_staff and not ConfiguracionIA.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(PerfilUsuario)
