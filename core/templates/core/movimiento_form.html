@@ -263,6 +263,15 @@
     const csrfToken = form.querySelector('input[name="csrfmiddlewaretoken"]')?.value || "";
     const parentsElement = document.getElementById("movement-category-parents");
     const parents = parentsElement ? JSON.parse(parentsElement.textContent) : [];
+    const swalTheme = {
+      customClass: {
+        popup: "finance-swal",
+        confirmButton: "finance-swal-confirm",
+        cancelButton: "finance-swal-cancel",
+      },
+      buttonsStyling: false,
+      reverseButtons: true,
+    };
 
     const fieldErrorText = errors => Object.values(errors || {}).flat().join(" ") || "No se pudo guardar la opción.";
     const addAndSelectOption = (select, data) => {
@@ -302,9 +311,24 @@
       return payload;
     };
 
+    const buildColorField = (initialColor, helpText) => {
+      const wrap = document.createElement("div");
+      wrap.className = "quick-color-field";
+      const input = document.createElement("input");
+      input.type = "color";
+      input.value = initialColor;
+      input.setAttribute("aria-label", "Seleccionar color");
+      const help = document.createElement("span");
+      const updateHelp = () => { help.textContent = `${helpText} · ${input.value.toUpperCase()}`; };
+      input.addEventListener("input", updateHelp);
+      updateHelp();
+      wrap.append(input, help);
+      return { wrap, input };
+    };
+
     const openCategoryCreator = async () => {
       const content = document.createElement("div");
-      content.className = "text-start";
+      content.className = "quick-option-form";
       const typeLabel = document.createElement("label");
       typeLabel.className = "form-label";
       typeLabel.textContent = "Qué deseas crear";
@@ -332,17 +356,15 @@
       const colorLabel = document.createElement("label");
       colorLabel.className = "form-label";
       colorLabel.textContent = "Color";
-      const color = document.createElement("input");
-      color.type = "color";
-      color.className = "form-control form-control-color";
-      color.value = "#ef4444";
-      content.append(typeLabel, type, parentWrap, nameLabel, name, colorLabel, color);
+      const colorField = buildColorField("#ef4444", "Se usará en gráficas y selectores");
+      content.append(typeLabel, type, parentWrap, nameLabel, name, colorLabel, colorField.wrap);
       const syncType = () => { parentWrap.hidden = type.value !== "subcategoria"; };
       type.addEventListener("change", syncType);
       syncType();
 
       const result = await Swal.fire({
-        title: "Crear sin salir del gasto",
+        ...swalTheme,
+        title: `Crear sin salir del ${form.dataset.movementType}`,
         html: content,
         showCancelButton: true,
         confirmButtonText: "Crear y seleccionar",
@@ -363,7 +385,7 @@
               tipo_opcion: type.value,
               parent: type.value === "subcategoria" ? parent.value : "",
               nombre: name.value.trim(),
-              color: color.value,
+              color: colorField.input.value,
             });
           } catch (error) {
             Swal.showValidationMessage(error.message);
@@ -380,22 +402,39 @@
     };
 
     const openTagCreator = async () => {
+      const content = document.createElement("div");
+      content.className = "quick-option-form";
+      const nameLabel = document.createElement("label");
+      nameLabel.className = "form-label";
+      nameLabel.textContent = "Nombre";
+      const name = document.createElement("input");
+      name.className = "form-control mb-3";
+      name.maxLength = 80;
+      name.placeholder = "Ej.: Trabajo, deducible, urgente";
+      const colorLabel = document.createElement("label");
+      colorLabel.className = "form-label";
+      colorLabel.textContent = "Color";
+      const colorField = buildColorField("#6366f1", "Identifica la etiqueta visualmente");
+      content.append(nameLabel, name, colorLabel, colorField.wrap);
       const result = await Swal.fire({
+        ...swalTheme,
         title: "Nueva etiqueta",
-        input: "text",
-        inputLabel: "Nombre",
-        inputPlaceholder: "Ej.: Trabajo, deducible, urgente",
-        inputAttributes: { maxlength: "80" },
+        html: content,
         showCancelButton: true,
         confirmButtonText: "Crear y seleccionar",
         cancelButtonText: "Cancelar",
-        inputValidator: value => value.trim() ? undefined : "Escribe un nombre.",
-        preConfirm: async value => {
+        focusConfirm: false,
+        didOpen: () => name.focus(),
+        preConfirm: async () => {
+          if (!name.value.trim()) {
+            Swal.showValidationMessage("Escribe un nombre.");
+            return false;
+          }
           try {
             return await saveQuickOption({
               tipo_opcion: "etiqueta",
-              nombre: value.trim(),
-              color: "#6366f1",
+              nombre: name.value.trim(),
+              color: colorField.input.value,
             });
           } catch (error) {
             Swal.showValidationMessage(error.message);

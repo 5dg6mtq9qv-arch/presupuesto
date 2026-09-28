@@ -127,21 +127,19 @@
       <p class="muted mb-0">Calculadas con todo el periodo {{ fecha_inicio }}–{{ fecha_fin }}. Los filtros visuales de tipo y categoría no alteran estas sugerencias.</p>
     </div>
   </div>
-  <div class="row g-3">
+  <div class="recommendations-grid">
     {% for sugerencia in sugerencias %}
-      <div class="col-lg-6">
-        <article class="border rounded-3 p-3 h-100">
-          <div class="d-flex justify-content-between align-items-start gap-3 mb-2">
-            <h3 class="h6 mb-0">{{ sugerencia.titulo }}</h3>
+        <article class="recommendation-card type-{{ sugerencia.tipo }}">
+          <div class="recommendation-head">
+            <h3>{{ sugerencia.titulo }}</h3>
             <span class="badge rounded-pill {% if sugerencia.tipo == 'alerta' %}text-bg-danger{% elif sugerencia.tipo == 'oportunidad' %}text-bg-success{% elif sugerencia.tipo == 'deuda' %}text-bg-warning{% else %}text-bg-primary{% endif %}">{{ sugerencia.tipo|capfirst }}</span>
           </div>
-          <p class="mb-2">{{ sugerencia.detalle }}</p>
-          <p class="muted mb-0"><strong>Acción:</strong> {{ sugerencia.accion }}</p>
+          <p>{{ sugerencia.detalle }}</p>
+          <p class="recommendation-action"><strong>Acción:</strong> {{ sugerencia.accion }}</p>
           {% if sugerencia.impacto is not None %}
-            <p class="mb-0 mt-2"><strong>Monto orientativo: {{ sugerencia.impacto }}</strong></p>
+            <p class="recommendation-impact">Monto orientativo: {{ sugerencia.impacto }}</p>
           {% endif %}
         </article>
-      </div>
     {% empty %}
       <p class="muted mb-0">No hay suficiente información para formular recomendaciones.</p>
     {% endfor %}

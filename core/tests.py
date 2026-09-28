@@ -481,14 +481,16 @@ class InlineMovementOptionsTests(TestCase):
         )
         tag_response = self.client.post(
             reverse("movimiento_opcion_create"),
-            {"tipo_opcion": "etiqueta", "nombre": "Deducible", "color": "#6366f1"},
+            {"tipo_opcion": "etiqueta", "nombre": "Deducible", "color": "#112233"},
         )
 
         self.assertEqual(subcategory_response.status_code, 200)
         self.assertEqual(subcategory_response.json()["option"]["label"], "Salud > Farmacia")
         self.assertTrue(Categoria.objects.filter(usuario=self.user, parent=parent, nombre="Farmacia").exists())
         self.assertEqual(tag_response.status_code, 200)
-        self.assertTrue(Etiqueta.objects.filter(usuario=self.user, nombre="Deducible").exists())
+        self.assertTrue(
+            Etiqueta.objects.filter(usuario=self.user, nombre="Deducible", color="#112233").exists()
+        )
 
     def test_no_permite_usar_categoria_principal_de_otro_usuario(self):
         other = get_user_model().objects.create_user(username="otro-opciones", password="test")
