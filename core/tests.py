@@ -9,7 +9,15 @@ from django.urls import reverse
 from django.utils import timezone
 
 from .forms import MovimientoFinancieroForm
-from .ai_assistant import AI_TOOLS, _provider_message, ask_financial_assistant, build_financial_context, query_debt_payments, query_movements
+from .ai_assistant import (
+    AI_TOOLS,
+    _provider_message,
+    ask_financial_assistant,
+    build_financial_context,
+    query_accounts,
+    query_debt_payments,
+    query_movements,
+)
 from .ai_config import AIRuntimeConfig, get_ai_runtime_config
 from .admin import ConfiguracionIAAdminForm
 from .models import (
@@ -773,6 +781,69 @@ class FinancialAssistantTests(TestCase):
         self.assertEqual(result["monto_total"], "300.00")
         self.assertEqual(len(result["registros"]), 1)
         self.assertFalse(result["detalle_completo"])
+
+    def test_contexto_y_herramienta_cuentas_calculan_saldo_y_aislan_usuario(self):
+        date = datetime(2026, 9, 28).date()
+        account = CuentaFinanciera.objects.create(
+            usuario=self.user,
+            nombre="Banco principal",
+            tipo=CuentaFinanciera.Tipo.BANCO,
+            saldo_inicial="100.00",
+        )
+        other_account = CuentaFinanciera.objects.create(
+            usuario=self.other,
+            nombre="Banco ajeno",
+            tipo=CuentaFinanciera.Tipo.BANCO,
+            saldo_inicial="9999.00",
+        )
+        MovimientoFinanciero.objects.create(
+            usuario=self.user,
+            cuenta=account,
+            tipo=MovimientoFinanciero.Tipo.INGRESO,
+            concepto="Sueldo",
+            monto="500.00",
+            fecha=date,
+        )
+        MovimientoFinanciero.objects.create(
+            usuario=self.user,
+            cuenta=account,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+            concepto="Compra",
+            monto="80.00",
+            fecha=date,
+        )
+        MovimientoFinanciero.objects.create(
+            usuario=self.other,
+            cuenta=other_account,
+            tipo=MovimientoFinanciero.Tipo.INGRESO,
+            concepto="Ingreso ajeno",
+            monto="5000.00",
+            fecha=date,
+        )
+
+        result = query_accounts(self.user, {"nombre": "principal"})
+        context = build_financial_context(self.user, today=date)
+
+        self.assertEqual(result["cantidad_total"], 1)
+        self.assertEqual(result["registros"][0]["saldo_actual"], "520.00")
+        self.assertEqual(result["registros"][0]["calculo"]["ingresos_confirmados"], "500.00")
+        self.assertEqual(result["registros"][0]["calculo"]["gastos_confirmados"], "80.00")
+        self.assertNotIn("Banco ajeno", json.dumps(result))
+        context_account = next(item for item in context["cuentas_activas"] if item["nombre"] == "Banco principal")
+        self.assertEqual(context_account["saldo_actual"], "520.00")
+        self.assertNotIn("Banco ajeno", json.dumps(context))
+
+    def test_asistente_publica_herramientas_para_consultar_todos_los_datos_financieros(self):
+        tool_names = {item["function"]["name"] for item in AI_TOOLS}
+
+        self.assertTrue(
+            {
+                "consultar_cuentas",
+                "consultar_transferencias",
+                "consultar_movimientos_recurrentes",
+                "consultar_catalogo_financiero",
+            }.issubset(tool_names)
+        )
 
     @override_settings(AI_ASSISTANT_ENABLED=True, AI_API_KEY="secreto-de-prueba")
     @patch("core.ai_assistant._provider_message")

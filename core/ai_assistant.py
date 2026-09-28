@@ -11,7 +11,20 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date
 
 from .ai_config import get_ai_runtime_config
-from .models import Deuda, MetodoPago, MovimientoFinanciero, PagoDeuda, PerfilUsuario, PresupuestoMensual
+from .models import (
+    Acreedor,
+    Categoria,
+    CuentaFinanciera,
+    Deuda,
+    Etiqueta,
+    MetodoPago,
+    MovimientoFinanciero,
+    MovimientoRecurrente,
+    PagoDeuda,
+    PerfilUsuario,
+    PresupuestoMensual,
+    TransferenciaCuenta,
+)
 
 MAX_UPCOMING_PAYMENT_DETAILS = 25
 MAX_QUERY_DETAILS = 50
@@ -32,6 +45,55 @@ def user_can_use_ai(user):
 
 def _money(value):
     return f"{Decimal(value or 0):.2f}"
+
+
+def _account_balance_details(account):
+    """Calculate an account balance using the same confirmed operations as the UI."""
+    movements = MovimientoFinanciero.objects.filter(
+        usuario=account.usuario,
+        cuenta=account,
+        estado=MovimientoFinanciero.Estado.CONFIRMADO,
+    )
+    incomes = movements.filter(tipo=MovimientoFinanciero.Tipo.INGRESO).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    expenses = movements.filter(tipo=MovimientoFinanciero.Tipo.GASTO).exclude(
+        metodo_pago__tipo=MetodoPago.Tipo.CREDITO,
+    ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    debt_payments = PagoDeuda.objects.filter(
+        deuda__usuario=account.usuario,
+        cuenta=account,
+        estado=PagoDeuda.Estado.CONFIRMADO,
+    ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    incoming_transfers = TransferenciaCuenta.objects.filter(
+        usuario=account.usuario,
+        cuenta_destino=account,
+    ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    outgoing_transfers = TransferenciaCuenta.objects.filter(
+        usuario=account.usuario,
+        cuenta_origen=account,
+    ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    balance = account.saldo_inicial + incomes - expenses - debt_payments + incoming_transfers - outgoing_transfers
+    return {
+        "saldo_inicial": account.saldo_inicial,
+        "ingresos_confirmados": incomes,
+        "gastos_confirmados": expenses,
+        "pagos_deuda_confirmados": debt_payments,
+        "transferencias_entrantes": incoming_transfers,
+        "transferencias_salientes": outgoing_transfers,
+        "saldo_actual": balance,
+    }
+
+
+def _account_result(account, *, include_breakdown=False):
+    details = _account_balance_details(account)
+    result = {
+        "nombre": account.nombre,
+        "tipo": account.tipo,
+        "activa": account.activa,
+        "saldo_actual": _money(details["saldo_actual"]),
+    }
+    if include_breakdown:
+        result["calculo"] = {key: _money(value) for key, value in details.items() if key != "saldo_actual"}
+    return result
 
 
 def build_financial_context(user, today=None):
@@ -92,6 +154,9 @@ def build_financial_context(user, today=None):
         mes=today.month,
     ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
     cash_outflow = cash_expenses + debt_payments
+    active_accounts = list(CuentaFinanciera.objects.filter(usuario=user, activa=True).order_by("nombre"))
+    account_rows = [_account_result(account) for account in active_accounts]
+    available_balance = sum((Decimal(row["saldo_actual"]) for row in account_rows), Decimal("0"))
 
     return {
         "moneda": "USD",
@@ -102,6 +167,8 @@ def build_financial_context(user, today=None):
         "pagos_de_deuda_confirmados": _money(debt_payments),
         "balance_de_caja_del_periodo": _money(incomes - cash_outflow),
         "saldo_total_de_deudas_activas": _money(active_debt),
+        "saldo_disponible_total": _money(available_balance),
+        "cuentas_activas": account_rows,
         "pagos_pendientes_proximos_30_dias": {
             "cantidad": upcoming_count,
             "total": _money(upcoming_total),
@@ -303,6 +370,130 @@ def query_budgets(user, arguments):
     }
 
 
+def query_accounts(user, arguments):
+    queryset = CuentaFinanciera.objects.filter(usuario=user)
+    name = str(arguments.get("nombre") or "").strip()
+    if name:
+        queryset = queryset.filter(nombre__icontains=name)
+    active = arguments.get("activa")
+    if isinstance(active, bool):
+        queryset = queryset.filter(activa=active)
+    count = queryset.count()
+    rows = list(queryset.order_by("-activa", "nombre")[:_query_limit(arguments)])
+    records = [_account_result(account, include_breakdown=True) for account in rows]
+    total_balance = sum((Decimal(item["saldo_actual"]) for item in records), Decimal("0"))
+    return {
+        "filtros": {"nombre": name or None, "activa": active if isinstance(active, bool) else "todas"},
+        "cantidad_total": count,
+        "saldo_total_registros_devuelto": _money(total_balance),
+        "detalle_completo": count <= len(rows),
+        "registros": records,
+    }
+
+
+def query_transfers(user, arguments):
+    queryset = TransferenciaCuenta.objects.filter(usuario=user)
+    queryset, start, end = _apply_date_range(queryset, arguments)
+    count = queryset.count()
+    total = queryset.aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    rows = list(
+        queryset.select_related("cuenta_origen", "cuenta_destino")
+        .order_by("-fecha", "-creado")[:_query_limit(arguments)]
+    )
+    return {
+        "filtros": {
+            "fecha_inicio": start.isoformat() if start else None,
+            "fecha_fin": end.isoformat() if end else None,
+        },
+        "cantidad_total": count,
+        "monto_total": _money(total),
+        "detalle_completo": count <= len(rows),
+        "registros": [
+            {
+                "fecha": item.fecha.isoformat(),
+                "cuenta_origen": item.cuenta_origen.nombre,
+                "cuenta_destino": item.cuenta_destino.nombre,
+                "monto": _money(item.monto),
+                "nota": item.nota,
+            }
+            for item in rows
+        ],
+    }
+
+
+def query_recurring_movements(user, arguments):
+    queryset = MovimientoRecurrente.objects.filter(usuario=user)
+    movement_type = arguments.get("tipo")
+    if movement_type in {MovimientoFinanciero.Tipo.INGRESO, MovimientoFinanciero.Tipo.GASTO}:
+        queryset = queryset.filter(tipo=movement_type)
+    active = arguments.get("activo")
+    if isinstance(active, bool):
+        queryset = queryset.filter(activo=active)
+    count = queryset.count()
+    rows = list(
+        queryset.select_related("categoria", "cuenta", "metodo_pago")
+        .order_by("tipo", "dia_mes", "concepto")[:_query_limit(arguments)]
+    )
+    return {
+        "cantidad_total": count,
+        "detalle_completo": count <= len(rows),
+        "registros": [
+            {
+                "tipo": item.tipo,
+                "concepto": item.concepto,
+                "monto": _money(item.monto),
+                "frecuencia": item.frecuencia,
+                "dia_mes": item.dia_mes,
+                "activo": item.activo,
+                "aplicacion_automatica": item.aplicar_automaticamente,
+                "categoria": item.categoria.nombre if item.categoria_id else "",
+                "cuenta": item.cuenta.nombre if item.cuenta_id else "",
+                "metodo_pago": item.metodo_pago.nombre if item.metodo_pago_id else "",
+            }
+            for item in rows
+        ],
+    }
+
+
+def query_financial_catalog(user, arguments):
+    catalog = arguments.get("catalogo")
+    limit = _query_limit(arguments)
+    if catalog == "categorias":
+        queryset = Categoria.objects.filter(usuario=user, tipo=Categoria.Tipo.FINANZAS).select_related("parent")
+        count = queryset.count()
+        rows = list(queryset.order_by("parent__nombre", "nombre")[:limit])
+        records = [
+            {
+                "categoria": item.parent.nombre if item.parent_id else item.nombre,
+                "subcategoria": item.nombre if item.parent_id else "",
+            }
+            for item in rows
+        ]
+    elif catalog == "metodos_pago":
+        queryset = MetodoPago.objects.filter(usuario=user)
+        count = queryset.count()
+        rows = list(queryset.order_by("-activo", "nombre")[:limit])
+        records = [{"nombre": item.nombre, "tipo": item.tipo, "activo": item.activo} for item in rows]
+    elif catalog == "acreedores":
+        queryset = Acreedor.objects.filter(usuario=user)
+        count = queryset.count()
+        rows = list(queryset.order_by("-activo", "nombre")[:limit])
+        records = [{"nombre": item.nombre, "activo": item.activo} for item in rows]
+    elif catalog == "etiquetas":
+        queryset = Etiqueta.objects.filter(usuario=user)
+        count = queryset.count()
+        rows = list(queryset.order_by("nombre")[:limit])
+        records = [{"nombre": item.nombre} for item in rows]
+    else:
+        raise ValueError("El catálogo solicitado no está permitido.")
+    return {
+        "catalogo": catalog,
+        "cantidad_total": count,
+        "detalle_completo": count <= len(rows),
+        "registros": records,
+    }
+
+
 AI_TOOLS = [
     {
         "type": "function",
@@ -370,6 +561,73 @@ AI_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "consultar_cuentas",
+            "description": "Consulta las cuentas del usuario y calcula su saldo actual exacto, con desglose de ingresos, gastos, pagos de deuda y transferencias.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "nombre": {"type": "string", "description": "Nombre completo o parcial de la cuenta"},
+                    "activa": {"type": "boolean"},
+                    "limite": {"type": "integer", "minimum": 1, "maximum": 50},
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "consultar_transferencias",
+            "description": "Consulta transferencias entre las cuentas del usuario por rango de fechas.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "fecha_inicio": {"type": "string", "description": "Fecha inclusiva AAAA-MM-DD"},
+                    "fecha_fin": {"type": "string", "description": "Fecha inclusiva AAAA-MM-DD"},
+                    "limite": {"type": "integer", "minimum": 1, "maximum": 50},
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "consultar_movimientos_recurrentes",
+            "description": "Consulta ingresos y gastos recurrentes configurados por el usuario.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "tipo": {"type": "string", "enum": ["ingreso", "gasto"]},
+                    "activo": {"type": "boolean"},
+                    "limite": {"type": "integer", "minimum": 1, "maximum": 50},
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "consultar_catalogo_financiero",
+            "description": "Consulta las categorías, métodos de pago, acreedores o etiquetas disponibles del usuario.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "catalogo": {
+                        "type": "string",
+                        "enum": ["categorias", "metodos_pago", "acreedores", "etiquetas"],
+                    },
+                    "limite": {"type": "integer", "minimum": 1, "maximum": 50},
+                },
+                "required": ["catalogo"],
+                "additionalProperties": False,
+            },
+        },
+    },
 ]
 
 
@@ -378,6 +636,10 @@ TOOL_HANDLERS = {
     "consultar_pagos_deuda": query_debt_payments,
     "consultar_deudas": query_debts,
     "consultar_presupuestos": query_budgets,
+    "consultar_cuentas": query_accounts,
+    "consultar_transferencias": query_transfers,
+    "consultar_movimientos_recurrentes": query_recurring_movements,
+    "consultar_catalogo_financiero": query_financial_catalog,
 }
 
 
@@ -459,7 +721,7 @@ def ask_financial_assistant(user, question):
     system_prompt = (
         f"Eres un asistente de finanzas personales prudente. La fecha actual es {today.isoformat()}. "
         "Responde en español claro. Usa exclusivamente CONTEXTO_FINANCIERO y los resultados de herramientas. "
-        "Para registros recientes, periodos distintos al resumen actual, listados o fechas solicitadas, debes usar la herramienta adecuada. "
+        "Para saldos de cuentas, registros recientes, periodos distintos al resumen actual, listados o fechas solicitadas, debes usar la herramienta adecuada. "
         "Las herramientas son de solo lectura y ya limitan los datos al usuario autenticado; nunca solicites SQL ni identificadores internos. "
         "Nunca inventes registros, importes, categorías ni causas. Distingue consumo de salida de caja. "
         "Si detalle_completo es falso, indica cuántos registros existen y que solo se muestran los primeros resultados. "
