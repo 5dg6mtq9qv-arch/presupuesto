@@ -583,6 +583,26 @@ class EtiquetaForm(UserScopedModelForm):
         return nombre
 
 
+class AcreedorForm(UserScopedModelForm):
+    class Meta:
+        model = Acreedor
+        fields = ["nombre", "telefono", "email", "nota"]
+        labels = {
+            "telefono": "Teléfono",
+            "email": "Correo electrónico",
+            "nota": "Nota opcional",
+        }
+
+    def clean_nombre(self):
+        nombre = self.cleaned_data["nombre"].strip()
+        if Acreedor.objects.filter(
+            usuario=self.user,
+            nombre__iexact=nombre,
+        ).exclude(pk=self.instance.pk).exists():
+            raise forms.ValidationError("Ya existe un acreedor con ese nombre.")
+        return nombre
+
+
 class PresupuestoMensualForm(UserScopedModelForm):
     MONTH_CHOICES = [
         (1, "Enero"),

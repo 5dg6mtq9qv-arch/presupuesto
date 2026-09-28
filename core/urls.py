@@ -39,6 +39,7 @@ urlpatterns = [
     path("movimientos/ingresos/nuevo/", views.movimiento_ingreso_create, name="movimiento_ingreso_create"),
     path("movimientos/gastos/nuevo/", views.movimiento_gasto_create, name="movimiento_gasto_create"),
     path("movimientos/opciones/nueva/", views.movimiento_opcion_create, name="movimiento_opcion_create"),
+    path("acreedores/nuevo-rapido/", views.acreedor_rapido_create, name="acreedor_rapido_create"),
     path("movimientos/<int:pk>/editar/", views.movimiento_update, name="movimiento_update"),
     path("movimientos/<int:pk>/confirmar/", views.movimiento_confirmar, name="movimiento_confirmar"),
     path("movimientos/<int:pk>/eliminar/", views.movimiento_delete, name="movimiento_delete"),

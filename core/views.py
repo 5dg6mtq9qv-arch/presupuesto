@@ -23,6 +23,7 @@ from django.views.decorators.http import require_POST
 
 from .forms import (
     AjusteSaldoForm,
+    AcreedorForm,
     CategoriaForm,
     ConfirmarMovimientoForm,
     ConfirmarPagoDeudaForm,
@@ -2491,6 +2492,32 @@ def movimiento_opcion_create(request):
 
 
 @login_required
+@require_POST
+def acreedor_rapido_create(request):
+    form = AcreedorForm(request.POST, user=request.user)
+    if not form.is_valid():
+        errors = {
+            field: [item["message"] for item in items]
+            for field, items in form.errors.get_json_data().items()
+        }
+        return JsonResponse({"ok": False, "errors": errors}, status=400)
+    form.instance.usuario = request.user
+    acreedor = form.save()
+    registrar_auditoria(
+        request,
+        RegistroAuditoria.Accion.CREAR,
+        acreedor,
+        cambios={"origen": "formulario_deuda"},
+    )
+    return JsonResponse(
+        {
+            "ok": True,
+            "option": {"id": acreedor.pk, "label": acreedor.nombre},
+        }
+    )
+
+
+@login_required
 @transaction.atomic
 def movimiento_confirmar(request, pk):
     movimiento = get_object_or_404(
@@ -2640,7 +2667,18 @@ def deuda_create(request):
             return redirect("deuda_list")
     else:
         form = DeudaForm(user=request.user)
-    return render(request, "core/deuda_form.html", {"form": form, "title": "Nueva deuda"})
+    categorias_principales = list(
+        Categoria.objects.filter(
+            usuario=request.user,
+            tipo=Categoria.Tipo.FINANZAS,
+            parent__isnull=True,
+        ).order_by("nombre").values("id", "nombre", "color")
+    )
+    return render(
+        request,
+        "core/deuda_form.html",
+        {"form": form, "title": "Nueva deuda", "categorias_principales": categorias_principales},
+    )
 
 
 @login_required
@@ -2686,7 +2724,18 @@ def deuda_update(request, pk):
             return redirect("deuda_list")
     else:
         form = DeudaForm(instance=deuda, user=request.user)
-    return render(request, "core/deuda_form.html", {"form": form, "title": "Editar deuda"})
+    categorias_principales = list(
+        Categoria.objects.filter(
+            usuario=request.user,
+            tipo=Categoria.Tipo.FINANZAS,
+            parent__isnull=True,
+        ).order_by("nombre").values("id", "nombre", "color")
+    )
+    return render(
+        request,
+        "core/deuda_form.html",
+        {"form": form, "title": "Editar deuda", "categorias_principales": categorias_principales},
+    )
 
 
 @login_required

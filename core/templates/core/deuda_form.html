@@ -4,6 +4,7 @@
 {% block page_subtitle %}Controla saldo, vencimiento y estado de cada deuda{% endblock %}
 
 {% block content %}
+{{ categorias_principales|json_script:"debt-category-parents" }}
 <section class="panel form-panel">
   <form class="expense-flow-form" id="debt-flow-form" method="post">
     {% csrf_token %}
@@ -213,6 +214,196 @@
     });
     const errorPanel = panels.find(panel => panel.querySelector(".has-error"));
     showStep(errorPanel ? Number(errorPanel.dataset.debtPanel) : 1);
+  })();
+
+  (() => {
+    const form = document.getElementById("debt-flow-form");
+    const creditorSelect = document.getElementById("id_acreedor_existente");
+    const legacyCreditorInput = document.getElementById("id_nuevo_acreedor");
+    const categorySelect = document.getElementById("id_categoria");
+    if (!form || !window.Swal) return;
+    legacyCreditorInput?.closest(".unfold-field")?.setAttribute("hidden", "hidden");
+    const csrfToken = form.querySelector('input[name="csrfmiddlewaretoken"]')?.value || "";
+    const parentData = document.getElementById("debt-category-parents");
+    const parents = parentData ? JSON.parse(parentData.textContent) : [];
+    const swalTheme = {
+      customClass: { popup: "finance-swal", confirmButton: "finance-swal-confirm", cancelButton: "finance-swal-cancel" },
+      buttonsStyling: false,
+      reverseButtons: true,
+    };
+    const errorsText = errors => Object.values(errors || {}).flat().join(" ") || "No se pudo guardar.";
+    const postOption = async (endpoint, values) => {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "X-CSRFToken": csrfToken,
+          "X-Requested-With": "XMLHttpRequest",
+          "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+        },
+        body: new URLSearchParams({ ...values, csrfmiddlewaretoken: csrfToken }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(errorsText(data.errors));
+      return data;
+    };
+    const selectOption = (select, optionData) => {
+      let option = [...select.options].find(item => String(item.value) === String(optionData.id));
+      if (!option) {
+        option = new Option(optionData.label, optionData.id, true, true);
+        select.add(option);
+      }
+      option.selected = true;
+      option.text = optionData.label;
+      if (optionData.color) option.dataset.color = optionData.color;
+      if (window.jQuery) window.jQuery(select).val(String(optionData.id)).trigger("change");
+      else select.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+    const labeledInput = (labelText, type = "text", placeholder = "") => {
+      const wrap = document.createElement("div");
+      const label = document.createElement("label");
+      label.className = "form-label";
+      label.textContent = labelText;
+      const input = document.createElement(type === "textarea" ? "textarea" : "input");
+      if (type !== "textarea") input.type = type;
+      input.className = "form-control mb-3";
+      input.placeholder = placeholder;
+      wrap.append(label, input);
+      return { wrap, input };
+    };
+    const colorField = () => {
+      const wrap = document.createElement("div");
+      wrap.className = "quick-color-field";
+      const input = document.createElement("input");
+      input.type = "color";
+      input.value = "#ef4444";
+      input.setAttribute("aria-label", "Seleccionar color");
+      const text = document.createElement("span");
+      const update = () => { text.textContent = `Se usará en gráficas · ${input.value.toUpperCase()}`; };
+      input.addEventListener("input", update);
+      update();
+      wrap.append(input, text);
+      return { wrap, input };
+    };
+    const addButton = (select, label, handler) => {
+      const field = select?.closest(".unfold-field");
+      if (!field) return;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "btn btn-sm btn-outline-primary mt-2";
+      button.innerHTML = '<span class="material-symbols-outlined">add</span><span></span>';
+      button.lastElementChild.textContent = label;
+      button.addEventListener("click", handler);
+      field.append(button);
+    };
+
+    const createCreditor = async () => {
+      const content = document.createElement("div");
+      content.className = "quick-option-form";
+      const name = labeledInput("Nombre *", "text", "Ej.: Banco, cooperativa o persona");
+      const phone = labeledInput("Teléfono", "tel", "Opcional");
+      const email = labeledInput("Correo electrónico", "email", "Opcional");
+      const note = labeledInput("Nota", "textarea", "Información útil del acreedor");
+      content.append(name.wrap, phone.wrap, email.wrap, note.wrap);
+      const result = await Swal.fire({
+        ...swalTheme,
+        title: "Nuevo acreedor",
+        html: content,
+        showCancelButton: true,
+        confirmButtonText: "Crear y seleccionar",
+        cancelButtonText: "Cancelar",
+        focusConfirm: false,
+        didOpen: () => name.input.focus(),
+        preConfirm: async () => {
+          if (!name.input.value.trim()) {
+            Swal.showValidationMessage("Escribe el nombre del acreedor.");
+            return false;
+          }
+          try {
+            return await postOption("{% url 'acreedor_rapido_create' %}", {
+              nombre: name.input.value.trim(),
+              telefono: phone.input.value.trim(),
+              email: email.input.value.trim(),
+              nota: note.input.value.trim(),
+            });
+          } catch (error) {
+            Swal.showValidationMessage(error.message);
+            return false;
+          }
+        },
+      });
+      if (!result.isConfirmed || !result.value) return;
+      if (legacyCreditorInput) legacyCreditorInput.value = "";
+      selectOption(creditorSelect, result.value.option);
+    };
+
+    const createCategory = async () => {
+      const content = document.createElement("div");
+      content.className = "quick-option-form";
+      const type = document.createElement("select");
+      type.className = "form-select mb-3";
+      type.innerHTML = '<option value="subcategoria">Subcategoría</option><option value="categoria">Categoría principal</option>';
+      const typeLabel = document.createElement("label");
+      typeLabel.className = "form-label";
+      typeLabel.textContent = "Qué deseas crear";
+      const parentWrap = document.createElement("div");
+      const parentLabel = document.createElement("label");
+      parentLabel.className = "form-label";
+      parentLabel.textContent = "Categoría principal";
+      const parent = document.createElement("select");
+      parent.className = "form-select mb-3";
+      parent.replaceChildren(...parents.map(item => new Option(item.nombre, item.id)));
+      parentWrap.append(parentLabel, parent);
+      const name = labeledInput("Nombre *", "text", "Ej.: Préstamos personales");
+      const categoryColor = colorField();
+      const colorLabel = document.createElement("label");
+      colorLabel.className = "form-label";
+      colorLabel.textContent = "Color";
+      content.append(typeLabel, type, parentWrap, name.wrap, colorLabel, categoryColor.wrap);
+      const syncType = () => { parentWrap.hidden = type.value !== "subcategoria"; };
+      type.addEventListener("change", syncType);
+      if (!parents.length) type.value = "categoria";
+      syncType();
+      const result = await Swal.fire({
+        ...swalTheme,
+        title: "Nueva clasificación",
+        html: content,
+        showCancelButton: true,
+        confirmButtonText: "Crear y seleccionar",
+        cancelButtonText: "Cancelar",
+        focusConfirm: false,
+        didOpen: () => name.input.focus(),
+        preConfirm: async () => {
+          if (!name.input.value.trim()) {
+            Swal.showValidationMessage("Escribe un nombre.");
+            return false;
+          }
+          if (type.value === "subcategoria" && !parent.value) {
+            Swal.showValidationMessage("Selecciona una categoría principal.");
+            return false;
+          }
+          try {
+            return await postOption("{% url 'movimiento_opcion_create' %}", {
+              tipo_opcion: type.value,
+              parent: type.value === "subcategoria" ? parent.value : "",
+              nombre: name.input.value.trim(),
+              color: categoryColor.input.value,
+            });
+          } catch (error) {
+            Swal.showValidationMessage(error.message);
+            return false;
+          }
+        },
+      });
+      if (!result.isConfirmed || !result.value) return;
+      selectOption(categorySelect, result.value.option);
+      if (result.value.parent && !parents.some(item => String(item.id) === String(result.value.parent.id))) {
+        parents.push(result.value.parent);
+        parents.sort((left, right) => left.nombre.localeCompare(right.nombre, "es"));
+      }
+    };
+
+    addButton(creditorSelect, "Nuevo acreedor", createCreditor);
+    addButton(categorySelect, "Nueva categoría o subcategoría", createCategory);
   })();
 </script>
 {% endblock %}

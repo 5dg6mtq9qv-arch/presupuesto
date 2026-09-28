@@ -627,8 +627,32 @@ class GuidedFinancialFlowsTests(TestCase):
         self.assertContains(deuda, "Define las condiciones")
         self.assertContains(deuda, "Revisa el plan")
         self.assertContains(deuda, "id_tasa_interes_anual")
+        self.assertContains(deuda, "Nuevo acreedor")
+        self.assertContains(deuda, "Nueva categoría o subcategoría")
         self.assertContains(recurrentes, "¿Qué se repite?")
         self.assertContains(recurrentes, "¿Cómo debe aplicarse?")
+
+    def test_crea_acreedor_desde_modal_y_rechaza_duplicados(self):
+        response = self.client.post(
+            reverse("acreedor_rapido_create"),
+            {
+                "nombre": "Banco Central",
+                "telefono": "0999999999",
+                "email": "contacto@example.com",
+                "nota": "Crédito personal",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        acreedor = Acreedor.objects.get(usuario=self.user, nombre="Banco Central")
+        self.assertEqual(response.json()["option"]["id"], acreedor.pk)
+        self.assertEqual(acreedor.telefono, "0999999999")
+        duplicate = self.client.post(
+            reverse("acreedor_rapido_create"),
+            {"nombre": "banco central"},
+        )
+        self.assertEqual(duplicate.status_code, 400)
+        self.assertIn("nombre", duplicate.json()["errors"])
 
     def test_presupuesto_sugiere_limite_desde_tres_meses_reales(self):
         parent = Categoria.objects.create(
