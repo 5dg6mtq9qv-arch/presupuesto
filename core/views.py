@@ -19,6 +19,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.dateparse import parse_date
+from django.views.decorators.http import require_POST
 
 from .forms import (
     AjusteSaldoForm,
@@ -68,6 +69,7 @@ from .services import (
     crear_historial_inicial_deuda,
     cuotas_deudas_programadas,
     ensure_user_finance_setup,
+    generar_recomendaciones_financieras,
     generar_pagos_deudas,
     movimientos_recurrentes_programados,
     reprogramar_fechas_cuotas,
@@ -797,24 +799,36 @@ def reporte_financiero_pdf(request):
     pagos_deuda = PagoDeuda.objects.filter(deuda__usuario=request.user, estado=PagoDeuda.Estado.CONFIRMADO, fecha__range=(fecha_inicio, fecha_fin)).aggregate(total=Sum("monto"))["total"] or Decimal("0")
     margen = ingresos - gastos - pagos_deuda
 
-    sugerencias = []
-    if not ingresos:
-        sugerencias.append("Registra tus ingresos para medir cuanto de ellos absorben los gastos y las deudas.")
-    elif gastos > ingresos * Decimal("0.80"):
-        sugerencias.append("Los gastos consumen mas del 80% de los ingresos. Revisa primero las categorias de mayor peso.")
-    if gastos_categoria and gastos > 0:
-        principal = gastos_categoria[0]
-        porcentaje = Decimal(str(principal["total"])) / gastos * Decimal("100")
-        objetivo = Decimal(str(principal["total"])) * Decimal("0.10")
-        sugerencias.append(f'{principal["categoria"]} concentra {porcentaje:.1f}% del gasto. Una reduccion inicial del 10% liberaria aproximadamente {objetivo:.2f}.')
     recurrentes_gasto = [item for item in recurrentes if item.tipo == MovimientoFinanciero.Tipo.GASTO]
-    if recurrentes_gasto:
-        total_recurrente = sum((item.monto for item in recurrentes_gasto), Decimal("0"))
-        sugerencias.append(f"Revisa {len(recurrentes_gasto)} gastos recurrentes activos por un total mensual de {total_recurrente:.2f}; cancela o renegocia los que ya no aporten valor.")
-    if saldo_deudas and ingresos and saldo_deudas > ingresos:
-        sugerencias.append("La deuda activa supera los ingresos del periodo. Prioriza la obligacion de mayor costo financiero sin descuidar pagos minimos.")
-    if not sugerencias:
-        sugerencias.append("El periodo luce equilibrado. Mantener presupuestos por categoria ayudara a detectar desviaciones temprano.")
+    inicio_proximas_cuotas = max(hoy, fecha_fin)
+    cuotas_proximas_detalle, _cuotas_proximas_total = cuotas_deudas_programadas(
+        request.user,
+        inicio_proximas_cuotas,
+        inicio_proximas_cuotas + timedelta(days=30),
+    )
+    cuotas_proximas = sum(
+        (
+            cuota["monto"]
+            for cuota in cuotas_proximas_detalle
+            if cuota["estado"] == PagoDeuda.Estado.PENDIENTE
+        ),
+        Decimal("0"),
+    )
+    presupuesto_reporte = []
+    if fecha_inicio.year == fecha_fin.year and fecha_inicio.month == fecha_fin.month:
+        presupuesto_reporte = resumen_presupuesto(request.user, fecha_inicio)["items"]
+    sugerencias = generar_recomendaciones_financieras(
+        ingresos=ingresos,
+        gastos=gastos,
+        pagos_deuda=pagos_deuda,
+        cuotas_proximas=cuotas_proximas,
+        saldo_deudas=saldo_deudas,
+        gastos_categoria=gastos_categoria,
+        gastos_recurrentes=recurrentes_gasto,
+        movimientos_count=movimientos.count(),
+        sin_categoria_count=movimientos.filter(categoria__isnull=True).count(),
+        presupuestos=presupuesto_reporte,
+    )
 
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=18 * mm, leftMargin=18 * mm, topMargin=18 * mm, bottomMargin=18 * mm, title="Informe financiero personal")
@@ -863,7 +877,11 @@ def reporte_financiero_pdf(request):
     tabla_categorias.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#fef3e2")), ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("GRID", (0, 0), (-1, -1), .3, colors.HexColor("#d9e2e8")), ("FONTSIZE", (0, 0), (-1, -1), 8), ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
     story.extend([tabla_categorias, Paragraph("Sugerencias y mejoras", styles["Section"])])
     for numero, sugerencia in enumerate(sugerencias, 1):
-        story.append(Paragraph(f"{numero}. {escape(sugerencia)}", styles["BodyText"]))
+        impacto = ""
+        if sugerencia["impacto"] is not None:
+            impacto = f' Monto orientativo: {sugerencia["impacto"]:.2f}.'
+        texto = f'{sugerencia["titulo"]}. {sugerencia["detalle"]} Acción: {sugerencia["accion"]}.{impacto}'
+        story.append(Paragraph(f"{numero}. {escape(texto)}", styles["BodyText"]))
         story.append(Spacer(1, 2 * mm))
     story.extend([Paragraph("Situacion de deuda", styles["Section"]), Paragraph(f"Saldo activo: {saldo_deudas:.2f}. Pagado durante el periodo: {pagos_deuda:.2f}.", styles["BodyText"]), Spacer(1, 5 * mm), Paragraph("Las sugerencias son orientativas y se basan unicamente en los datos registrados en el sistema.", styles["SmallMuted"])])
 
@@ -1357,7 +1375,7 @@ def analisis_financiero(request):
     if fecha_inicio > fecha_fin:
         fecha_inicio, fecha_fin = fecha_fin, fecha_inicio
 
-    anios_disponibles = range(max(primera_fecha.year, hoy.year - 5), hoy.year + 2)
+    anios_disponibles = range(min(primera_fecha.year, hoy.year), hoy.year + 2)
     meses_disponibles = [
         (1, "Enero"),
         (2, "Febrero"),
@@ -1374,77 +1392,111 @@ def analisis_financiero(request):
     ]
 
     tipo = request.GET.get("tipo", "todos")
+    if tipo not in {"todos", MovimientoFinanciero.Tipo.INGRESO, MovimientoFinanciero.Tipo.GASTO}:
+        tipo = "todos"
     categoria_id = request.GET.get("categoria", "")
     if categoria_id and not categoria_id.isdigit():
         categoria_id = ""
-    categorias = Categoria.objects.filter(usuario=request.user).select_related("parent").order_by(
+    categorias = Categoria.objects.filter(
+        usuario=request.user,
+        tipo=Categoria.Tipo.FINANZAS,
+    ).select_related("parent").order_by(
         "tipo",
         "parent__nombre",
         "nombre",
     )
 
+    categoria_ids = []
+    if categoria_id:
+        categoria_seleccionada = categorias.filter(pk=categoria_id).first()
+        if categoria_seleccionada:
+            categoria_ids = [categoria_seleccionada.pk]
+            if not categoria_seleccionada.parent_id:
+                categoria_ids.extend(
+                    categoria_seleccionada.subcategorias.values_list("pk", flat=True)
+                )
+        else:
+            categoria_id = ""
+
     movimientos = MovimientoFinanciero.objects.filter(
         usuario=request.user,
         estado=MovimientoFinanciero.Estado.CONFIRMADO,
-        fecha__lte=fecha_fin,
+        fecha__range=(fecha_inicio, fecha_fin),
     )
     if tipo in {MovimientoFinanciero.Tipo.INGRESO, MovimientoFinanciero.Tipo.GASTO}:
         movimientos = movimientos.filter(tipo=tipo)
-    if categoria_id:
-        movimientos = movimientos.filter(categoria_id=categoria_id)
+    if categoria_ids:
+        movimientos = movimientos.filter(categoria_id__in=categoria_ids)
     recurrentes_programados = movimientos_recurrentes_programados(
         request.user,
         fecha_inicio,
         fecha_fin,
         tipo=tipo,
-        categoria_id=categoria_id,
+        categoria_id=categoria_ids,
     )
+
+    # A past period must never be completed with transactions that did not happen.
+    # Only still-actionable occurrences (today or later) are presented as planned.
+    recurrentes_pendientes = [
+        movimiento
+        for movimiento in recurrentes_programados
+        if movimiento["fecha"] >= hoy
+    ]
 
     ingresos_confirmados = movimientos.filter(
         tipo=MovimientoFinanciero.Tipo.INGRESO,
     ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
     ingresos_recurrentes = sum(
-        (movimiento["monto"] for movimiento in recurrentes_programados if movimiento["tipo"] == MovimientoFinanciero.Tipo.INGRESO),
+        (movimiento["monto"] for movimiento in recurrentes_pendientes if movimiento["tipo"] == MovimientoFinanciero.Tipo.INGRESO),
         Decimal("0"),
     )
-    ingresos = ingresos_confirmados + ingresos_recurrentes
+    ingresos = ingresos_confirmados
     gastos_confirmados = movimientos.filter(
         tipo=MovimientoFinanciero.Tipo.GASTO,
     ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
     gastos_recurrentes = sum(
-        (movimiento["monto"] for movimiento in recurrentes_programados if movimiento["tipo"] == MovimientoFinanciero.Tipo.GASTO),
+        (movimiento["monto"] for movimiento in recurrentes_pendientes if movimiento["tipo"] == MovimientoFinanciero.Tipo.GASTO),
         Decimal("0"),
     )
-    gastos = gastos_confirmados + gastos_recurrentes
+    gastos = gastos_confirmados
     margen = ingresos - gastos
 
     deudas_activas = Deuda.objects.filter(
         usuario=request.user,
         estado=Deuda.Estado.ACTIVA,
     )
-    if categoria_id:
-        deudas_activas = deudas_activas.filter(categoria_id=categoria_id)
+    if tipo == MovimientoFinanciero.Tipo.INGRESO:
+        deudas_activas = deudas_activas.none()
+    if categoria_ids:
+        deudas_activas = deudas_activas.filter(categoria_id__in=categoria_ids)
     saldo_deudas = deudas_activas.aggregate(total=Sum("saldo_actual"))["total"] or Decimal("0")
-    if periodo == "todo":
-        cuotas_deuda_periodo = saldo_deudas
-        etiqueta_deudas_balance = "Deudas activas"
-    else:
-        cuotas_deuda_detalle, cuotas_deuda_periodo = cuotas_deudas_programadas(
+    cuotas_deuda_detalle = []
+    if tipo != MovimientoFinanciero.Tipo.INGRESO:
+        cuotas_deuda_detalle, _cuotas_deuda_total = cuotas_deudas_programadas(
             request.user,
             fecha_inicio,
             fecha_fin,
-            categoria_id=categoria_id,
+            categoria_id=categoria_ids,
         )
-        etiqueta_deudas_balance = "Cuotas del periodo"
+    cuotas_pendientes = [
+        cuota
+        for cuota in cuotas_deuda_detalle
+        if cuota["estado"] == PagoDeuda.Estado.PENDIENTE and cuota["fecha"] >= hoy
+    ]
+    cuotas_deuda_periodo = sum((cuota["monto"] for cuota in cuotas_pendientes), Decimal("0"))
+    etiqueta_deudas_balance = "Cuotas pendientes"
     pagos_periodo = PagoDeuda.objects.filter(
         deuda__usuario=request.user,
         estado=PagoDeuda.Estado.CONFIRMADO,
         fecha__range=(fecha_inicio, fecha_fin),
     )
-    if categoria_id:
-        pagos_periodo = pagos_periodo.filter(deuda__categoria_id=categoria_id)
+    if tipo == MovimientoFinanciero.Tipo.INGRESO:
+        pagos_periodo = pagos_periodo.none()
+    if categoria_ids:
+        pagos_periodo = pagos_periodo.filter(deuda__categoria_id__in=categoria_ids)
     pagos_total = pagos_periodo.aggregate(total=Sum("monto"))["total"] or Decimal("0")
-    posicion_neta = margen - cuotas_deuda_periodo
+    posicion_neta = margen - pagos_total
+    resultado_esperado = posicion_neta + ingresos_recurrentes - gastos_recurrentes - cuotas_deuda_periodo
     calculo_balance = {
         "fecha_inicio": fecha_inicio,
         "fecha_fin": fecha_fin,
@@ -1455,13 +1507,17 @@ def analisis_financiero(request):
         "gastos_recurrentes": gastos_recurrentes,
         "gastos": gastos,
         "margen": margen,
+        "pagos_confirmados": pagos_total,
+        "resultado_real": posicion_neta,
+        "ingresos_programados": ingresos_recurrentes,
+        "gastos_programados": gastos_recurrentes,
         "obligaciones": cuotas_deuda_periodo,
         "obligaciones_label": etiqueta_deudas_balance,
-        "posicion_neta": posicion_neta,
+        "posicion_neta": resultado_esperado,
         "pagos_deuda": pagos_total,
         "saldo_deudas": saldo_deudas,
-        "cuotas_deuda_count": len(cuotas_deuda_detalle) if periodo != "todo" else deudas_activas.count(),
-        "usa_saldo_total_deudas": periodo == "todo",
+        "cuotas_deuda_count": len(cuotas_pendientes),
+        "usa_saldo_total_deudas": False,
     }
 
     uso_ingresos = Decimal("0")
@@ -1488,25 +1544,16 @@ def analisis_financiero(request):
 
     flujo_mensual = []
     for inicio_periodo, fin_periodo, etiqueta_periodo in periodos_flujo:
-        movimientos_periodo = movimientos.filter(fecha__lt=fin_periodo)
-        recurrentes_periodo = [
-            movimiento for movimiento in recurrentes_programados
-            if movimiento["fecha"] < fin_periodo
-        ]
+        movimientos_periodo = movimientos.filter(
+            fecha__gte=inicio_periodo,
+            fecha__lt=fin_periodo,
+        )
         ingresos_periodo = movimientos_periodo.filter(
             tipo=MovimientoFinanciero.Tipo.INGRESO,
         ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
-        ingresos_periodo += sum(
-            (movimiento["monto"] for movimiento in recurrentes_periodo if movimiento["tipo"] == MovimientoFinanciero.Tipo.INGRESO),
-            Decimal("0"),
-        )
         gastos_periodo = movimientos_periodo.filter(
             tipo=MovimientoFinanciero.Tipo.GASTO,
         ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
-        gastos_periodo += sum(
-            (movimiento["monto"] for movimiento in recurrentes_periodo if movimiento["tipo"] == MovimientoFinanciero.Tipo.GASTO),
-            Decimal("0"),
-        )
         pagos_periodo_segmento = pagos_periodo.filter(fecha__gte=inicio_periodo, fecha__lt=fin_periodo).aggregate(
             total=Sum("monto")
         )["total"] or Decimal("0")
@@ -1520,41 +1567,130 @@ def analisis_financiero(request):
             }
         )
 
-    meses_con_datos = max(len(flujo_mensual), 1)
-    promedio_ingresos = ingresos / meses_con_datos
-    promedio_gastos = gastos / meses_con_datos
-    promedio_pagos = pagos_total / meses_con_datos
+    # Future values are a registered-commitments scenario, not a statistical
+    # prediction. This keeps the chart reproducible from the user's own data.
     proyeccion = []
+    base_proyeccion = max(hoy, fecha_fin).replace(day=1)
     for offset in range(1, 4):
-        mes = add_months(fecha_fin.replace(day=1), offset)
+        mes = add_months(base_proyeccion, offset)
+        siguiente_mes = add_months(mes, 1)
+        fin_mes = siguiente_mes - timedelta(days=1)
+        recurrentes_mes = movimientos_recurrentes_programados(
+            request.user,
+            mes,
+            fin_mes,
+            tipo=tipo,
+            categoria_id=categoria_ids,
+        )
+        ingresos_mes = sum(
+            (item["monto"] for item in recurrentes_mes if item["tipo"] == MovimientoFinanciero.Tipo.INGRESO),
+            Decimal("0"),
+        )
+        gastos_mes = sum(
+            (item["monto"] for item in recurrentes_mes if item["tipo"] == MovimientoFinanciero.Tipo.GASTO),
+            Decimal("0"),
+        )
+        cuotas_mes = []
+        if tipo != MovimientoFinanciero.Tipo.INGRESO:
+            cuotas_mes, _total_cuotas_mes = cuotas_deudas_programadas(
+                request.user,
+                mes,
+                fin_mes,
+                categoria_id=categoria_ids,
+            )
+        deudas_mes = sum(
+            (item["monto"] for item in cuotas_mes if item["estado"] == PagoDeuda.Estado.PENDIENTE),
+            Decimal("0"),
+        )
         proyeccion.append(
             {
                 "mes": mes.strftime("%m/%Y"),
-                "ingresos": float(promedio_ingresos),
-                "gastos": float(promedio_gastos),
-                "deudas": float(promedio_pagos),
-                "margen": float(promedio_ingresos - promedio_gastos - promedio_pagos),
+                "ingresos": float(ingresos_mes),
+                "gastos": float(gastos_mes),
+                "deudas": float(deudas_mes),
+                "margen": float(ingresos_mes - gastos_mes - deudas_mes),
             }
         )
 
     gastos_categoria = gastos_por_categoria(
         movimientos.filter(tipo=MovimientoFinanciero.Tipo.GASTO),
         10,
-        extras=[
-            movimiento for movimiento in recurrentes_programados
-            if movimiento["tipo"] == MovimientoFinanciero.Tipo.GASTO
-        ],
     )
 
     top_categoria = gastos_categoria[0] if gastos_categoria else None
-    estado = "Sin ingresos registrados"
+    estado = "Sin ingresos confirmados"
     if ingresos:
         if posicion_neta >= 0:
-            estado = "Balance saludable"
+            estado = "Resultado de caja positivo"
         elif margen >= 0:
-            estado = "Margen positivo, deuda alta"
+            estado = "Margen positivo; pagos de deuda altos"
         else:
             estado = "Gastos sobre ingresos"
+
+    movimientos_confirmados_count = movimientos.count()
+    sin_categoria_count = movimientos.filter(categoria__isnull=True).count()
+    if movimientos_confirmados_count == 0:
+        calidad_datos = "Sin datos confirmados en el periodo"
+    elif sin_categoria_count:
+        calidad_datos = "Revisar movimientos sin categoría"
+    elif movimientos_confirmados_count < 10:
+        calidad_datos = "Muestra limitada"
+    else:
+        calidad_datos = "Datos completos para el periodo"
+
+    # Advice always evaluates the complete selected period. Display filters are
+    # useful for exploration but must not distort overall financial guidance.
+    movimientos_asesor = MovimientoFinanciero.objects.filter(
+        usuario=request.user,
+        estado=MovimientoFinanciero.Estado.CONFIRMADO,
+        fecha__range=(fecha_inicio, fecha_fin),
+    )
+    ingresos_asesor = movimientos_asesor.filter(
+        tipo=MovimientoFinanciero.Tipo.INGRESO,
+    ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    gastos_asesor_qs = movimientos_asesor.filter(tipo=MovimientoFinanciero.Tipo.GASTO)
+    gastos_asesor = gastos_asesor_qs.aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    pagos_asesor = PagoDeuda.objects.filter(
+        deuda__usuario=request.user,
+        estado=PagoDeuda.Estado.CONFIRMADO,
+        fecha__range=(fecha_inicio, fecha_fin),
+    ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    inicio_proximas_cuotas = max(hoy, fecha_fin)
+    cuotas_proximas_detalle, _cuotas_proximas_total = cuotas_deudas_programadas(
+        request.user,
+        inicio_proximas_cuotas,
+        inicio_proximas_cuotas + timedelta(days=30),
+    )
+    cuotas_proximas = sum(
+        (
+            cuota["monto"]
+            for cuota in cuotas_proximas_detalle
+            if cuota["estado"] == PagoDeuda.Estado.PENDIENTE
+        ),
+        Decimal("0"),
+    )
+    presupuesto_asesor = []
+    if fecha_inicio.year == fecha_fin.year and fecha_inicio.month == fecha_fin.month:
+        presupuesto_asesor = resumen_presupuesto(request.user, fecha_inicio)["items"]
+    sugerencias = generar_recomendaciones_financieras(
+        ingresos=ingresos_asesor,
+        gastos=gastos_asesor,
+        pagos_deuda=pagos_asesor,
+        cuotas_proximas=cuotas_proximas,
+        saldo_deudas=Deuda.objects.filter(
+            usuario=request.user,
+            estado=Deuda.Estado.ACTIVA,
+        ).aggregate(total=Sum("saldo_actual"))["total"] or Decimal("0"),
+        gastos_categoria=gastos_por_categoria(gastos_asesor_qs, 10),
+        gastos_recurrentes=MovimientoRecurrente.objects.filter(
+            usuario=request.user,
+            activo=True,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+        ),
+        movimientos_count=movimientos_asesor.count(),
+        sin_categoria_count=movimientos_asesor.filter(categoria__isnull=True).count(),
+        presupuestos=presupuesto_asesor,
+    )
 
     chart_data = {
         "flujo": {
@@ -1570,8 +1706,8 @@ def analisis_financiero(request):
             "colors": [item["color"] for item in gastos_categoria],
         },
         "balance": {
-            "labels": ["Ingresos", "Gastos", etiqueta_deudas_balance, "Posición neta"],
-            "values": [float(ingresos), float(gastos), float(cuotas_deuda_periodo), float(posicion_neta)],
+            "labels": ["Ingresos confirmados", "Gastos confirmados", "Pagos de deuda", "Resultado de caja"],
+            "values": [float(ingresos), float(gastos), float(pagos_total), float(posicion_neta)],
         },
         "proyeccion": {
             "labels": [item["mes"] for item in proyeccion],
@@ -1604,10 +1740,17 @@ def analisis_financiero(request):
             "etiqueta_deudas_balance": etiqueta_deudas_balance,
             "pagos_total": pagos_total,
             "posicion_neta": posicion_neta,
+            "resultado_esperado": resultado_esperado,
             "uso_ingresos": uso_ingresos,
             "calculo_balance": calculo_balance,
             "top_categoria": top_categoria,
             "estado": estado,
+            "calidad_datos": calidad_datos,
+            "movimientos_confirmados_count": movimientos_confirmados_count,
+            "sin_categoria_count": sin_categoria_count,
+            "recurrentes_pendientes_count": len(recurrentes_pendientes),
+            "cuotas_pendientes_count": len(cuotas_pendientes),
+            "sugerencias": sugerencias,
             "chart_data": chart_data,
         },
     )
@@ -2005,14 +2148,21 @@ def movimiento_form_context(request, tipo, movimiento=None):
     if movimiento:
         title = "Editar ingreso" if tipo == MovimientoFinanciero.Tipo.INGRESO else "Editar gasto"
     back_tipo = tipo
+    categorias_principales = list(
+        Categoria.objects.filter(
+            usuario=request.user,
+            tipo=Categoria.Tipo.FINANZAS,
+            parent__isnull=True,
+        ).order_by("nombre").values("id", "nombre", "color")
+    )
 
-    return tiene_categorias, title, back_tipo
+    return tiene_categorias, title, back_tipo, categorias_principales
 
 
 @login_required
 def movimiento_ingreso_create(request):
     tipo = MovimientoFinanciero.Tipo.INGRESO
-    tiene_categorias, title, back_tipo = movimiento_form_context(request, tipo)
+    tiene_categorias, title, back_tipo, categorias_principales = movimiento_form_context(request, tipo)
     if request.method == "POST":
         form = MovimientoFinancieroForm(request.POST, request.FILES, user=request.user, tipo=tipo)
         if form.is_valid():
@@ -2031,6 +2181,7 @@ def movimiento_ingreso_create(request):
             "tipo": tipo,
             "back_tipo": back_tipo,
             "tiene_categorias": tiene_categorias,
+            "categorias_principales": categorias_principales,
         },
     )
 
@@ -2038,7 +2189,7 @@ def movimiento_ingreso_create(request):
 @login_required
 def movimiento_gasto_create(request):
     tipo = MovimientoFinanciero.Tipo.GASTO
-    tiene_categorias, title, back_tipo = movimiento_form_context(request, tipo)
+    tiene_categorias, title, back_tipo, categorias_principales = movimiento_form_context(request, tipo)
     if request.method == "POST":
         form = MovimientoFinancieroForm(request.POST, request.FILES, user=request.user, tipo=tipo)
         if form.is_valid():
@@ -2057,6 +2208,7 @@ def movimiento_gasto_create(request):
             "tipo": tipo,
             "back_tipo": back_tipo,
             "tiene_categorias": tiene_categorias,
+            "categorias_principales": categorias_principales,
         },
     )
 
@@ -2068,7 +2220,7 @@ def movimiento_update(request, pk):
         messages.error(request, "No puedes editar un movimiento eliminado.")
         return redirect(f"{reverse('movimiento_list')}?tipo={movimiento.tipo}")
     tipo = movimiento.tipo
-    tiene_categorias, title, back_tipo = movimiento_form_context(request, tipo, movimiento=movimiento)
+    tiene_categorias, title, back_tipo, categorias_principales = movimiento_form_context(request, tipo, movimiento=movimiento)
     if request.method == "POST":
         form = MovimientoFinancieroForm(
             request.POST,
@@ -2100,7 +2252,69 @@ def movimiento_update(request, pk):
             "tipo": tipo,
             "back_tipo": back_tipo,
             "tiene_categorias": tiene_categorias,
+            "categorias_principales": categorias_principales,
         },
+    )
+
+
+@login_required
+@require_POST
+def movimiento_opcion_create(request):
+    tipo_opcion = request.POST.get("tipo_opcion", "")
+    forms_por_tipo = {
+        "categoria": CategoriaPrincipalForm,
+        "subcategoria": SubcategoriaForm,
+        "etiqueta": EtiquetaForm,
+    }
+    form_class = forms_por_tipo.get(tipo_opcion)
+    if form_class is None:
+        return JsonResponse({"ok": False, "errors": {"tipo_opcion": ["Tipo de opción inválido."]}}, status=400)
+
+    form = form_class(request.POST, user=request.user)
+    if not form.is_valid():
+        errors = {
+            field: [item["message"] for item in items]
+            for field, items in form.errors.get_json_data().items()
+        }
+        return JsonResponse({"ok": False, "errors": errors}, status=400)
+
+    form.instance.usuario = request.user
+    instance = form.save()
+    selected = instance
+    parent_data = None
+    if tipo_opcion == "categoria":
+        selected = instance.subcategorias.filter(nombre__iexact="General").order_by("pk").first()
+        if selected is None:
+            selected = Categoria.objects.create(
+                usuario=request.user,
+                tipo=Categoria.Tipo.FINANZAS,
+                parent=instance,
+                nombre="General",
+                color=instance.color,
+            )
+        parent_data = {"id": instance.pk, "nombre": instance.nombre, "color": instance.color}
+
+    registrar_auditoria(
+        request,
+        RegistroAuditoria.Accion.CREAR,
+        instance,
+        cambios={"origen": "formulario_movimiento"},
+    )
+    if isinstance(selected, Categoria):
+        label = f"{selected.parent.nombre} > {selected.nombre}" if selected.parent_id else selected.nombre
+    else:
+        label = selected.nombre
+    return JsonResponse(
+        {
+            "ok": True,
+            "tipo_opcion": tipo_opcion,
+            "option": {
+                "id": selected.pk,
+                "label": label,
+                "color": selected.color,
+            },
+            "parent": parent_data,
+        }
     )
 
 

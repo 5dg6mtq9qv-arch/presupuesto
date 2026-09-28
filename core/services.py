@@ -109,6 +109,180 @@ DEFAULT_FINANCIAL_CATEGORIES = [
 ]
 
 
+def generar_recomendaciones_financieras(
+    *,
+    ingresos,
+    gastos,
+    pagos_deuda,
+    cuotas_proximas,
+    saldo_deudas,
+    gastos_categoria,
+    gastos_recurrentes,
+    movimientos_count,
+    sin_categoria_count,
+    presupuestos=None,
+):
+    """Return deterministic, explainable advice from registered financial data."""
+    dinero = Decimal("0.01")
+    ingresos = Decimal(ingresos)
+    gastos = Decimal(gastos)
+    pagos_deuda = Decimal(pagos_deuda)
+    cuotas_proximas = Decimal(cuotas_proximas)
+    saldo_deudas = Decimal(saldo_deudas)
+    resultado = ingresos - gastos - pagos_deuda
+    recomendaciones = []
+
+    def agregar(prioridad, tipo, titulo, detalle, impacto=None, accion=""):
+        recomendaciones.append(
+            {
+                "prioridad": prioridad,
+                "tipo": tipo,
+                "titulo": titulo,
+                "detalle": detalle,
+                "impacto": Decimal(impacto).quantize(dinero, rounding=ROUND_HALF_UP) if impacto is not None else None,
+                "accion": accion,
+            }
+        )
+
+    if movimientos_count == 0:
+        agregar(
+            10,
+            "datos",
+            "Registra movimientos para recibir recomendaciones",
+            "No hay movimientos confirmados en el periodo. Sin una base real no es responsable sugerir recortes o metas.",
+            accion="Registra ingresos y gastos con su fecha y categoría.",
+        )
+        return recomendaciones
+
+    if not ingresos:
+        agregar(
+            10,
+            "alerta",
+            "Falta registrar ingresos",
+            f"Hay {gastos:.2f} en gastos y {pagos_deuda:.2f} en pagos de deuda, pero ningún ingreso confirmado.",
+            impacto=gastos + pagos_deuda,
+            accion="Registra tus ingresos o define una fuente que cubra al menos ese importe.",
+        )
+    elif resultado < 0:
+        faltante = abs(resultado)
+        agregar(
+            10,
+            "alerta",
+            "Cierra el déficit del periodo",
+            f"Los gastos y pagos de deuda superan los ingresos en {faltante:.2f}.",
+            impacto=faltante,
+            accion=f"Reduce costos o aumenta ingresos en al menos {faltante:.2f} para llegar a equilibrio.",
+        )
+    else:
+        meta_ahorro = (ingresos * Decimal("0.10")).quantize(dinero, rounding=ROUND_HALF_UP)
+        if resultado >= meta_ahorro and meta_ahorro > 0:
+            agregar(
+                4,
+                "oportunidad",
+                "Aparta un ahorro automático",
+                f"El resultado disponible de {resultado:.2f} permite separar el 10% de los ingresos sin quedar en déficit.",
+                impacto=meta_ahorro,
+                accion=f"Programa un ahorro de {meta_ahorro:.2f} después de recibir tus ingresos.",
+            )
+        elif meta_ahorro > resultado:
+            brecha = meta_ahorro - resultado
+            agregar(
+                6,
+                "mejora",
+                "Construye margen para ahorrar",
+                f"Para ahorrar el 10% de tus ingresos faltan {brecha:.2f} de margen en este periodo.",
+                impacto=brecha,
+                accion="Busca esa mejora entre gastos variables o ingresos adicionales.",
+            )
+
+    if ingresos:
+        carga_actual = (gastos + pagos_deuda) / ingresos
+        if carga_actual >= Decimal("0.80"):
+            objetivo_costos = ingresos * Decimal("0.70")
+            reduccion = max(Decimal("0"), gastos + pagos_deuda - objetivo_costos)
+            agregar(
+                9,
+                "alerta" if carga_actual >= 1 else "mejora",
+                "Reduce la presión sobre tus ingresos",
+                f"Gastos y deuda consumen {carga_actual * Decimal('100'):.1f}% de los ingresos confirmados.",
+                impacto=reduccion,
+                accion=f"Un objetivo inicial es liberar {reduccion:.2f} para bajar la carga hacia el 70%.",
+            )
+
+        carga_proxima = cuotas_proximas / ingresos
+        if cuotas_proximas and carga_proxima >= Decimal("0.30"):
+            agregar(
+                8,
+                "deuda",
+                "Prepara las próximas cuotas",
+                f"Las cuotas registradas próximas equivalen al {carga_proxima * Decimal('100'):.1f}% de los ingresos del periodo.",
+                impacto=cuotas_proximas,
+                accion="Reserva primero las cuotas y evita añadir nuevas obligaciones hasta recuperar margen.",
+            )
+
+    if gastos_categoria and gastos > 0:
+        principal = gastos_categoria[0]
+        total_principal = Decimal(str(principal["total"]))
+        concentracion = total_principal / gastos
+        if concentracion >= Decimal("0.25"):
+            ahorro_posible = total_principal * Decimal("0.10")
+            agregar(
+                7,
+                "gasto",
+                f"Revisa la categoría {principal['categoria']}",
+                f"Concentra {concentracion * Decimal('100'):.1f}% del gasto ({total_principal:.2f}).",
+                impacto=ahorro_posible,
+                accion=f"Revisa sus movimientos: una mejora del 10% liberaría cerca de {ahorro_posible:.2f}.",
+            )
+
+    recurrentes = list(gastos_recurrentes)
+    if recurrentes:
+        total_recurrente = sum((Decimal(item.monto) for item in recurrentes), Decimal("0"))
+        mayor = max(recurrentes, key=lambda item: item.monto)
+        agregar(
+            5,
+            "recurrente",
+            "Audita tus costos recurrentes",
+            f"Hay {len(recurrentes)} costos activos por {total_recurrente:.2f} al mes; el mayor es {mayor.concepto} ({mayor.monto:.2f}).",
+            impacto=total_recurrente * Decimal("0.10"),
+            accion="Confirma que cada suscripción o servicio siga siendo necesario y renegocia el de mayor valor.",
+        )
+
+    excesos = [item for item in (presupuestos or []) if item["usado"] > item["presupuesto"]]
+    if excesos:
+        exceso_total = sum((item["usado"] - item["presupuesto"] for item in excesos), Decimal("0"))
+        nombres = ", ".join(item["categoria"] for item in excesos[:3])
+        agregar(
+            8,
+            "presupuesto",
+            "Corrige categorías sobre presupuesto",
+            f"{nombres} superan el límite definido por un total de {exceso_total:.2f}.",
+            impacto=exceso_total,
+            accion="Detén gastos no esenciales en esas categorías o ajusta el presupuesto si el límite ya no es realista.",
+        )
+
+    if sin_categoria_count:
+        agregar(
+            3,
+            "datos",
+            "Clasifica movimientos pendientes",
+            f"Hay {sin_categoria_count} movimientos sin categoría; esto reduce la precisión del análisis por tipo de gasto.",
+            accion="Asigna una categoría antes de tomar decisiones de recorte.",
+        )
+
+    if saldo_deudas and not any(item["tipo"] == "deuda" for item in recomendaciones):
+        agregar(
+            2,
+            "deuda",
+            "Mantén visible la deuda activa",
+            f"El saldo pendiente registrado es {saldo_deudas:.2f}.",
+            accion="Verifica fechas y montos de las cuotas para que la proyección permanezca actualizada.",
+        )
+
+    recomendaciones.sort(key=lambda item: item["prioridad"], reverse=True)
+    return recomendaciones[:6]
+
+
 @transaction.atomic
 def ensure_user_finance_setup(user):
     """Provision the minimum useful workspace for every new or existing user."""
@@ -321,7 +495,10 @@ def movimientos_recurrentes_programados(usuario, fecha_inicio, fecha_fin, tipo=N
     if tipo in {MovimientoFinanciero.Tipo.INGRESO, MovimientoFinanciero.Tipo.GASTO}:
         recurrentes = recurrentes.filter(tipo=tipo)
     if categoria_id:
-        recurrentes = recurrentes.filter(categoria_id=categoria_id)
+        if isinstance(categoria_id, (list, tuple, set)):
+            recurrentes = recurrentes.filter(categoria_id__in=categoria_id)
+        else:
+            recurrentes = recurrentes.filter(categoria_id=categoria_id)
 
     programados = []
     for recurrente in recurrentes:
@@ -499,7 +676,10 @@ def cuotas_deudas_programadas(usuario, fecha_inicio, fecha_fin, categoria_id=Non
         saldo_actual__gt=0,
     ).prefetch_related("pagos")
     if categoria_id:
-        deudas = deudas.filter(categoria_id=categoria_id)
+        if isinstance(categoria_id, (list, tuple, set)):
+            deudas = deudas.filter(categoria_id__in=categoria_id)
+        else:
+            deudas = deudas.filter(categoria_id=categoria_id)
 
     cuotas = []
     total = Decimal("0")

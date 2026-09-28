@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block page_title %}Análisis financiero{% endblock %}
-{% block page_subtitle %}Explora gastos, ingresos, deudas y proyecciones{% endblock %}
+{% block page_subtitle %}Resultados confirmados y compromisos registrados, sin mezclar hechos con estimaciones{% endblock %}
 
 {% block content %}
 {{ chart_data|json_script:"analysis-data" }}
@@ -81,29 +81,73 @@
 <div class="wallet-hero">
   <div>
     <span class="badge rounded-pill {% if posicion_neta >= 0 %}text-bg-success{% else %}text-bg-warning{% endif %} mb-2">{{ estado }}</span>
-    <h2>Posición neta: <span class="{% if posicion_neta >= 0 %}text-success{% else %}text-warning{% endif %}">{{ posicion_neta }}</span></h2>
-    <p class="mb-0 text-muted">Resultado estimado con saldo acumulado y obligaciones del periodo.</p>
+    <h2>Resultado de caja: <span class="{% if posicion_neta >= 0 %}text-success{% else %}text-warning{% endif %}">{{ posicion_neta }}</span></h2>
+    <p class="mb-0 text-muted">Ingresos y gastos confirmados, menos pagos de deuda confirmados, entre {{ fecha_inicio }} y {{ fecha_fin }}.</p>
   </div>
 </div>
 
 <div class="grid">
   <section class="panel metric green">
-    <div class="metric-label">Ingresos</div>
+    <div class="metric-label">Ingresos confirmados</div>
     <div class="metric-value">{{ ingresos }}</div>
   </section>
   <section class="panel metric orange">
-    <div class="metric-label">Gastos reales</div>
+    <div class="metric-label">Gastos confirmados</div>
     <div class="metric-value">{{ gastos }}</div>
   </section>
   <section class="panel metric blue">
-    <div class="metric-label">Uso de ingresos</div>
+    <div class="metric-label">Gasto / ingreso</div>
     <div class="metric-value">{{ uso_ingresos }}%</div>
   </section>
   <section class="panel metric gray">
-    <div class="metric-label">{{ etiqueta_deudas_balance }}</div>
-    <div class="metric-value">{{ cuotas_deuda_periodo }}</div>
+    <div class="metric-label">Pagos de deuda confirmados</div>
+    <div class="metric-value">{{ pagos_total }}</div>
   </section>
 </div>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Calidad y alcance de los datos</h2>
+      <p class="muted mb-0">{{ calidad_datos }}. Las cifras solo son tan completas como los registros ingresados.</p>
+    </div>
+  </div>
+  <div class="status-list">
+    <span><strong>{{ movimientos_confirmados_count }}</strong> movimientos confirmados analizados</span>
+    <span><strong>{{ sin_categoria_count }}</strong> movimientos sin categoría</span>
+    <span><strong>{{ recurrentes_pendientes_count }}</strong> movimientos recurrentes aún previstos</span>
+    <span><strong>{{ cuotas_pendientes_count }}</strong> cuotas pendientes dentro del corte</span>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Recomendaciones para actuar</h2>
+      <p class="muted mb-0">Calculadas con todo el periodo {{ fecha_inicio }}–{{ fecha_fin }}. Los filtros visuales de tipo y categoría no alteran estas sugerencias.</p>
+    </div>
+  </div>
+  <div class="row g-3">
+    {% for sugerencia in sugerencias %}
+      <div class="col-lg-6">
+        <article class="border rounded-3 p-3 h-100">
+          <div class="d-flex justify-content-between align-items-start gap-3 mb-2">
+            <h3 class="h6 mb-0">{{ sugerencia.titulo }}</h3>
+            <span class="badge rounded-pill {% if sugerencia.tipo == 'alerta' %}text-bg-danger{% elif sugerencia.tipo == 'oportunidad' %}text-bg-success{% elif sugerencia.tipo == 'deuda' %}text-bg-warning{% else %}text-bg-primary{% endif %}">{{ sugerencia.tipo|capfirst }}</span>
+          </div>
+          <p class="mb-2">{{ sugerencia.detalle }}</p>
+          <p class="muted mb-0"><strong>Acción:</strong> {{ sugerencia.accion }}</p>
+          {% if sugerencia.impacto is not None %}
+            <p class="mb-0 mt-2"><strong>Monto orientativo: {{ sugerencia.impacto }}</strong></p>
+          {% endif %}
+        </article>
+      </div>
+    {% empty %}
+      <p class="muted mb-0">No hay suficiente información para formular recomendaciones.</p>
+    {% endfor %}
+  </div>
+  <p class="muted small mt-3 mb-0">Estas reglas son orientativas y explicables; no sustituyen asesoría financiera profesional ni suponen rendimientos futuros.</p>
+</section>
 
 <section class="panel">
   <div class="panel-heading">
@@ -123,35 +167,34 @@
       </thead>
       <tbody>
         <tr>
-          <td>Ingresos</td>
-          <td>Confirmados hasta {{ fecha_fin }}: {{ calculo_balance.ingresos_confirmados }} + recurrentes programados: {{ calculo_balance.ingresos_recurrentes }}</td>
+          <td>Ingresos confirmados</td>
+          <td>Movimientos de ingreso confirmados entre {{ fecha_inicio }} y {{ fecha_fin }}.</td>
           <td class="amount">{{ calculo_balance.ingresos }}</td>
         </tr>
         <tr>
-          <td>Gastos reales</td>
-          <td>Confirmados hasta {{ fecha_fin }}: {{ calculo_balance.gastos_confirmados }} + recurrentes programados: {{ calculo_balance.gastos_recurrentes }}</td>
+          <td>Gastos confirmados</td>
+          <td>Movimientos de gasto confirmados entre {{ fecha_inicio }} y {{ fecha_fin }}.</td>
           <td class="amount">{{ calculo_balance.gastos }}</td>
         </tr>
         <tr>
-          <td>Margen antes de deudas</td>
+          <td>Margen operativo</td>
           <td>Ingresos {{ calculo_balance.ingresos }} - gastos {{ calculo_balance.gastos }}</td>
           <td class="amount">{{ calculo_balance.margen }}</td>
         </tr>
         <tr>
-          <td>{{ calculo_balance.obligaciones_label }}</td>
-          <td>
-            {% if calculo_balance.usa_saldo_total_deudas %}
-              Saldo actual de {{ calculo_balance.cuotas_deuda_count }} deudas activas.
-            {% else %}
-              {{ calculo_balance.cuotas_deuda_count }} cuotas programadas entre {{ fecha_inicio }} y {{ fecha_fin }}.
-            {% endif %}
-          </td>
-          <td class="amount">{{ calculo_balance.obligaciones }}</td>
+          <td>Pagos de deuda confirmados</td>
+          <td>Pagos efectivamente confirmados dentro del periodo.</td>
+          <td class="amount">{{ calculo_balance.pagos_confirmados }}</td>
         </tr>
         <tr>
-          <td><strong>Posición neta</strong></td>
-          <td>Margen {{ calculo_balance.margen }} - {{ calculo_balance.obligaciones_label|lower }} {{ calculo_balance.obligaciones }}</td>
-          <td class="amount"><strong>{{ calculo_balance.posicion_neta }}</strong></td>
+          <td><strong>Resultado de caja</strong></td>
+          <td>Margen {{ calculo_balance.margen }} - pagos de deuda {{ calculo_balance.pagos_confirmados }}</td>
+          <td class="amount"><strong>{{ calculo_balance.resultado_real }}</strong></td>
+        </tr>
+        <tr>
+          <td>Escenario previsto al corte</td>
+          <td>Resultado real + ingresos recurrentes pendientes {{ calculo_balance.ingresos_programados }} - gastos recurrentes pendientes {{ calculo_balance.gastos_programados }} - {{ calculo_balance.cuotas_deuda_count }} cuotas pendientes por {{ calculo_balance.obligaciones }}.</td>
+          <td class="amount">{{ calculo_balance.posicion_neta }}</td>
         </tr>
       </tbody>
     </table>
@@ -166,9 +209,9 @@
     </div>
   </div>
   <div class="status-list">
-    <span><strong>{{ margen }}</strong> margen antes de deudas</span>
-    <span><strong>{{ cuotas_deuda_periodo }}</strong> {{ etiqueta_deudas_balance|lower }}</span>
-    <span><strong>{{ pagos_total }}</strong> pagado a deudas en el periodo</span>
+    <span><strong>{{ margen }}</strong> margen operativo confirmado</span>
+    <span><strong>{{ posicion_neta }}</strong> resultado de caja confirmado</span>
+    <span><strong>{{ resultado_esperado }}</strong> escenario previsto al cierre del corte</span>
     <span><strong>{{ saldo_deudas }}</strong> saldo pendiente activo</span>
     {% if top_categoria %}
       <span><strong>{{ top_categoria.categoria }}</strong> categoría con más gasto</span>
@@ -182,7 +225,7 @@
   <div class="panel-heading">
     <div>
       <h2>Tendencia del periodo</h2>
-      <p class="muted mb-0">Saldo acumulado por fecha de corte, pagos de deuda y margen.</p>
+      <p class="muted mb-0">Importes confirmados en cada día o mes; cada barra corresponde solo a ese segmento.</p>
     </div>
   </div>
   <div class="chart-box">
@@ -193,8 +236,8 @@
 <section class="panel chart-panel">
   <div class="panel-heading">
     <div>
-      <h2>Balance general</h2>
-      <p class="muted mb-0">Foto a la fecha de corte: ingresos, gastos reales, cuotas de deudas y posición neta.</p>
+      <h2>Resultado del periodo</h2>
+      <p class="muted mb-0">Comparación de movimientos y pagos confirmados dentro del rango seleccionado.</p>
     </div>
   </div>
   <div class="chart-box chart-box-balance">
@@ -206,8 +249,8 @@
   <section class="panel chart-panel chart-panel-wide">
     <div class="panel-heading">
       <div>
-        <h2>Proyección 3 meses</h2>
-        <p class="muted mb-0">Estimación basada en promedios del periodo filtrado.</p>
+        <h2>Escenario registrado · próximos 3 meses</h2>
+        <p class="muted mb-0">Solo incluye recurrentes activos y cuotas pendientes registradas. No predice ingresos ni gastos ocasionales.</p>
       </div>
     </div>
     <div class="chart-box">
@@ -219,7 +262,7 @@
     <div class="panel-heading">
       <div>
         <h2>Gastos reales por categoría</h2>
-        <p class="muted mb-0">Dónde se concentra el gasto por fecha efectiva de pago.</p>
+        <p class="muted mb-0">Solo gastos confirmados dentro del periodo seleccionado.</p>
       </div>
     </div>
     <div class="chart-box chart-box-small">
@@ -295,11 +338,20 @@
     }
 
     const data = JSON.parse(document.getElementById("analysis-data").textContent);
+    const moneyFormatter = new Intl.NumberFormat("es-EC", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+    const moneyTooltip = (context) => `${context.dataset.label || context.label}: ${moneyFormatter.format(context.parsed.y ?? context.parsed.x ?? 0)}`;
     const moneyOptions = {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { position: "bottom" } },
-      scales: { y: { beginAtZero: true } },
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { position: "bottom" },
+        tooltip: { callbacks: { label: moneyTooltip } },
+      },
+      scales: { y: { beginAtZero: true, ticks: { callback: (value) => moneyFormatter.format(value) } } },
     };
 
     new Chart(document.getElementById("trendChart"), {
@@ -309,8 +361,8 @@
         datasets: [
           { label: "Ingresos", data: data.flujo.ingresos, backgroundColor: "#22c55e", borderRadius: 8 },
           { label: "Gastos", data: data.flujo.gastos, backgroundColor: "#fb8500", borderRadius: 8 },
-          { label: "Deudas", data: data.flujo.deudas, backgroundColor: "#64748b", borderRadius: 8 },
-          { label: "Margen", data: data.flujo.margen, type: "line", borderColor: "#5e35b1", backgroundColor: "#5e35b1", tension: .35 },
+          { label: "Pagos de deuda", data: data.flujo.deudas, backgroundColor: "#64748b", borderRadius: 8 },
+          { label: "Resultado de caja", data: data.flujo.margen, type: "line", borderColor: "#5e35b1", backgroundColor: "#5e35b1", tension: .2 },
         ],
       },
       options: moneyOptions,
@@ -331,9 +383,12 @@
         indexAxis: "y",
         responsive: true,
         maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: (context) => `${context.label}: ${moneyFormatter.format(context.parsed.x)}` } },
+        },
         scales: {
-          x: { beginAtZero: true },
+          x: { beginAtZero: true, ticks: { callback: (value) => moneyFormatter.format(value) } },
           y: { ticks: { autoSkip: false } },
         },
       },
@@ -355,8 +410,8 @@
         datasets: [
           { label: "Ingresos", data: data.proyeccion.ingresos, borderColor: "#22c55e", backgroundColor: "#22c55e", tension: .35 },
           { label: "Gastos", data: data.proyeccion.gastos, borderColor: "#fb8500", backgroundColor: "#fb8500", tension: .35 },
-          { label: "Deudas", data: data.proyeccion.deudas, borderColor: "#64748b", backgroundColor: "#64748b", tension: .35 },
-          { label: "Margen", data: data.proyeccion.margen, borderColor: "#5e35b1", backgroundColor: "#5e35b1", tension: .35 },
+          { label: "Cuotas pendientes", data: data.proyeccion.deudas, borderColor: "#64748b", backgroundColor: "#64748b", tension: .2 },
+          { label: "Resultado previsto", data: data.proyeccion.margen, borderColor: "#5e35b1", backgroundColor: "#5e35b1", tension: .2 },
         ],
       },
       options: moneyOptions,

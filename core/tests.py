@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -23,6 +24,7 @@ from .services import (
     crear_historial_inicial_deuda,
     cuotas_deudas_programadas,
     ensure_user_finance_setup,
+    generar_recomendaciones_financieras,
     generar_movimientos_recurrentes,
     generar_pagos_deudas,
     reprogramar_fechas_cuotas,
@@ -433,6 +435,166 @@ class PasswordPermissionTests(TestCase):
         self.user.refresh_from_db()
         self.assertRedirects(response, reverse("usuario_list"))
         self.assertTrue(self.user.check_password("Restablecida-2026!"))
+
+
+class InlineMovementOptionsTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="opciones", password="test")
+        self.client.force_login(self.user)
+
+    def test_formulario_ofrece_creacion_sin_abandonar_el_gasto(self):
+        response = self.client.get(reverse("movimiento_gasto_create"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Nueva categoría o subcategoría")
+        self.assertContains(response, "Nueva etiqueta")
+        self.assertContains(response, reverse("movimiento_opcion_create"))
+
+    def test_crea_categoria_con_general_y_la_devuelve_seleccionable(self):
+        response = self.client.post(
+            reverse("movimiento_opcion_create"),
+            {"tipo_opcion": "categoria", "nombre": "Mascotas", "color": "#123456"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        parent = Categoria.objects.get(usuario=self.user, nombre="Mascotas", parent__isnull=True)
+        general = Categoria.objects.get(usuario=self.user, parent=parent, nombre="General")
+        self.assertEqual(payload["option"]["id"], general.pk)
+        self.assertEqual(payload["option"]["label"], "Mascotas > General")
+
+    def test_crea_subcategoria_y_etiqueta_sin_salir_del_movimiento(self):
+        parent = Categoria.objects.create(
+            usuario=self.user,
+            tipo=Categoria.Tipo.FINANZAS,
+            nombre="Salud",
+        )
+
+        subcategory_response = self.client.post(
+            reverse("movimiento_opcion_create"),
+            {
+                "tipo_opcion": "subcategoria",
+                "parent": parent.pk,
+                "nombre": "Farmacia",
+                "color": "#abcdef",
+            },
+        )
+        tag_response = self.client.post(
+            reverse("movimiento_opcion_create"),
+            {"tipo_opcion": "etiqueta", "nombre": "Deducible", "color": "#6366f1"},
+        )
+
+        self.assertEqual(subcategory_response.status_code, 200)
+        self.assertEqual(subcategory_response.json()["option"]["label"], "Salud > Farmacia")
+        self.assertTrue(Categoria.objects.filter(usuario=self.user, parent=parent, nombre="Farmacia").exists())
+        self.assertEqual(tag_response.status_code, 200)
+        self.assertTrue(Etiqueta.objects.filter(usuario=self.user, nombre="Deducible").exists())
+
+    def test_no_permite_usar_categoria_principal_de_otro_usuario(self):
+        other = get_user_model().objects.create_user(username="otro-opciones", password="test")
+        other_parent = Categoria.objects.create(
+            usuario=other,
+            tipo=Categoria.Tipo.FINANZAS,
+            nombre="Privada",
+        )
+
+        response = self.client.post(
+            reverse("movimiento_opcion_create"),
+            {
+                "tipo_opcion": "subcategoria",
+                "parent": other_parent.pk,
+                "nombre": "No permitida",
+                "color": "#abcdef",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(Categoria.objects.filter(usuario=self.user, nombre="No permitida").exists())
+
+    def test_rechaza_etiquetas_duplicadas(self):
+        Etiqueta.objects.create(usuario=self.user, nombre="Trabajo")
+
+        response = self.client.post(
+            reverse("movimiento_opcion_create"),
+            {"tipo_opcion": "etiqueta", "nombre": "trabajo", "color": "#6366f1"},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("nombre", response.json()["errors"])
+
+
+class FinancialAdviceTests(TestCase):
+    def advice(self, **overrides):
+        data = {
+            "ingresos": Decimal("1000.00"),
+            "gastos": Decimal("500.00"),
+            "pagos_deuda": Decimal("100.00"),
+            "cuotas_proximas": Decimal("0.00"),
+            "saldo_deudas": Decimal("0.00"),
+            "gastos_categoria": [],
+            "gastos_recurrentes": [],
+            "movimientos_count": 5,
+            "sin_categoria_count": 0,
+            "presupuestos": [],
+        }
+        data.update(overrides)
+        return generar_recomendaciones_financieras(**data)
+
+    def test_sugiere_monto_concreto_para_cerrar_deficit(self):
+        sugerencias = self.advice(
+            ingresos=Decimal("800.00"),
+            gastos=Decimal("850.00"),
+            pagos_deuda=Decimal("100.00"),
+        )
+
+        deficit = next(item for item in sugerencias if item["titulo"] == "Cierra el déficit del periodo")
+        self.assertEqual(deficit["impacto"], Decimal("150.00"))
+        self.assertIn("150.00", deficit["accion"])
+
+    def test_sugiere_ahorro_solo_si_existe_margen(self):
+        sugerencias = self.advice()
+
+        ahorro = next(item for item in sugerencias if item["titulo"] == "Aparta un ahorro automático")
+        self.assertEqual(ahorro["impacto"], Decimal("100.00"))
+
+    def test_detecta_exceso_sobre_presupuesto(self):
+        sugerencias = self.advice(
+            presupuestos=[
+                {
+                    "categoria": "Comida",
+                    "presupuesto": Decimal("200.00"),
+                    "usado": Decimal("260.00"),
+                }
+            ]
+        )
+
+        exceso = next(item for item in sugerencias if item["tipo"] == "presupuesto")
+        self.assertEqual(exceso["impacto"], Decimal("60.00"))
+
+    def test_analisis_y_pdf_muestran_las_mismas_recomendaciones(self):
+        user = get_user_model().objects.create_user(username="asesoria", password="test")
+        MovimientoFinanciero.objects.create(
+            usuario=user,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+            concepto="Costo operativo",
+            monto="250.00",
+            fecha=datetime(2026, 9, 10).date(),
+        )
+        self.client.force_login(user)
+
+        analisis = self.client.get(
+            reverse("analisis_financiero"),
+            {"periodo": "mes", "mes": "9", "anio": "2026"},
+        )
+        reporte = self.client.get(
+            reverse("reporte_financiero_pdf"),
+            {"fecha_inicio": "2026-09-01", "fecha_fin": "2026-09-30"},
+        )
+
+        self.assertContains(analisis, "Recomendaciones para actuar")
+        self.assertEqual(analisis.context["sugerencias"][0]["titulo"], "Falta registrar ingresos")
+        self.assertEqual(reporte.status_code, 200)
+        self.assertEqual(reporte["Content-Type"], "application/pdf")
 
 
 class MovimientoRecurrenteServiceTests(TestCase):
@@ -963,7 +1125,7 @@ class MovimientoRecurrenteServiceTests(TestCase):
         self.assertEqual(cuotas[0]["fecha"], datetime(2026, 8, 5).date())
         self.assertEqual(total, Decimal("100.00"))
 
-    def test_analisis_todo_usa_saldo_total_de_deudas(self):
+    def test_analisis_todo_separa_saldo_total_de_cuotas_del_periodo(self):
         deuda = Deuda.objects.create(
             usuario=self.user,
             acreedor="Banco",
@@ -981,8 +1143,8 @@ class MovimientoRecurrenteServiceTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["periodo"], "todo")
-        self.assertEqual(response.context["cuotas_deuda_periodo"], Decimal("600.00"))
-        self.assertEqual(response.context["etiqueta_deudas_balance"], "Deudas activas")
+        self.assertEqual(response.context["saldo_deudas"], Decimal("600.00"))
+        self.assertEqual(response.context["etiqueta_deudas_balance"], "Cuotas pendientes")
 
     def test_analisis_mes_permite_mes_y_anio_especificos(self):
         self.client.force_login(self.user)
@@ -998,7 +1160,7 @@ class MovimientoRecurrenteServiceTests(TestCase):
         self.assertEqual(response.context["mes_seleccionado"], 6)
         self.assertEqual(response.context["anio_seleccionado"], 2026)
 
-    def test_analisis_incluye_recurrentes_activos_sin_duplicar_generados(self):
+    def test_analisis_historico_no_inventa_recurrentes_no_confirmados(self):
         ingreso_recurrente = MovimientoRecurrente.objects.create(
             usuario=self.user,
             tipo=MovimientoFinanciero.Tipo.INGRESO,
@@ -1041,10 +1203,10 @@ class MovimientoRecurrenteServiceTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["ingresos"], Decimal("1000.00"))
-        self.assertEqual(response.context["gastos"], Decimal("30.00"))
-        self.assertEqual(response.context["margen"], Decimal("970.00"))
+        self.assertEqual(response.context["gastos"], Decimal("0.00"))
+        self.assertEqual(response.context["margen"], Decimal("1000.00"))
 
-    def test_analisis_arrastra_movimientos_confirmados_de_meses_anteriores(self):
+    def test_analisis_no_arrastra_movimientos_de_meses_anteriores(self):
         MovimientoFinanciero.objects.create(
             usuario=self.user,
             tipo=MovimientoFinanciero.Tipo.INGRESO,
@@ -1067,9 +1229,78 @@ class MovimientoRecurrenteServiceTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.context["ingresos"], Decimal("500.00"))
-        self.assertEqual(response.context["gastos"], Decimal("80.00"))
-        self.assertEqual(response.context["margen"], Decimal("420.00"))
+        self.assertEqual(response.context["ingresos"], Decimal("0.00"))
+        self.assertEqual(response.context["gastos"], Decimal("0.00"))
+        self.assertEqual(response.context["margen"], Decimal("0.00"))
+
+    def test_tendencia_muestra_segmentos_no_acumulados(self):
+        MovimientoFinanciero.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.INGRESO,
+            concepto="Ingreso uno",
+            monto="100.00",
+            fecha=datetime(2026, 6, 1).date(),
+        )
+        MovimientoFinanciero.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.INGRESO,
+            concepto="Ingreso dos",
+            monto="50.00",
+            fecha=datetime(2026, 6, 2).date(),
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(
+            reverse("analisis_financiero"),
+            {"periodo": "mes", "mes": "6", "anio": "2026"},
+        )
+
+        flujo = response.context["chart_data"]["flujo"]
+        self.assertEqual(flujo["ingresos"][:3], [100.0, 50.0, 0.0])
+
+    def test_proyeccion_usa_recurrentes_y_cuotas_registradas_no_promedios(self):
+        ingreso = MovimientoRecurrente.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.INGRESO,
+            concepto="Nómina",
+            monto="1000.00",
+            dia_mes=5,
+        )
+        gasto = MovimientoRecurrente.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+            concepto="Internet",
+            monto="40.00",
+            dia_mes=8,
+        )
+        self.set_creado(ingreso, 2026, 9, 28)
+        self.set_creado(gasto, 2026, 9, 28)
+        deuda = Deuda.objects.create(
+            usuario=self.user,
+            acreedor="Banco",
+            concepto="Préstamo",
+            monto_inicial="300.00",
+            saldo_actual="300.00",
+            numero_cuotas=3,
+            fecha_inicio=datetime(2026, 9, 28).date(),
+            fecha_primera_cuota=datetime(2026, 10, 10).date(),
+        )
+        self.set_creado(deuda, 2026, 9, 28)
+        sincronizar_cuotas_pendientes_deuda(deuda)
+        self.client.force_login(self.user)
+
+        with patch("core.views.timezone.localdate", return_value=datetime(2026, 9, 28).date()):
+            response = self.client.get(
+                reverse("analisis_financiero"),
+                {"periodo": "mes", "mes": "9", "anio": "2026"},
+            )
+
+        proyeccion = response.context["chart_data"]["proyeccion"]
+        self.assertEqual(proyeccion["labels"], ["10/2026", "11/2026", "12/2026"])
+        self.assertEqual(proyeccion["ingresos"], [1000.0, 1000.0, 1000.0])
+        self.assertEqual(proyeccion["gastos"], [40.0, 40.0, 40.0])
+        self.assertEqual(proyeccion["deudas"], [100.0, 100.0, 100.0])
+        self.assertEqual(proyeccion["margen"], [860.0, 860.0, 860.0])
 
     def test_analisis_anio_usa_anio_seleccionado(self):
         self.client.force_login(self.user)

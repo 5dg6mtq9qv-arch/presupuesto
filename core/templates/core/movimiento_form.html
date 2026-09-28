@@ -4,16 +4,17 @@
 {% block page_subtitle %}{% if tipo == "gasto" %}Registra un gasto con categoría, monto y comprobante opcional{% else %}Registra un ingreso con categoría, monto y comprobante opcional{% endif %}{% endblock %}
 
 {% block content %}
+{{ categorias_principales|json_script:"movement-category-parents" }}
 {% if not tiene_categorias %}
   <section class="panel">
     <div class="panel-heading">
       <div>
-        <h2>Primero crea una categoría</h2>
-        <p class="muted mb-0">Las categorías ordenan tus gastos e ingresos y sus colores se usan en las gráficas.</p>
+        <h2>Crea tu primera categoría aquí</h2>
+        <p class="muted mb-0">No perderás los datos escritos en este movimiento.</p>
       </div>
-      <a class="btn btn-primary btn-icon" href="{% url 'categoria_list' %}" title="Crear categoría" aria-label="Crear categoría">
+      <button class="btn btn-primary btn-icon" type="button" data-open-inline-category title="Crear categoría" aria-label="Crear categoría">
         <span class="material-symbols-outlined">add</span>
-      </a>
+      </button>
     </div>
   </section>
 {% endif %}
@@ -250,6 +251,176 @@
 
     const errorPanel = panels.find(panel => panel.querySelector(".has-error"));
     showStep(errorPanel ? Number(errorPanel.dataset.expensePanel) : 1);
+  })();
+
+  (() => {
+    const form = document.getElementById("expense-flow-form");
+    const categorySelect = document.getElementById("id_categoria");
+    const tagSelect = document.getElementById("id_etiquetas");
+    if (!form || !window.Swal) return;
+
+    const endpoint = "{% url 'movimiento_opcion_create' %}";
+    const csrfToken = form.querySelector('input[name="csrfmiddlewaretoken"]')?.value || "";
+    const parentsElement = document.getElementById("movement-category-parents");
+    const parents = parentsElement ? JSON.parse(parentsElement.textContent) : [];
+
+    const fieldErrorText = errors => Object.values(errors || {}).flat().join(" ") || "No se pudo guardar la opción.";
+    const addAndSelectOption = (select, data) => {
+      if (!select) return;
+      let option = [...select.options].find(item => String(item.value) === String(data.id));
+      if (!option) {
+        option = new Option(data.label, data.id, true, true);
+        select.add(option);
+      }
+      option.text = data.label;
+      option.selected = true;
+      if (data.color) option.dataset.color = data.color;
+      if (window.jQuery) {
+        window.jQuery(select).val(
+          select.multiple
+            ? [...select.selectedOptions].map(item => item.value)
+            : String(data.id)
+        ).trigger("change");
+      } else {
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    };
+
+    const saveQuickOption = async values => {
+      const body = new URLSearchParams({ ...values, csrfmiddlewaretoken: csrfToken });
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "X-CSRFToken": csrfToken,
+          "X-Requested-With": "XMLHttpRequest",
+          "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+        },
+        body,
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(fieldErrorText(payload.errors));
+      return payload;
+    };
+
+    const openCategoryCreator = async () => {
+      const content = document.createElement("div");
+      content.className = "text-start";
+      const typeLabel = document.createElement("label");
+      typeLabel.className = "form-label";
+      typeLabel.textContent = "Qué deseas crear";
+      const type = document.createElement("select");
+      type.className = "form-select mb-3";
+      type.innerHTML = '<option value="subcategoria">Subcategoría</option><option value="categoria">Categoría principal</option>';
+      const parentWrap = document.createElement("div");
+      const parentLabel = document.createElement("label");
+      parentLabel.className = "form-label";
+      parentLabel.textContent = "Categoría principal";
+      const parent = document.createElement("select");
+      parent.className = "form-select mb-3";
+      const refreshParents = () => {
+        parent.replaceChildren(...parents.map(item => new Option(item.nombre, item.id)));
+      };
+      refreshParents();
+      parentWrap.append(parentLabel, parent);
+      const nameLabel = document.createElement("label");
+      nameLabel.className = "form-label";
+      nameLabel.textContent = "Nombre";
+      const name = document.createElement("input");
+      name.className = "form-control mb-3";
+      name.maxLength = 80;
+      name.placeholder = "Ej.: Farmacia";
+      const colorLabel = document.createElement("label");
+      colorLabel.className = "form-label";
+      colorLabel.textContent = "Color";
+      const color = document.createElement("input");
+      color.type = "color";
+      color.className = "form-control form-control-color";
+      color.value = "#ef4444";
+      content.append(typeLabel, type, parentWrap, nameLabel, name, colorLabel, color);
+      const syncType = () => { parentWrap.hidden = type.value !== "subcategoria"; };
+      type.addEventListener("change", syncType);
+      syncType();
+
+      const result = await Swal.fire({
+        title: "Crear sin salir del gasto",
+        html: content,
+        showCancelButton: true,
+        confirmButtonText: "Crear y seleccionar",
+        cancelButtonText: "Cancelar",
+        focusConfirm: false,
+        didOpen: () => name.focus(),
+        preConfirm: async () => {
+          if (!name.value.trim()) {
+            Swal.showValidationMessage("Escribe un nombre.");
+            return false;
+          }
+          if (type.value === "subcategoria" && !parent.value) {
+            Swal.showValidationMessage("Primero crea o selecciona una categoría principal.");
+            return false;
+          }
+          try {
+            return await saveQuickOption({
+              tipo_opcion: type.value,
+              parent: type.value === "subcategoria" ? parent.value : "",
+              nombre: name.value.trim(),
+              color: color.value,
+            });
+          } catch (error) {
+            Swal.showValidationMessage(error.message);
+            return false;
+          }
+        },
+      });
+      if (!result.isConfirmed || !result.value) return;
+      addAndSelectOption(categorySelect, result.value.option);
+      if (result.value.parent && !parents.some(item => String(item.id) === String(result.value.parent.id))) {
+        parents.push(result.value.parent);
+        parents.sort((left, right) => left.nombre.localeCompare(right.nombre, "es"));
+      }
+    };
+
+    const openTagCreator = async () => {
+      const result = await Swal.fire({
+        title: "Nueva etiqueta",
+        input: "text",
+        inputLabel: "Nombre",
+        inputPlaceholder: "Ej.: Trabajo, deducible, urgente",
+        inputAttributes: { maxlength: "80" },
+        showCancelButton: true,
+        confirmButtonText: "Crear y seleccionar",
+        cancelButtonText: "Cancelar",
+        inputValidator: value => value.trim() ? undefined : "Escribe un nombre.",
+        preConfirm: async value => {
+          try {
+            return await saveQuickOption({
+              tipo_opcion: "etiqueta",
+              nombre: value.trim(),
+              color: "#6366f1",
+            });
+          } catch (error) {
+            Swal.showValidationMessage(error.message);
+            return false;
+          }
+        },
+      });
+      if (result.isConfirmed && result.value) addAndSelectOption(tagSelect, result.value.option);
+    };
+
+    const addQuickButton = (select, label, handler) => {
+      const field = select?.closest(".unfold-field");
+      if (!field) return;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "btn btn-sm btn-outline-primary mt-2";
+      button.innerHTML = '<span class="material-symbols-outlined">add</span><span></span>';
+      button.lastElementChild.textContent = label;
+      button.addEventListener("click", handler);
+      field.append(button);
+    };
+
+    addQuickButton(categorySelect, "Nueva categoría o subcategoría", openCategoryCreator);
+    addQuickButton(tagSelect, "Nueva etiqueta", openTagCreator);
+    document.querySelector("[data-open-inline-category]")?.addEventListener("click", openCategoryCreator);
   })();
 </script>
 {% endblock %}
