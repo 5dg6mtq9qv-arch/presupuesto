@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import timedelta
 from decimal import Decimal
 from urllib.error import HTTPError, URLError
@@ -14,6 +15,7 @@ from .models import Deuda, MetodoPago, MovimientoFinanciero, PagoDeuda, PerfilUs
 
 MAX_UPCOMING_PAYMENT_DETAILS = 25
 MAX_QUERY_DETAILS = 50
+logger = logging.getLogger(__name__)
 
 
 class AIAssistantError(Exception):
@@ -384,20 +386,26 @@ def _provider_message(messages, config, *, tools=None, max_tokens=600):
         "model": config.model,
         "temperature": 0.2,
         "max_tokens": max_tokens,
-        "response_format": {"type": "json_object"},
         "messages": messages,
     }
     if tools:
         payload["tools"] = tools
         payload["tool_choice"] = "auto"
+    else:
+        payload["response_format"] = {"type": "json_object"}
+    if config.provider == "gemini" and config.model.startswith("gemini-2.5") and "pro" not in config.model:
+        payload["reasoning_effort"] = "none"
+    headers = {
+        "Authorization": f"Bearer {config.api_key}",
+        "Content-Type": "application/json",
+        "User-Agent": "TaskBudget/1.0",
+    }
+    if config.provider == "gemini":
+        headers["x-goog-api-client"] = "taskbudget-oai/1.0"
     request = Request(
         config.base_url + "/chat/completions",
         data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {config.api_key}",
-            "Content-Type": "application/json",
-            "User-Agent": "TaskBudget/1.0",
-        },
+        headers=headers,
         method="POST",
     )
     try:
@@ -405,11 +413,22 @@ def _provider_message(messages, config, *, tools=None, max_tokens=600):
             provider_data = json.loads(response.read().decode("utf-8"))
         return provider_data["choices"][0]["message"]
     except HTTPError as exc:
+        try:
+            error_body = exc.read().decode("utf-8", errors="replace")[:1500]
+        except Exception:
+            error_body = ""
+        logger.warning("AI provider HTTP error provider=%s model=%s status=%s body=%s", config.provider, config.model, exc.code, error_body)
         if exc.code == 401:
             raise AIAssistantError("La clave de la IA no es válida.") from exc
+        if exc.code == 403:
+            raise AIAssistantError("La clave o el proyecto no tienen permiso para utilizar este modelo.") from exc
+        if exc.code == 404:
+            raise AIAssistantError("El modelo configurado no está disponible para este proyecto.") from exc
         if exc.code == 429:
             raise AIAssistantError("Se alcanzó el límite temporal de consultas. Intenta nuevamente en unos minutos.") from exc
-        raise AIAssistantError("El proveedor de IA no pudo procesar la consulta.") from exc
+        if exc.code == 400:
+            raise AIAssistantError("El proveedor rechazó la configuración o el formato de la consulta.") from exc
+        raise AIAssistantError(f"El proveedor de IA no pudo procesar la consulta (HTTP {exc.code}).") from exc
     except (URLError, TimeoutError) as exc:
         raise AIAssistantError("El proveedor de IA no está disponible en este momento.") from exc
     except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
@@ -470,7 +489,15 @@ def ask_financial_assistant(user, question):
                     "content": json.dumps(result, ensure_ascii=False),
                 }
             )
-        message = _provider_message(messages, config, max_tokens=1200)
+    else:
+        messages.append({"role": "assistant", "content": message.get("content") or ""})
+        messages.append(
+            {
+                "role": "user",
+                "content": "Entrega ahora la respuesta final usando el JSON solicitado, sin agregar datos nuevos.",
+            }
+        )
+    message = _provider_message(messages, config, max_tokens=1200)
 
     try:
         answer = json.loads(message.get("content") or "")

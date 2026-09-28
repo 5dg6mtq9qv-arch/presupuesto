@@ -1,6 +1,10 @@
 from django.contrib import admin
 from django import forms
+from django.contrib import messages
 from unfold.admin import ModelAdmin, TabularInline
+
+from .ai_assistant import AIAssistantError, _provider_message
+from .ai_config import get_ai_runtime_config
 
 from .models import (
     Acreedor,
@@ -67,6 +71,7 @@ class ConfiguracionIAAdminForm(forms.ModelForm):
 @admin.register(ConfiguracionIA)
 class ConfiguracionIAAdmin(ModelAdmin):
     form = ConfiguracionIAAdminForm
+    actions = ("probar_conexion",)
     list_display = ("proveedor", "modelo", "activo", "estado_clave", "actualizado")
     readonly_fields = ("estado_clave", "actualizado")
     fieldsets = (
@@ -101,6 +106,29 @@ class ConfiguracionIAAdmin(ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+    @admin.action(description="Probar conexión con el proveedor")
+    def probar_conexion(self, request, queryset):
+        if queryset.count() != 1:
+            self.message_user(request, "Selecciona la configuración de IA.", level=messages.WARNING)
+            return
+        config = get_ai_runtime_config()
+        if not config.api_key:
+            self.message_user(request, "Primero configura una clave de API.", level=messages.ERROR)
+            return
+        try:
+            _provider_message(
+                [
+                    {"role": "system", "content": "Responde solamente JSON válido."},
+                    {"role": "user", "content": 'Devuelve {"ok": true} para confirmar la conexión.'},
+                ],
+                config,
+                max_tokens=40,
+            )
+        except AIAssistantError as exc:
+            self.message_user(request, str(exc), level=messages.ERROR)
+            return
+        self.message_user(request, "Conexión correcta con el proveedor de IA.", level=messages.SUCCESS)
 
 
 @admin.register(PerfilUsuario)

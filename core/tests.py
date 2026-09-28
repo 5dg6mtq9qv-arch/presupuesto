@@ -1,7 +1,7 @@
 import json
 from datetime import datetime, timedelta
 from decimal import Decimal
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
@@ -9,8 +9,8 @@ from django.urls import reverse
 from django.utils import timezone
 
 from .forms import MovimientoFinancieroForm
-from .ai_assistant import ask_financial_assistant, build_financial_context, query_debt_payments, query_movements
-from .ai_config import get_ai_runtime_config
+from .ai_assistant import AI_TOOLS, _provider_message, ask_financial_assistant, build_financial_context, query_debt_payments, query_movements
+from .ai_config import AIRuntimeConfig, get_ai_runtime_config
 from .admin import ConfiguracionIAAdminForm
 from .models import (
     Acreedor,
@@ -938,6 +938,29 @@ class FinancialAssistantTests(TestCase):
         updated = form.save()
         self.assertEqual(updated.get_api_key(), "clave-existente")
         self.assertEqual(updated.timeout_segundos, 35)
+
+    @patch("core.ai_assistant.urlopen")
+    def test_gemini_no_combina_herramientas_con_formato_json_en_primera_llamada(self, mocked_urlopen):
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = b'{"choices":[{"message":{"content":"{}"}}]}'
+        mocked_urlopen.return_value = response
+        config = AIRuntimeConfig(
+            enabled=True,
+            provider="gemini",
+            api_key="clave-de-prueba",
+            model="gemini-2.5-flash-lite",
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai",
+            timeout_seconds=25,
+            source="database",
+        )
+
+        _provider_message([{"role": "user", "content": "Consulta mis gastos"}], config, tools=AI_TOOLS)
+
+        request = mocked_urlopen.call_args.args[0]
+        payload = json.loads(request.data)
+        self.assertIn("tools", payload)
+        self.assertNotIn("response_format", payload)
+        self.assertEqual(payload["reasoning_effort"], "none")
 
 
 class GuidedFinancialFlowsTests(TestCase):
