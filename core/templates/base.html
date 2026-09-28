@@ -1351,6 +1351,7 @@
     .ai-drawer-message.user { align-self: flex-end; color: #fff; background: var(--primary); border-bottom-right-radius: 4px; }
     .ai-drawer-message.assistant { align-self: flex-start; border: 1px solid var(--line); background: var(--surface); border-bottom-left-radius: 4px; }
     .ai-drawer-evidence { margin: 8px 0 0; padding-left: 17px; color: var(--muted); font-size: 11px; }
+    .ai-drawer-warning { margin-top: 8px; color: #92400e; font-size: 11px; }
     .ai-drawer-suggestions { display: flex; gap: 6px; overflow-x: auto; padding: 0 14px 10px; background: var(--surface-soft); }
     .ai-drawer-suggestions button { flex: 0 0 auto; border: 1px solid #b8e3de; border-radius: 999px; background: var(--primary-soft); color: var(--primary-hover); padding: 6px 9px; font: inherit; font-size: 11px; cursor: pointer; }
     .ai-drawer-form { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 12px; border-top: 1px solid var(--line); background: var(--surface); }
@@ -1549,6 +1550,7 @@
             <button type="button" data-ai-question="¿Cómo está mi balance este mes?">Mi balance</button>
             <button type="button" data-ai-question="¿En qué categoría gasté más?">Mayor gasto</button>
             <button type="button" data-ai-question="¿Tengo pagos de deudas próximos?">Próximos pagos</button>
+            <button type="button" data-ai-question="Muéstrame mis últimos 10 gastos confirmados.">Gastos recientes</button>
           </div>
           <form class="ai-drawer-form" id="ai-drawer-form">
             {% csrf_token %}
@@ -1593,11 +1595,11 @@
 
       const setOpen = open => {
         drawer.hidden = !open;
+        trigger.hidden = open;
         trigger.setAttribute("aria-expanded", String(open));
-        trigger.querySelector(".material-symbols-outlined").textContent = open ? "close" : "smart_toy";
         if (open) window.setTimeout(() => question.focus(), 0);
       };
-      const addMessage = (text, type, evidence = []) => {
+      const addMessage = (text, type, evidence = [], warning = "") => {
         const node = document.createElement("div");
         node.className = `ai-drawer-message ${type}`;
         const copy = document.createElement("div");
@@ -1612,6 +1614,12 @@
             list.append(row);
           });
           node.append(list);
+        }
+        if (warning) {
+          const alert = document.createElement("div");
+          alert.className = "ai-drawer-warning";
+          alert.textContent = warning;
+          node.append(alert);
         }
         messages.append(node);
         messages.scrollTop = messages.scrollHeight;
@@ -1650,7 +1658,7 @@
           const data = await response.json();
           pending.remove();
           if (!response.ok || !data.ok) throw new Error(data.error || "No fue posible obtener una respuesta.");
-          addMessage(data.respuesta, "assistant", data.evidencia);
+          addMessage(data.respuesta, "assistant", data.evidencia, data.advertencia);
         } catch (error) {
           pending.remove();
           addMessage(error.message || "No fue posible conectar con el asistente.", "assistant");

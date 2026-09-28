@@ -9,7 +9,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from .forms import MovimientoFinancieroForm
-from .ai_assistant import build_financial_context
+from .ai_assistant import ask_financial_assistant, build_financial_context, query_debt_payments, query_movements
 from .models import (
     Acreedor,
     Categoria,
@@ -679,6 +679,136 @@ class FinancialAssistantTests(TestCase):
 
         self.assertContains(response, "Asistente financiero")
         self.assertContains(response, "falta configurar la clave privada")
+
+    def test_contexto_incluye_desglose_limitado_de_pagos_proximos(self):
+        date = datetime(2026, 9, 28).date()
+        debt = Deuda.objects.create(
+            usuario=self.user,
+            acreedor="Banco Ejemplo",
+            concepto="Préstamo educativo",
+            monto_inicial="500.00",
+            saldo_actual="300.00",
+            numero_cuotas=3,
+            fecha_inicio=date,
+            estado=Deuda.Estado.ACTIVA,
+        )
+        PagoDeuda.objects.create(
+            deuda=debt,
+            cuota_numero=2,
+            monto="100.00",
+            fecha=date + timedelta(days=5),
+            estado=PagoDeuda.Estado.PENDIENTE,
+        )
+
+        context = build_financial_context(self.user, today=date)
+        payments = context["pagos_pendientes_proximos_30_dias"]
+
+        self.assertEqual(payments["cantidad"], 1)
+        self.assertEqual(payments["total"], "100.00")
+        self.assertEqual(
+            payments["detalle"][0],
+            {
+                "fecha": "2026-10-03",
+                "acreedor": "Banco Ejemplo",
+                "concepto": "Préstamo educativo",
+                "cuota": 2,
+                "monto": "100.00",
+            },
+        )
+        self.assertTrue(payments["detalle_completo"])
+
+    def test_herramienta_consulta_movimientos_por_fecha_sin_mezclar_usuarios(self):
+        MovimientoFinanciero.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+            categoria=self.category,
+            concepto="Compra propia",
+            monto="25.00",
+            fecha=datetime(2026, 8, 10).date(),
+        )
+        MovimientoFinanciero.objects.create(
+            usuario=self.other,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+            concepto="Compra ajena",
+            monto="900.00",
+            fecha=datetime(2026, 8, 10).date(),
+        )
+
+        result = query_movements(
+            self.user,
+            {"fecha_inicio": "2026-08-01", "fecha_fin": "2026-08-31", "tipo": "gasto", "limite": 10},
+        )
+
+        self.assertEqual(result["cantidad_total"], 1)
+        self.assertEqual(result["total_gastos"], "25.00")
+        self.assertEqual(result["registros"][0]["concepto"], "Compra propia")
+        self.assertNotIn("Compra ajena", json.dumps(result))
+
+    def test_herramienta_pagos_devuelve_total_exacto_aunque_limite_detalle(self):
+        date = datetime(2026, 9, 28).date()
+        debt = Deuda.objects.create(
+            usuario=self.user,
+            acreedor="Banco",
+            concepto="Crédito",
+            monto_inicial="300.00",
+            saldo_actual="300.00",
+            numero_cuotas=3,
+            fecha_inicio=date,
+        )
+        for number in range(1, 4):
+            PagoDeuda.objects.create(
+                deuda=debt,
+                cuota_numero=number,
+                monto="100.00",
+                fecha=date + timedelta(days=number),
+                estado=PagoDeuda.Estado.PENDIENTE,
+            )
+
+        result = query_debt_payments(self.user, {"estado": "pendiente", "limite": 1})
+
+        self.assertEqual(result["cantidad_total"], 3)
+        self.assertEqual(result["monto_total"], "300.00")
+        self.assertEqual(len(result["registros"]), 1)
+        self.assertFalse(result["detalle_completo"])
+
+    @override_settings(AI_ASSISTANT_ENABLED=True, AI_API_KEY="secreto-de-prueba")
+    @patch("core.ai_assistant._provider_message")
+    def test_asistente_ejecuta_herramienta_solo_lectura_y_redacta_resultado(self, provider):
+        MovimientoFinanciero.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+            concepto="Compra consultada",
+            monto="40.00",
+            fecha=datetime(2026, 7, 15).date(),
+        )
+        provider.side_effect = [
+            {
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call-1",
+                        "type": "function",
+                        "function": {
+                            "name": "consultar_movimientos",
+                            "arguments": json.dumps({"fecha_inicio": "2026-07-01", "fecha_fin": "2026-07-31"}),
+                        },
+                    }
+                ],
+            },
+            {
+                "content": json.dumps(
+                    {"respuesta": "Encontré una compra.", "evidencia": ["Total: 40.00 USD"], "advertencia": ""}
+                )
+            },
+        ]
+
+        answer = ask_financial_assistant(self.user, "Muéstrame los movimientos de julio de 2026")
+
+        self.assertEqual(answer["respuesta"], "Encontré una compra.")
+        self.assertEqual(provider.call_count, 2)
+        second_messages = provider.call_args_list[1].args[0]
+        tool_message = next(item for item in second_messages if item["role"] == "tool")
+        self.assertIn("Compra consultada", tool_message["content"])
 
     @override_settings(AI_ASSISTANT_ENABLED=True, AI_API_KEY="secreto-de-prueba")
     @patch("core.views.ask_financial_assistant")

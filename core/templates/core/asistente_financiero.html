@@ -65,11 +65,12 @@
         <button class="btn btn-outline-secondary assistant-suggestion" type="button" data-question="¿Cómo está mi balance de caja este mes?" {% if not ai_configured %}disabled{% endif %}>¿Cómo está mi balance?</button>
         <button class="btn btn-outline-secondary assistant-suggestion" type="button" data-question="¿Qué debería revisar para reducir mis gastos?" {% if not ai_configured %}disabled{% endif %}>¿Dónde puedo reducir gastos?</button>
         <button class="btn btn-outline-secondary assistant-suggestion" type="button" data-question="¿Tengo pagos de deudas próximos?" {% if not ai_configured %}disabled{% endif %}>¿Qué pagos se aproximan?</button>
+        <button class="btn btn-outline-secondary assistant-suggestion" type="button" data-question="Muéstrame mis últimos 10 gastos confirmados con fecha y categoría." {% if not ai_configured %}disabled{% endif %}>Ver gastos recientes</button>
       </div>
     </section>
     <section class="panel assistant-privacy">
       <span class="material-symbols-outlined">shield_lock</span>
-      <span>Se envían tu pregunta, totales agregados, el periodo y hasta cinco categorías. No se envían tu identidad, correos, comprobantes, notas ni credenciales.</span>
+      <span>Se envía tu pregunta y el resumen financiero. Cuando solicitas registros o fechas, Django consulta solo tus datos y envía hasta cincuenta coincidencias con los campos necesarios. No se envían tu identidad, correos, comprobantes, notas ni credenciales.</span>
     </section>
   </aside>
 </div>
