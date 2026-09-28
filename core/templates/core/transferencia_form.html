@@ -1,22 +1,78 @@
 {% extends "base.html" %}
 
 {% block page_title %}Transferir entre cuentas{% endblock %}
-{% block page_subtitle %}Mueve dinero sin registrarlo como ingreso ni gasto{% endblock %}
+{% block page_subtitle %}Mueve tu dinero entre cuentas sin registrarlo como ingreso ni gasto{% endblock %}
 
 {% block content %}
 {{ saldos_cuenta|json_script:"saldos-cuenta-data" }}
 <section class="panel form-panel">
-  <form class="form-grid" method="post">
+  <form class="expense-flow-form" id="transfer-flow-form" method="post">
     {% csrf_token %}
-    {% include "core/includes/unfold_form_fields.html" %}
-    <div class="unfold-field">
-      <span class="form-label">Saldo disponible en origen</span>
-      <div id="saldo-origen" class="form-control bg-light">Selecciona una cuenta</div>
-      <div id="saldo-despues" class="form-text"></div>
+    <nav class="expense-steps" aria-label="Pasos para transferir entre cuentas">
+      <button class="expense-step-tab is-active" type="button" data-transfer-go="1"><span>1</span><strong>Cuenta de origen</strong></button>
+      <span class="expense-step-line"></span>
+      <button class="expense-step-tab" type="button" data-transfer-go="2"><span>2</span><strong>Destino e importe</strong></button>
+      <span class="expense-step-line"></span>
+      <button class="expense-step-tab" type="button" data-transfer-go="3"><span>3</span><strong>Revisión</strong></button>
+    </nav>
+
+    <div class="form-grid" data-transfer-source hidden>
+      {% include "core/includes/unfold_form_fields.html" %}
     </div>
-    <div class="form-actions actions">
-      <button class="btn btn-primary" type="submit"><span class="material-symbols-outlined">swap_horiz</span><span>Transferir</span></button>
-      <a class="btn btn-outline-secondary" href="{% url 'cuenta_list' %}">Cancelar</a>
+
+    <section class="expense-step-panel" data-transfer-panel="1">
+      <div class="expense-step-copy">
+        <span class="material-symbols-outlined">account_balance_wallet</span>
+        <div><h2>¿Desde dónde sale el dinero?</h2><p>Elige la cuenta de origen y comprueba cuánto tienes disponible.</p></div>
+      </div>
+      <div class="form-grid" data-transfer-target="1"></div>
+      <div class="expense-summary" aria-live="polite">
+        <span><small>Cuenta seleccionada</small><strong data-origin-name>Sin seleccionar</strong></span>
+        <span><small>Saldo disponible</small><strong data-origin-balance>Selecciona una cuenta</strong></span>
+        <span><small>Saldo después</small><strong data-origin-after>--</strong></span>
+      </div>
+    </section>
+
+    <section class="expense-step-panel" data-transfer-panel="2" hidden>
+      <div class="expense-step-copy">
+        <span class="material-symbols-outlined">swap_horiz</span>
+        <div><h2>¿Hacia dónde lo moverás?</h2><p>Selecciona otra cuenta e indica el importe de la transferencia.</p></div>
+      </div>
+      <div class="form-grid" data-transfer-target="2"></div>
+      <div class="expense-summary" aria-live="polite">
+        <span><small>Disponible en origen</small><strong data-step-two-balance>--</strong></span>
+        <span><small>Importe a transferir</small><strong data-step-two-amount>0,00</strong></span>
+        <span><small>Quedará en origen</small><strong data-step-two-after>--</strong></span>
+      </div>
+    </section>
+
+    <section class="expense-step-panel" data-transfer-panel="3" hidden>
+      <div class="expense-step-copy">
+        <span class="material-symbols-outlined">fact_check</span>
+        <div><h2>Revisa la transferencia</h2><p>Confirma las cuentas y el importe antes de mover el dinero.</p></div>
+      </div>
+      <div class="expense-summary" aria-live="polite">
+        <span><small>Movimiento</small><strong data-review-route>Sin completar</strong></span>
+        <span><small>Importe</small><strong data-review-amount>0,00</strong></span>
+        <span><small>Saldo restante</small><strong data-review-after>--</strong></span>
+      </div>
+      <div class="form-grid" data-transfer-target="3"></div>
+    </section>
+
+    <div class="expense-step-error" data-transfer-error role="alert" hidden></div>
+    <div class="form-actions actions expense-flow-actions">
+      <button class="btn btn-outline-secondary" type="button" data-transfer-back hidden>
+        <span class="material-symbols-outlined">arrow_back</span><span>Anterior</span>
+      </button>
+      <a class="btn btn-outline-secondary" href="{% url 'cuenta_list' %}">
+        <span class="material-symbols-outlined">close</span><span>Cancelar</span>
+      </a>
+      <button class="btn btn-primary" type="button" data-transfer-next>
+        <span>Siguiente</span><span class="material-symbols-outlined">arrow_forward</span>
+      </button>
+      <button class="btn btn-primary" type="submit" data-transfer-submit hidden>
+        <span class="material-symbols-outlined">swap_horiz</span><span>Transferir</span>
+      </button>
     </div>
   </form>
 </section>
@@ -25,31 +81,129 @@
 {% block scripts %}
 <script>
   (() => {
+    const form = document.getElementById("transfer-flow-form");
+    const source = form?.querySelector("[data-transfer-source]");
+    if (!form || !source) return;
+
     const saldos = JSON.parse(document.getElementById("saldos-cuenta-data").textContent);
-    const origen = document.getElementById("id_cuenta_origen");
-    const monto = document.getElementById("id_monto");
-    const saldo = document.getElementById("saldo-origen");
-    const despues = document.getElementById("saldo-despues");
-    const formato = new Intl.NumberFormat("es-EC", {minimumFractionDigits: 2, maximumFractionDigits: 2});
-    const actualizar = () => {
-      if (!origen.value || saldos[origen.value] === undefined) {
-        saldo.textContent = "Selecciona una cuenta";
-        despues.textContent = "";
-        return;
-      }
-      const disponible = Number(saldos[origen.value]);
-      const valor = Number(String(monto.value || "0").replace(",", "."));
-      const restante = disponible - valor;
-      saldo.textContent = formato.format(disponible);
-      despues.textContent = valor ? `Después de transferir quedarían ${formato.format(restante)}.` : "";
-      despues.classList.toggle("text-danger", restante < 0);
-    };
-    [origen, monto].forEach(campo => {
-      campo.addEventListener("change", actualizar);
-      campo.addEventListener("input", actualizar);
+    const targets = Object.fromEntries(
+      [...form.querySelectorAll("[data-transfer-target]")].map(target => [target.dataset.transferTarget, target])
+    );
+    const fieldSteps = {cuenta_origen: 1, cuenta_destino: 2, monto: 2, fecha: 3, nota: 3};
+    Object.entries(fieldSteps).forEach(([name, step]) => {
+      const field = source.querySelector(`.field-${name}`);
+      if (field) targets[step].append(field);
     });
-    if (window.jQuery) window.jQuery(origen).on("change", actualizar);
-    window.setTimeout(actualizar, 0);
+    [...source.children].forEach(node => {
+      if (node.matches('input[type="hidden"]')) form.append(node);
+      else targets[1].prepend(node);
+    });
+    source.remove();
+
+    const panels = [...form.querySelectorAll("[data-transfer-panel]")];
+    const tabs = [...form.querySelectorAll("[data-transfer-go]")];
+    const back = form.querySelector("[data-transfer-back]");
+    const next = form.querySelector("[data-transfer-next]");
+    const submit = form.querySelector("[data-transfer-submit]");
+    const error = form.querySelector("[data-transfer-error]");
+    const origen = document.getElementById("id_cuenta_origen");
+    const destino = document.getElementById("id_cuenta_destino");
+    const monto = document.getElementById("id_monto");
+    const fecha = document.getElementById("id_fecha");
+    const formato = new Intl.NumberFormat("es-EC", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    let currentStep = 1;
+
+    const optionText = select => select?.selectedOptions[0]?.text?.trim() || "Sin seleccionar";
+    const amount = () => Number(String(monto?.value || "0").replace(",", "."));
+    const available = () => origen?.value && saldos[origen.value] !== undefined ? Number(saldos[origen.value]) : null;
+    const money = value => value === null || !Number.isFinite(value) ? "--" : formato.format(value);
+
+    const updateSummary = () => {
+      const saldo = available();
+      const valor = amount();
+      const restante = saldo === null ? null : saldo - valor;
+      form.querySelector("[data-origin-name]").textContent = origen?.value ? optionText(origen) : "Sin seleccionar";
+      form.querySelector("[data-origin-balance]").textContent = saldo === null ? "Selecciona una cuenta" : money(saldo);
+      form.querySelector("[data-origin-after]").textContent = valor > 0 ? money(restante) : money(saldo);
+      form.querySelector("[data-step-two-balance]").textContent = money(saldo);
+      form.querySelector("[data-step-two-amount]").textContent = money(valor);
+      form.querySelector("[data-step-two-after]").textContent = money(restante);
+      form.querySelector("[data-review-route]").textContent = origen?.value && destino?.value
+        ? `${optionText(origen)} → ${optionText(destino)}` : "Sin completar";
+      form.querySelector("[data-review-amount]").textContent = money(valor);
+      form.querySelector("[data-review-after]").textContent = money(restante);
+      [form.querySelector("[data-origin-after]"), form.querySelector("[data-step-two-after]"), form.querySelector("[data-review-after]")]
+        .forEach(item => item?.classList.toggle("text-danger", restante !== null && restante < 0));
+    };
+
+    const invalid = step => {
+      if (step === 1 && !origen?.value) return [origen, "Selecciona la cuenta de donde saldrá el dinero."];
+      if (step === 2) {
+        if (!destino?.value) return [destino, "Selecciona la cuenta que recibirá el dinero."];
+        if (destino.value === origen.value) return [destino, "La cuenta de destino debe ser diferente de la cuenta de origen."];
+        if (!Number.isFinite(amount()) || amount() <= 0) return [monto, "Indica un importe mayor que cero."];
+        if (available() !== null && amount() > available()) return [monto, `El saldo disponible es ${money(available())}. Reduce el importe para continuar.`];
+      }
+      if (step === 3 && !fecha?.value) return [fecha, "Indica la fecha de la transferencia."];
+      return null;
+    };
+
+    const validate = step => {
+      const issue = invalid(step);
+      error.hidden = !issue;
+      error.textContent = issue?.[1] || "";
+      if (issue) {
+        issue[0]?.focus();
+        issue[0]?.closest(".unfold-field")?.scrollIntoView({behavior: "smooth", block: "center"});
+        return false;
+      }
+      return true;
+    };
+
+    const showStep = step => {
+      currentStep = Math.max(1, Math.min(3, step));
+      panels.forEach(panel => { panel.hidden = Number(panel.dataset.transferPanel) !== currentStep; });
+      tabs.forEach(tab => {
+        const tabStep = Number(tab.dataset.transferGo);
+        tab.classList.toggle("is-active", tabStep === currentStep);
+        tab.classList.toggle("is-complete", tabStep < currentStep);
+        tab.setAttribute("aria-current", tabStep === currentStep ? "step" : "false");
+      });
+      back.hidden = currentStep === 1;
+      next.hidden = currentStep === 3;
+      submit.hidden = currentStep !== 3;
+      error.hidden = true;
+      updateSummary();
+    };
+
+    next.addEventListener("click", () => { if (validate(currentStep)) showStep(currentStep + 1); });
+    back.addEventListener("click", () => showStep(currentStep - 1));
+    tabs.forEach(tab => tab.addEventListener("click", () => {
+      const target = Number(tab.dataset.transferGo);
+      if (target <= currentStep || validate(currentStep)) showStep(target);
+    }));
+    [origen, destino, monto, fecha].forEach(field => {
+      field?.addEventListener("change", updateSummary);
+      field?.addEventListener("input", updateSummary);
+    });
+    if (window.jQuery) {
+      window.jQuery(origen).on("change.transferFlow", updateSummary);
+      window.jQuery(destino).on("change.transferFlow", updateSummary);
+    }
+    form.addEventListener("submit", event => {
+      for (let step = 1; step <= 3; step += 1) {
+        if (!validate(step)) {
+          event.preventDefault();
+          showStep(step);
+          validate(step);
+          return;
+        }
+      }
+    });
+
+    const serverError = form.querySelector(".has-error");
+    const errorPanel = serverError?.closest("[data-transfer-panel]");
+    showStep(errorPanel ? Number(errorPanel.dataset.transferPanel) : 1);
   })();
 </script>
 {% endblock %}

@@ -82,7 +82,8 @@
     const nuevoAcreedor = document.getElementById("id_nuevo_acreedor_credito");
     const numeroCuotas = document.getElementById("id_numero_cuotas_credito");
     if (!metodo || !fechaPago) return;
-    const camposCredito = [fechaPago, acreedor, nuevoAcreedor, numeroCuotas].filter(Boolean);
+    const camposCredito = [fechaPago, acreedor, numeroCuotas].filter(Boolean);
+    if (nuevoAcreedor) nuevoAcreedor.closest(".unfold-field").hidden = true;
     const actualizar = () => {
       const esCredito = metodo.selectedOptions[0]?.dataset.tipo === "credito";
       camposCredito.forEach(campo => {
@@ -460,6 +461,91 @@
     addQuickButton(categorySelect, "Nueva categoría o subcategoría", openCategoryCreator);
     addQuickButton(tagSelect, "Nueva etiqueta", openTagCreator);
     document.querySelector("[data-open-inline-category]")?.addEventListener("click", openCategoryCreator);
+  })();
+
+  (() => {
+    const form = document.getElementById("expense-flow-form");
+    const creditor = document.getElementById("id_acreedor_credito");
+    const legacyInput = document.getElementById("id_nuevo_acreedor_credito");
+    if (!form || !creditor || !window.Swal) return;
+    legacyInput?.closest(".unfold-field")?.setAttribute("hidden", "hidden");
+    const csrfToken = form.querySelector('input[name="csrfmiddlewaretoken"]')?.value || "";
+    const createField = (labelText, type = "text", placeholder = "") => {
+      const wrap = document.createElement("div");
+      const label = document.createElement("label");
+      label.className = "form-label";
+      label.textContent = labelText;
+      const input = document.createElement(type === "textarea" ? "textarea" : "input");
+      if (type !== "textarea") input.type = type;
+      input.className = "form-control mb-3";
+      input.placeholder = placeholder;
+      wrap.append(label, input);
+      return { wrap, input };
+    };
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "btn btn-sm btn-outline-primary mt-2";
+    button.innerHTML = '<span class="material-symbols-outlined">add</span><span>Nuevo acreedor</span>';
+    creditor.closest(".unfold-field")?.append(button);
+    button.addEventListener("click", async () => {
+      const content = document.createElement("div");
+      content.className = "quick-option-form";
+      const name = createField("Nombre *", "text", "Ej.: Visa Pichincha o la tienda");
+      const phone = createField("Teléfono", "tel", "Opcional");
+      const email = createField("Correo electrónico", "email", "Opcional");
+      const note = createField("Nota", "textarea", "Información útil del acreedor");
+      content.append(name.wrap, phone.wrap, email.wrap, note.wrap);
+      const result = await Swal.fire({
+        customClass: { popup: "finance-swal", confirmButton: "finance-swal-confirm", cancelButton: "finance-swal-cancel" },
+        buttonsStyling: false,
+        reverseButtons: true,
+        title: "Nuevo acreedor",
+        html: content,
+        showCancelButton: true,
+        confirmButtonText: "Crear y seleccionar",
+        cancelButtonText: "Cancelar",
+        focusConfirm: false,
+        didOpen: () => name.input.focus(),
+        preConfirm: async () => {
+          if (!name.input.value.trim()) {
+            Swal.showValidationMessage("Escribe el nombre del acreedor.");
+            return false;
+          }
+          try {
+            const response = await fetch("{% url 'acreedor_rapido_create' %}", {
+              method: "POST",
+              headers: {
+                "X-CSRFToken": csrfToken,
+                "X-Requested-With": "XMLHttpRequest",
+                "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+              },
+              body: new URLSearchParams({
+                nombre: name.input.value.trim(),
+                telefono: phone.input.value.trim(),
+                email: email.input.value.trim(),
+                nota: note.input.value.trim(),
+                csrfmiddlewaretoken: csrfToken,
+              }),
+            });
+            const data = await response.json();
+            if (!response.ok || !data.ok) {
+              throw new Error(Object.values(data.errors || {}).flat().join(" ") || "No se pudo guardar.");
+            }
+            return data;
+          } catch (error) {
+            Swal.showValidationMessage(error.message);
+            return false;
+          }
+        },
+      });
+      if (!result.isConfirmed || !result.value) return;
+      const data = result.value.option;
+      const option = new Option(data.label, data.id, true, true);
+      creditor.add(option);
+      if (legacyInput) legacyInput.value = "";
+      if (window.jQuery) window.jQuery(creditor).val(String(data.id)).trigger("change");
+      else creditor.dispatchEvent(new Event("change", { bubbles: true }));
+    });
   })();
 </script>
 {% endblock %}

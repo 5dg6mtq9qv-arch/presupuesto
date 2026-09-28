@@ -951,6 +951,11 @@ class TransferenciaCuentaForm(UserScopedModelForm):
         cuentas = CuentaFinanciera.objects.filter(usuario=user, activa=True).order_by("nombre")
         self.fields["cuenta_origen"].queryset = cuentas
         self.fields["cuenta_destino"].queryset = cuentas
+        self.fields["cuenta_origen"].empty_label = "Selecciona la cuenta de origen"
+        self.fields["cuenta_destino"].empty_label = "Selecciona la cuenta de destino"
+        self.fields["cuenta_origen"].help_text = "Mostraremos el saldo disponible antes de continuar."
+        self.fields["monto"].help_text = "No puede superar el saldo disponible en la cuenta de origen."
+        self.fields["nota"].widget.attrs.update({"rows": 3, "placeholder": "Ej.: dinero para gastos semanales (opcional)"})
         if not self.is_bound:
             self.fields["fecha"].initial = timezone.localdate().isoformat()
 

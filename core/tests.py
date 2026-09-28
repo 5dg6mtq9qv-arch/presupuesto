@@ -365,6 +365,14 @@ class TransferenciaCuentaTests(TestCase):
         )
         self.client.force_login(self.user)
 
+    def test_formulario_presenta_transferencia_guiada_y_saldos(self):
+        response = self.client.get(reverse("cuenta_transferir"))
+
+        self.assertContains(response, "¿Desde dónde sale el dinero?")
+        self.assertContains(response, "¿Hacia dónde lo moverás?")
+        self.assertContains(response, "Revisa la transferencia")
+        self.assertContains(response, f'"{self.origen.pk}": 100.0', html=False)
+
     def test_transferencia_mueve_saldo_sin_crear_ingreso_o_gasto(self):
         response = self.client.post(
             reverse("cuenta_transferir"),
