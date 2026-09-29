@@ -39,7 +39,7 @@ MAX_ANOMALY_DETAILS = 10
 logger = logging.getLogger(__name__)
 
 SYSTEM_HELP = """
-TaskBudget permite registrar ingresos y gastos, clasificarlos por categoría, cuenta,
+Tu gestor financiero permite registrar ingresos y gastos, clasificarlos por categoría, cuenta,
 método de pago y etiquetas; manejar compras a crédito y sus cuotas; crear presupuestos
 mensuales; administrar deudas y pagos; transferir dinero entre cuentas; configurar
 movimientos recurrentes; consultar análisis, reportes y el calendario financiero.
@@ -1298,7 +1298,7 @@ def ask_financial_assistant(user, question, history=None):
     context = build_financial_context(user)
     today = timezone.localdate()
     system_prompt = (
-        f"Eres el asistente amigable de TaskBudget. La fecha actual es {today.isoformat()}. "
+        f"Eres el asistente amigable de este gestor financiero. La fecha actual es {today.isoformat()}. "
         "Habla en español natural, cálido y de tú a tú. Responde saludos y conversación casual brevemente, y pregunta en qué puedes ayudar. "
         "Explica cómo usar el sistema basándote solo en GUIA_DEL_SISTEMA; si algo no aparece allí, dilo sin inventar. "
         "Para preguntas financieras, empieza con la respuesta concreta; evita sonar burocrático o repetir la pregunta. "
