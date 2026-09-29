@@ -11,6 +11,7 @@ from django.utils import timezone
 from .forms import MovimientoFinancieroForm
 from .ai_assistant import (
     AI_TOOLS,
+    _execute_tool,
     _parse_assistant_answer,
     analyze_spending,
     _provider_message,
@@ -847,6 +848,37 @@ class FinancialAssistantTests(TestCase):
                 "analizar_gastos_avanzado",
             }.issubset(tool_names)
         )
+
+    def test_asistente_crea_gasto_solo_despues_de_confirmacion(self):
+        account = CuentaFinanciera.objects.create(
+            usuario=self.user,
+            nombre="Banco principal",
+            tipo=CuentaFinanciera.Tipo.BANCO,
+            saldo_inicial="100.00",
+        )
+        tool_call = {
+            "function": {
+                "name": "crear_movimiento",
+                "arguments": json.dumps(
+                    {
+                        "tipo": "gasto",
+                        "concepto": "Almuerzo",
+                        "monto": 12.5,
+                        "fecha": "2026-09-29",
+                        "categoria": "Alimentación > Supermercado",
+                        "cuenta": account.nombre,
+                        "confirmado": True,
+                    }
+                ),
+            }
+        }
+
+        pending = _execute_tool(self.user, tool_call, allow_writes=False)
+        created = _execute_tool(self.user, tool_call, allow_writes=True)
+
+        self.assertTrue(pending["requiere_confirmacion"])
+        self.assertTrue(created["creado"])
+        self.assertEqual(MovimientoFinanciero.objects.filter(usuario=self.user, concepto="Almuerzo").count(), 1)
 
     def test_analisis_avanzado_compara_meses_y_proyecta_con_datos_confirmados(self):
         for month, amount in ((6, "100.00"), (7, "200.00"), (8, "300.00")):

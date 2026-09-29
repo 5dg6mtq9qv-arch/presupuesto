@@ -34,13 +34,13 @@
       <span class="material-symbols-outlined">smart_toy</span>
       <div>
         <h2>Consulta tus finanzas</h2>
-        <p>La IA explica los cálculos del sistema; no modifica tus registros.</p>
+        <p>Pregunta, consulta tus cifras o crea registros paso a paso.</p>
       </div>
     </div>
 
     <div class="assistant-messages" id="assistant-messages" aria-live="polite">
       <div class="assistant-message assistant-message-ai">
-        {% if ai_configured %}¡Hola! Puedo ayudarte a entender tus ingresos, gastos, deudas y presupuesto. ¿Qué quieres revisar?{% else %}El asistente está instalado, pero falta configurar la clave privada del proveedor en el servidor.{% endif %}
+        {% if ai_configured %}¡Hola! Puedo responder dudas y ayudarte a consultar o registrar ingresos, gastos, presupuestos y deudas paso a paso. ¿Qué necesitas?{% else %}El asistente está instalado, pero falta configurar la clave privada del proveedor en el servidor.{% endif %}
       </div>
     </div>
 
@@ -66,11 +66,13 @@
         <button class="btn btn-outline-secondary assistant-suggestion" type="button" data-question="¿Qué debería revisar para reducir mis gastos?" {% if not ai_configured %}disabled{% endif %}>¿Dónde puedo reducir gastos?</button>
         <button class="btn btn-outline-secondary assistant-suggestion" type="button" data-question="¿Tengo pagos de deudas próximos?" {% if not ai_configured %}disabled{% endif %}>¿Qué pagos se aproximan?</button>
         <button class="btn btn-outline-secondary assistant-suggestion" type="button" data-question="Muéstrame mis últimos 10 gastos confirmados con fecha y categoría." {% if not ai_configured %}disabled{% endif %}>Ver gastos recientes</button>
+        <button class="btn btn-outline-secondary assistant-suggestion" type="button" data-question="Ayúdame a registrar un gasto." {% if not ai_configured %}disabled{% endif %}>Registrar un gasto</button>
+        <button class="btn btn-outline-secondary assistant-suggestion" type="button" data-question="Ayúdame a crear un presupuesto mensual." {% if not ai_configured %}disabled{% endif %}>Crear un presupuesto</button>
       </div>
     </section>
     <section class="panel assistant-privacy">
       <span class="material-symbols-outlined">shield_lock</span>
-      <span>Se envía tu pregunta y el resumen financiero. Cuando solicitas registros o fechas, Django consulta solo tus datos y envía hasta cincuenta coincidencias con los campos necesarios. No se envían tu identidad, correos, comprobantes, notas ni credenciales.</span>
+      <span>Se envían tu pregunta, hasta diez mensajes recientes y el resumen financiero. Django consulta solo tus datos y el asistente únicamente crea un registro después de mostrarte el resumen y recibir tu confirmación. No se envían tu identidad, correos, comprobantes, notas ni credenciales.</span>
     </section>
   </aside>
 </div>
@@ -85,6 +87,7 @@
     const submit = form?.querySelector('button[type="submit"]');
     if (!form || !question || !messages || !submit || question.disabled) return;
     const csrfToken = form.querySelector('input[name="csrfmiddlewaretoken"]').value;
+    const history = [];
 
     const addMessage = (text, type, data = {}) => {
       const node = document.createElement("div");
@@ -118,6 +121,8 @@
       const value = question.value.trim();
       if (value.length < 3) return question.focus();
       addMessage(value, "user");
+      const requestHistory = history.slice(-10);
+      history.push({role: "user", content: value});
       question.value = "";
       submit.disabled = true;
       const pending = addMessage("Déjame revisar tus cifras…", "ai");
@@ -125,7 +130,7 @@
         const response = await fetch("{% url 'asistente_financiero_preguntar' %}", {
           method: "POST",
           headers: {"Content-Type": "application/json", "X-CSRFToken": csrfToken, "X-Requested-With": "XMLHttpRequest"},
-          body: JSON.stringify({pregunta: value}),
+          body: JSON.stringify({pregunta: value, historial: requestHistory}),
         });
         if (response.redirected && response.url.includes("/login")) throw new Error("Tu sesión expiró. Recarga la página e inicia sesión nuevamente.");
         const raw = await response.text();
@@ -138,6 +143,7 @@
         pending.remove();
         if (!response.ok || !data.ok) throw new Error(data.error || "No fue posible obtener una respuesta.");
         addMessage(data.respuesta, "ai", data);
+        history.push({role: "assistant", content: data.respuesta});
       } catch (error) {
         pending.remove();
         addMessage(error.message || "No fue posible conectar con el asistente.", "ai");

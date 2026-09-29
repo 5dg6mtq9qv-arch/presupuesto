@@ -108,7 +108,7 @@ def asistente_financiero(request):
 def asistente_financiero_preguntar(request):
     if not user_can_use_ai(request.user):
         return JsonResponse({"ok": False, "error": "No tienes autorización para utilizar el asistente de IA."}, status=403)
-    if int(request.META.get("CONTENT_LENGTH") or 0) > 5000:
+    if int(request.META.get("CONTENT_LENGTH") or 0) > 20000:
         return JsonResponse({"ok": False, "error": "La consulta es demasiado extensa."}, status=400)
     try:
         body = json.loads(request.body or b"{}")
@@ -119,6 +119,16 @@ def asistente_financiero_preguntar(request):
         return JsonResponse({"ok": False, "error": "Escribe una pregunta un poco más clara."}, status=400)
     if len(question) > 600:
         return JsonResponse({"ok": False, "error": "La pregunta no puede superar 600 caracteres."}, status=400)
+    raw_history = body.get("historial", [])
+    if not isinstance(raw_history, list):
+        return JsonResponse({"ok": False, "error": "El historial de conversación no es válido."}, status=400)
+    history = []
+    for item in raw_history[-10:]:
+        if not isinstance(item, dict) or item.get("role") not in {"user", "assistant"}:
+            continue
+        content = str(item.get("content") or "").strip()[:1000]
+        if content:
+            history.append({"role": item["role"], "content": content})
 
     rate_key = f"ai-assistant:{request.user.pk}"
     if cache.add(rate_key, 1, timeout=60):
@@ -136,7 +146,10 @@ def asistente_financiero_preguntar(request):
         )
 
     try:
-        answer = ask_financial_assistant(request.user, question)
+        if history:
+            answer = ask_financial_assistant(request.user, question, history=history)
+        else:
+            answer = ask_financial_assistant(request.user, question)
     except AIAssistantError as exc:
         return JsonResponse({"ok": False, "error": str(exc)}, status=503)
     except Exception:

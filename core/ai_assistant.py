@@ -1,5 +1,6 @@
 import json
 import logging
+import unicodedata
 from calendar import monthrange
 from datetime import timedelta
 from decimal import Decimal
@@ -7,12 +8,14 @@ from statistics import median
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from django.db import transaction
 from django.db.models import Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 
 from .ai_config import get_ai_runtime_config
+from .forms import DeudaForm, MovimientoFinancieroForm
 from .models import (
     Acreedor,
     Categoria,
@@ -25,13 +28,27 @@ from .models import (
     PagoDeuda,
     PerfilUsuario,
     PresupuestoMensual,
+    RegistroAuditoria,
     TransferenciaCuenta,
 )
+from .services import crear_historial_inicial_deuda, sincronizar_cuotas_pendientes_deuda, sincronizar_deuda_compra_credito
 
 MAX_UPCOMING_PAYMENT_DETAILS = 25
 MAX_QUERY_DETAILS = 50
 MAX_ANOMALY_DETAILS = 10
 logger = logging.getLogger(__name__)
+
+SYSTEM_HELP = """
+TaskBudget permite registrar ingresos y gastos, clasificarlos por categoría, cuenta,
+método de pago y etiquetas; manejar compras a crédito y sus cuotas; crear presupuestos
+mensuales; administrar deudas y pagos; transferir dinero entre cuentas; configurar
+movimientos recurrentes; consultar análisis, reportes y el calendario financiero.
+Los movimientos confirmados afectan los saldos y análisis. Los pendientes no afectan
+el saldo hasta confirmarse. Una compra confirmada con método de crédito genera la deuda
+y sus cuotas, pero no descuenta una cuenta en el momento de la compra. Los presupuestos
+se definen por categoría o subcategoría y por mes. El usuario puede gestionar catálogos
+como cuentas, categorías, métodos de pago, acreedores y etiquetas desde Finanzas.
+""".strip()
 
 
 class AIAssistantError(Exception):
@@ -701,6 +718,200 @@ def query_financial_catalog(user, arguments):
     }
 
 
+def _normalize_text(value):
+    value = unicodedata.normalize("NFKD", str(value or "").strip().casefold())
+    return "".join(character for character in value if not unicodedata.combining(character))
+
+
+def _find_named(queryset, value, label):
+    """Resolve a user-facing name without ever accepting another user's object id."""
+    name = str(value or "").strip()
+    if not name:
+        raise ValueError(f"Falta indicar {label}.")
+    exact = list(queryset.filter(nombre__iexact=name)[:2])
+    if len(exact) == 1:
+        return exact[0]
+    partial = list(queryset.filter(nombre__icontains=name)[:6])
+    if len(partial) == 1:
+        return partial[0]
+    if not partial:
+        raise ValueError(f"No encontré {label} con el nombre '{name}'. Consulta primero las opciones disponibles.")
+    options = ", ".join(item.nombre for item in partial[:5])
+    raise ValueError(f"'{name}' coincide con varias opciones de {label}: {options}. Indica el nombre exacto.")
+
+
+def _find_category(user, value):
+    text = str(value or "").strip()
+    queryset = Categoria.objects.filter(usuario=user, tipo=Categoria.Tipo.FINANZAS).select_related("parent")
+    if ">" in text:
+        parent_name, child_name = (part.strip() for part in text.split(">", 1))
+        matches = list(queryset.filter(parent__nombre__iexact=parent_name, nombre__iexact=child_name)[:2])
+        if len(matches) == 1:
+            return matches[0]
+    return _find_named(queryset, text, "la categoría")
+
+
+def _form_errors(form):
+    messages = []
+    for field, errors in form.errors.items():
+        label = form.fields[field].label if field in form.fields else "Datos"
+        messages.extend(f"{label}: {error}" for error in errors)
+    return " ".join(messages)
+
+
+def _record_ai_creation(user, instance, changes):
+    RegistroAuditoria.objects.create(
+        usuario=user,
+        accion=RegistroAuditoria.Accion.CREAR,
+        modelo=instance._meta.label,
+        objeto_id=str(instance.pk),
+        objeto_repr=str(instance)[:255],
+        cambios=changes,
+        motivo="Creado mediante el asistente de IA tras confirmación del usuario.",
+    )
+
+
+@transaction.atomic
+def create_movement(user, arguments):
+    movement_type = arguments.get("tipo")
+    if movement_type not in {MovimientoFinanciero.Tipo.INGRESO, MovimientoFinanciero.Tipo.GASTO}:
+        raise ValueError("El tipo debe ser ingreso o gasto.")
+    category = _find_category(user, arguments.get("categoria"))
+    payment_method = None
+    if arguments.get("metodo_pago"):
+        payment_method = _find_named(
+            MetodoPago.objects.filter(usuario=user, activo=True),
+            arguments.get("metodo_pago"),
+            "el método de pago",
+        )
+    account = None
+    is_credit_purchase = (
+        movement_type == MovimientoFinanciero.Tipo.GASTO
+        and payment_method
+        and payment_method.tipo == MetodoPago.Tipo.CREDITO
+    )
+    if not is_credit_purchase:
+        account = _find_named(
+            CuentaFinanciera.objects.filter(usuario=user, activa=True),
+            arguments.get("cuenta"),
+            "la cuenta",
+        )
+    creditor = None
+    new_creditor = ""
+    if payment_method and payment_method.tipo == MetodoPago.Tipo.CREDITO:
+        creditor_name = str(arguments.get("acreedor") or "").strip()
+        creditor = Acreedor.objects.filter(usuario=user, activo=True, nombre__iexact=creditor_name).first()
+        if not creditor:
+            new_creditor = creditor_name
+
+    data = {
+        "categoria": category.pk,
+        "cuenta": account.pk if account else "",
+        "metodo_pago": payment_method.pk if payment_method else "",
+        "acreedor_credito": creditor.pk if creditor else "",
+        "nuevo_acreedor_credito": new_creditor,
+        "numero_cuotas_credito": arguments.get("numero_cuotas", 1),
+        "monto": arguments.get("monto"),
+        "fecha": arguments.get("fecha"),
+        "fecha_pago": arguments.get("fecha_pago") or "",
+        "concepto": arguments.get("concepto"),
+    }
+    form = MovimientoFinancieroForm(data, user=user, tipo=movement_type)
+    if not form.is_valid():
+        raise ValueError(_form_errors(form))
+    movement = form.save(commit=False)
+    movement.usuario = user
+    movement.estado = MovimientoFinanciero.Estado.CONFIRMADO
+    movement.save()
+    form.save_m2m()
+    sincronizar_deuda_compra_credito(movement)
+    _record_ai_creation(user, movement, {"monto": _money(movement.monto), "origen": "asistente_ia"})
+    return {
+        "creado": True,
+        "tipo": movement.tipo,
+        "concepto": movement.concepto,
+        "monto": _money(movement.monto),
+        "fecha": movement.fecha.isoformat(),
+        "categoria": category.nombre,
+        "cuenta": account.nombre if account and movement.cuenta_id else None,
+    }
+
+
+@transaction.atomic
+def create_budget(user, arguments):
+    category = _find_category(user, arguments.get("categoria"))
+    try:
+        year = int(arguments.get("anio"))
+        month = int(arguments.get("mes"))
+        amount = Decimal(str(arguments.get("monto")))
+    except (TypeError, ValueError, ArithmeticError) as exc:
+        raise ValueError("Año, mes y monto deben ser valores válidos.") from exc
+    if not 1 <= month <= 12:
+        raise ValueError("El mes debe estar entre 1 y 12.")
+    if year < 2000 or amount <= 0:
+        raise ValueError("El año debe ser 2000 o posterior y el monto debe ser mayor que cero.")
+    if PresupuestoMensual.objects.filter(usuario=user, categoria=category, anio=year, mes=month).exists():
+        raise ValueError("Ya existe un presupuesto para esa categoría o subcategoría en ese mes.")
+    budget = PresupuestoMensual.objects.create(
+        usuario=user,
+        categoria=category,
+        anio=year,
+        mes=month,
+        monto=amount,
+        nota=str(arguments.get("nota") or "")[:1000],
+    )
+    _record_ai_creation(user, budget, {"monto": _money(budget.monto), "origen": "asistente_ia"})
+    return {
+        "creado": True,
+        "categoria": category.nombre,
+        "anio": budget.anio,
+        "mes": budget.mes,
+        "monto": _money(budget.monto),
+    }
+
+
+@transaction.atomic
+def create_debt(user, arguments):
+    creditor_name = str(arguments.get("acreedor") or "").strip()
+    creditor = Acreedor.objects.filter(usuario=user, activo=True, nombre__iexact=creditor_name).first()
+    category = _find_category(user, arguments.get("categoria")) if arguments.get("categoria") else None
+    data = {
+        "acreedor_existente": creditor.pk if creditor else "",
+        "nuevo_acreedor": "" if creditor else creditor_name,
+        "categoria": category.pk if category else "",
+        "concepto": arguments.get("concepto"),
+        "monto_inicial": arguments.get("monto_inicial"),
+        "saldo_actual": arguments.get("saldo_actual", arguments.get("monto_inicial")),
+        "tasa_interes_anual": arguments.get("tasa_interes_anual") or "",
+        "pago_minimo": arguments.get("pago_minimo") or "",
+        "numero_cuotas": arguments.get("numero_cuotas", 1),
+        "fecha_inicio": arguments.get("fecha_inicio"),
+        "fecha_primera_cuota": arguments.get("fecha_primera_cuota") or "",
+        "estado": Deuda.Estado.ACTIVA,
+        "nota": arguments.get("nota") or "",
+    }
+    form = DeudaForm(data, user=user)
+    if not form.is_valid():
+        raise ValueError(_form_errors(form))
+    debt = form.save(commit=False)
+    debt.usuario = user
+    debt.save()
+    form.save_m2m()
+    crear_historial_inicial_deuda(debt)
+    sincronizar_cuotas_pendientes_deuda(debt)
+    _record_ai_creation(user, debt, {"monto_inicial": _money(debt.monto_inicial), "origen": "asistente_ia"})
+    return {
+        "creado": True,
+        "acreedor": debt.acreedor,
+        "concepto": debt.concepto,
+        "monto_inicial": _money(debt.monto_inicial),
+        "saldo_actual": _money(debt.saldo_actual),
+        "numero_cuotas": debt.numero_cuotas,
+        "fecha_inicio": debt.fecha_inicio.isoformat(),
+        "fecha_vencimiento": debt.fecha_vencimiento.isoformat() if debt.fecha_vencimiento else None,
+    }
+
+
 AI_TOOLS = [
     {
         "type": "function",
@@ -850,6 +1061,77 @@ AI_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "crear_movimiento",
+            "description": "Crea un ingreso o gasto confirmado únicamente después de que el usuario haya revisado un resumen y confirmado explícitamente que desea guardarlo.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "tipo": {"type": "string", "enum": ["ingreso", "gasto"]},
+                    "concepto": {"type": "string"},
+                    "monto": {"type": "number", "exclusiveMinimum": 0},
+                    "fecha": {"type": "string", "description": "AAAA-MM-DD"},
+                    "categoria": {"type": "string", "description": "Nombre exacto; para subcategorías puede usar Categoría > Subcategoría"},
+                    "cuenta": {"type": "string", "description": "Nombre exacto. No se requiere para una compra a crédito"},
+                    "metodo_pago": {"type": "string", "description": "Nombre exacto y opcional"},
+                    "acreedor": {"type": "string", "description": "Obligatorio para una compra a crédito"},
+                    "fecha_pago": {"type": "string", "description": "Primera fecha máxima de pago AAAA-MM-DD para crédito"},
+                    "numero_cuotas": {"type": "integer", "minimum": 1},
+                    "confirmado": {"type": "boolean", "description": "Debe ser true solo tras confirmación explícita del usuario"},
+                },
+                "required": ["tipo", "concepto", "monto", "fecha", "categoria", "confirmado"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "crear_presupuesto",
+            "description": "Crea un presupuesto mensual únicamente después de mostrar un resumen y recibir confirmación explícita.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "categoria": {"type": "string", "description": "Nombre exacto; puede usar Categoría > Subcategoría"},
+                    "anio": {"type": "integer", "minimum": 2000},
+                    "mes": {"type": "integer", "minimum": 1, "maximum": 12},
+                    "monto": {"type": "number", "exclusiveMinimum": 0},
+                    "nota": {"type": "string"},
+                    "confirmado": {"type": "boolean", "description": "Debe ser true solo tras confirmación explícita del usuario"},
+                },
+                "required": ["categoria", "anio", "mes", "monto", "confirmado"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "crear_deuda",
+            "description": "Crea una deuda activa y programa sus cuotas únicamente después de mostrar un resumen y recibir confirmación explícita.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "acreedor": {"type": "string"},
+                    "concepto": {"type": "string"},
+                    "monto_inicial": {"type": "number", "exclusiveMinimum": 0},
+                    "saldo_actual": {"type": "number", "minimum": 0},
+                    "numero_cuotas": {"type": "integer", "minimum": 1},
+                    "fecha_inicio": {"type": "string", "description": "AAAA-MM-DD"},
+                    "fecha_primera_cuota": {"type": "string", "description": "AAAA-MM-DD; opcional"},
+                    "categoria": {"type": "string"},
+                    "tasa_interes_anual": {"type": "number", "minimum": 0},
+                    "pago_minimo": {"type": "number", "minimum": 0},
+                    "nota": {"type": "string"},
+                    "confirmado": {"type": "boolean", "description": "Debe ser true solo tras confirmación explícita del usuario"},
+                },
+                "required": ["acreedor", "concepto", "monto_inicial", "numero_cuotas", "fecha_inicio", "confirmado"],
+                "additionalProperties": False,
+            },
+        },
+    },
 ]
 
 
@@ -863,6 +1145,9 @@ TOOL_HANDLERS = {
     "consultar_transferencias": query_transfers,
     "consultar_movimientos_recurrentes": query_recurring_movements,
     "consultar_catalogo_financiero": query_financial_catalog,
+    "crear_movimiento": create_movement,
+    "crear_presupuesto": create_budget,
+    "crear_deuda": create_debt,
 }
 
 
@@ -920,7 +1205,36 @@ def _provider_message(messages, config, *, tools=None, max_tokens=600):
         raise AIAssistantError("La IA devolvió una respuesta que no se pudo validar.") from exc
 
 
-def _execute_tool(user, tool_call):
+WRITE_TOOLS = {"crear_movimiento", "crear_presupuesto", "crear_deuda"}
+
+
+def _has_explicit_confirmation(question, history=None):
+    normalized = _normalize_text(question)
+    last_assistant_message = ""
+    for item in reversed(history or []):
+        if isinstance(item, dict) and item.get("role") == "assistant":
+            last_assistant_message = _normalize_text(item.get("content"))
+            break
+    if not any(word in last_assistant_message for word in ("confirm", "guard", "crear", "registr")):
+        return False
+    if normalized.strip(" .!¡¿?") in {"si", "ok", "correcto", "confirmo", "adelante"}:
+        return True
+    confirmations = (
+        "si, crealo",
+        "si crealo",
+        "si, guardalo",
+        "si guardalo",
+        "confirmo",
+        "confirmado",
+        "adelante",
+        "de acuerdo",
+        "datos correctos",
+        "todo correcto",
+    )
+    return any(phrase in normalized for phrase in confirmations)
+
+
+def _execute_tool(user, tool_call, *, allow_writes=False):
     try:
         function = tool_call["function"]
         handler = TOOL_HANDLERS.get(function["name"])
@@ -929,6 +1243,14 @@ def _execute_tool(user, tool_call):
         arguments = json.loads(function.get("arguments") or "{}")
         if not isinstance(arguments, dict):
             raise ValueError("Los argumentos deben ser un objeto.")
+        if function["name"] in WRITE_TOOLS:
+            if not allow_writes or arguments.get("confirmado") is not True:
+                return {
+                    "creado": False,
+                    "requiere_confirmacion": True,
+                    "error": "Antes de guardar, resume todos los datos y pide al usuario una confirmación explícita.",
+                }
+            arguments.pop("confirmado", None)
         return handler(user, arguments)
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         return {"error": str(exc) or "La consulta solicitada no es válida."}
@@ -968,7 +1290,7 @@ def _parse_assistant_answer(content):
     return answer
 
 
-def ask_financial_assistant(user, question):
+def ask_financial_assistant(user, question, history=None):
     config = get_ai_runtime_config()
     if not config.configured:
         raise AIAssistantError("El asistente de IA todavía no está configurado.")
@@ -976,14 +1298,20 @@ def ask_financial_assistant(user, question):
     context = build_financial_context(user)
     today = timezone.localdate()
     system_prompt = (
-        f"Eres un asistente de finanzas personales cercano, claro y prudente. La fecha actual es {today.isoformat()}. "
-        "Habla en español natural, de tú a tú, como alguien que ayuda a entender las cifras sin sonar burocrático. "
-        "Empieza con la respuesta concreta; evita introducciones, frases como 'se tienen programados' y repetir la pregunta. "
+        f"Eres el asistente amigable de TaskBudget. La fecha actual es {today.isoformat()}. "
+        "Habla en español natural, cálido y de tú a tú. Responde saludos y conversación casual brevemente, y pregunta en qué puedes ayudar. "
+        "Explica cómo usar el sistema basándote solo en GUIA_DEL_SISTEMA; si algo no aparece allí, dilo sin inventar. "
+        "Para preguntas financieras, empieza con la respuesta concreta; evita sonar burocrático o repetir la pregunta. "
         "Usa frases breves y, cuando haya varios registros, una lista fácil de leer. "
-        "Usa exclusivamente CONTEXTO_FINANCIERO y los resultados de herramientas. "
+        "Para cifras y registros usa exclusivamente CONTEXTO_FINANCIERO y los resultados de herramientas. "
         "Para saldos de cuentas, registros recientes, periodos distintos al resumen actual, listados o fechas solicitadas, debes usar la herramienta adecuada. "
-        "Las herramientas son de solo lectura y ya limitan los datos al usuario autenticado; nunca solicites SQL ni identificadores internos. "
+        "Las herramientas limitan los datos al usuario autenticado; nunca solicites SQL ni identificadores internos. "
         "Nunca inventes registros, importes, categorías ni causas. Distingue consumo de salida de caja. "
+        "Puedes guiar interactivamente la creación de ingresos, gastos, presupuestos y deudas. Pide únicamente los datos obligatorios que falten, "
+        "una pregunta breve a la vez o agrupando campos relacionados. Consulta los catálogos si necesitas conocer opciones reales. "
+        "Antes de crear cualquier registro, muestra un resumen completo y pregunta si desea guardarlo. No llames una herramienta crear_* hasta que "
+        "el ÚLTIMO mensaje del usuario confirme explícitamente ese resumen. Nunca interpretes el pedido inicial de crear como confirmación final. "
+        "Después de crear, confirma con los datos exactos devueltos por la herramienta. Si falla la validación, explica el error y ayuda a corregirlo. "
         "Cuando te pidan analizar tendencias, comparar meses, detectar gastos inusuales o predecir gastos, usa analizar_gastos_avanzado. "
         "Presenta las proyecciones como estimaciones, menciona su nivel de confianza y no describas un gasto atípico como fraude ni como error. "
         "Si detalle_completo es falso, indica cuántos registros existen y que solo se muestran los primeros resultados. "
@@ -992,22 +1320,33 @@ def ask_financial_assistant(user, question):
         "La respuesta final debe ser JSON con las claves respuesta, evidencia y advertencia. "
         "respuesta debe ser autosuficiente, conversacional y concisa. "
         "evidencia debe ser una lista de 0 a 3 detalles útiles con cifras exactas que NO repitan lo dicho en respuesta; usa [] si no aportan algo nuevo. "
-        "advertencia debe ser texto o cadena vacía y solo debe incluirse cuando sea realmente necesaria."
+        "advertencia debe ser texto o cadena vacía y solo debe incluirse cuando sea realmente necesaria. "
+        f"\n\nGUIA_DEL_SISTEMA:\n{SYSTEM_HELP}"
     )
-    messages = [
-        {"role": "system", "content": system_prompt},
+    messages = [{"role": "system", "content": system_prompt}]
+    for item in (history or [])[-10:]:
+        if not isinstance(item, dict) or item.get("role") not in {"user", "assistant"}:
+            continue
+        content = str(item.get("content") or "").strip()[:1000]
+        if content:
+            messages.append({"role": item["role"], "content": content})
+    messages.append(
         {
             "role": "user",
-            "content": f"PREGUNTA:\n{question}\n\nCONTEXTO_FINANCIERO:\n{json.dumps(context, ensure_ascii=False)}",
-        },
-    ]
+            "content": f"ÚLTIMO_MENSAJE:\n{question}\n\nCONTEXTO_FINANCIERO:\n{json.dumps(context, ensure_ascii=False)}",
+        }
+    )
     message = _provider_message(messages, config, tools=AI_TOOLS)
     tool_calls = message.get("tool_calls") or []
     if tool_calls:
         selected_calls = tool_calls[:3]
         messages.append({"role": "assistant", "content": message.get("content"), "tool_calls": selected_calls})
         for tool_call in selected_calls:
-            result = _execute_tool(user, tool_call)
+            result = _execute_tool(
+                user,
+                tool_call,
+                allow_writes=_has_explicit_confirmation(question, history),
+            )
             messages.append(
                 {
                     "role": "tool",

@@ -1544,7 +1544,7 @@
           <button class="btn btn-icon" type="button" data-ai-close aria-label="Cerrar" title="Cerrar"><span class="material-symbols-outlined">close</span></button>
         </div>
         <div class="ai-drawer-messages" id="ai-drawer-messages" aria-live="polite">
-          <div class="ai-drawer-message assistant">¡Hola! Puedo ayudarte a entender tus gastos, tu balance o tus próximos pagos. ¿Qué quieres revisar?</div>
+          <div class="ai-drawer-message assistant">¡Hola! Puedo responder dudas y ayudarte a consultar o registrar tus finanzas paso a paso. ¿Qué necesitas?</div>
         </div>
         <div>
           <div class="ai-drawer-suggestions">
@@ -1552,6 +1552,7 @@
             <button type="button" data-ai-question="¿En qué categoría gasté más?">Mayor gasto</button>
             <button type="button" data-ai-question="¿Tengo pagos de deudas próximos?">Próximos pagos</button>
             <button type="button" data-ai-question="Muéstrame mis últimos 10 gastos confirmados.">Gastos recientes</button>
+            <button type="button" data-ai-question="Ayúdame a registrar un gasto.">Nuevo gasto</button>
           </div>
           <form class="ai-drawer-form" id="ai-drawer-form">
             {% csrf_token %}
@@ -1593,6 +1594,7 @@
       if (!trigger || !drawer || !form || !question || !messages) return;
       const submit = form.querySelector('button[type="submit"]');
       const csrfToken = form.querySelector('input[name="csrfmiddlewaretoken"]').value;
+      const history = [];
 
       const setOpen = open => {
         drawer.hidden = !open;
@@ -1647,6 +1649,8 @@
         const value = question.value.trim();
         if (value.length < 3 || submit.disabled) return;
         addMessage(value, "user");
+        const requestHistory = history.slice(-10);
+        history.push({role: "user", content: value});
         question.value = "";
         submit.disabled = true;
         const pending = addMessage("Déjame revisar tus cifras…", "assistant");
@@ -1654,7 +1658,7 @@
           const response = await fetch("{% url 'asistente_financiero_preguntar' %}", {
             method: "POST",
             headers: {"Content-Type": "application/json", "X-CSRFToken": csrfToken, "X-Requested-With": "XMLHttpRequest"},
-            body: JSON.stringify({pregunta: value}),
+            body: JSON.stringify({pregunta: value, historial: requestHistory}),
           });
           if (response.redirected && response.url.includes("/login")) throw new Error("Tu sesión expiró. Recarga la página e inicia sesión nuevamente.");
           const raw = await response.text();
@@ -1667,6 +1671,7 @@
           pending.remove();
           if (!response.ok || !data.ok) throw new Error(data.error || "No fue posible obtener una respuesta.");
           addMessage(data.respuesta, "assistant", data.evidencia, data.advertencia);
+          history.push({role: "assistant", content: data.respuesta});
         } catch (error) {
           pending.remove();
           addMessage(error.message || "No fue posible conectar con el asistente.", "assistant");
