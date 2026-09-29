@@ -125,7 +125,7 @@
       history.push({role: "user", content: value});
       question.value = "";
       submit.disabled = true;
-      const pending = addMessage("Déjame revisar tus cifras…", "ai");
+      const pending = addMessage("Pensando…", "ai");
       try {
         const response = await fetch("{% url 'asistente_financiero_preguntar' %}", {
           method: "POST",
