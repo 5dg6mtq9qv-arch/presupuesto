@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+
+{% block page_title %}Conectar asistente de IA{% endblock %}
+{% block page_subtitle %}Elige tu proveedor, pega la clave y comprueba la conexión en un solo paso{% endblock %}
+
+{% block content %}
+<style>
+  .ai-setup { max-width: 920px; margin: 0 auto; }
+  .ai-setup-grid { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 18px; align-items: start; }
+  .ai-steps { display: flex; gap: 8px; margin-bottom: 20px; color: var(--muted); font-size: 12px; }
+  .ai-step { flex: 1; padding: 10px; border-radius: 10px; background: var(--surface-soft); }
+  .ai-step strong { display: block; color: var(--text); margin-bottom: 2px; }
+  .ai-status { display: flex; gap: 10px; align-items: center; padding: 12px; border-radius: 12px; background: var(--surface-soft); margin-bottom: 18px; }
+  .ai-status .material-symbols-outlined { color: {% if config.tiene_api_key %}var(--success){% else %}var(--muted){% endif %}; }
+  .ai-status small { display: block; color: var(--muted); }
+  .ai-config-form { display: grid; gap: 16px; }
+  .ai-provider-help { padding: 12px; border: 1px solid var(--line); border-radius: 12px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+  .ai-provider-help strong { color: var(--text); }
+  .ai-provider-help a { font-weight: 700; }
+  .ai-advanced { border: 1px solid var(--line); border-radius: 12px; padding: 0 14px; }
+  .ai-advanced summary { cursor: pointer; padding: 13px 0; font-weight: 700; }
+  .ai-advanced-fields { display: grid; gap: 14px; padding-bottom: 14px; }
+  .ai-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  .ai-actions .btn { min-height: 44px; }
+  .ai-tip { display: flex; gap: 9px; line-height: 1.5; font-size: 13px; }
+  .ai-tip .material-symbols-outlined { color: var(--primary); }
+  .ai-error { border-color: #fecaca; background: #fff7f7; color: #991b1b; }
+  @media (max-width: 760px) { .ai-setup-grid { grid-template-columns: 1fr; } .ai-steps { flex-direction: column; } }
+</style>
+
+<div class="ai-setup">
+  <div class="ai-steps" aria-label="Pasos de configuración">
+    <div class="ai-step"><strong>1. Elige</strong>Selecciona el servicio</div>
+    <div class="ai-step"><strong>2. Conecta</strong>Pega su clave privada</div>
+    <div class="ai-step"><strong>3. Comprueba</strong>Guarda y prueba</div>
+  </div>
+
+  <div class="ai-setup-grid">
+    <section class="panel">
+      <div class="panel-heading">
+        <div><h2>Conexión</h2><p class="muted mb-0">No necesitas editar archivos ni reiniciar el servidor.</p></div>
+      </div>
+
+      <div class="ai-status">
+        <span class="material-symbols-outlined">{% if config.tiene_api_key %}verified_user{% else %}key_off{% endif %}</span>
+        <div>
+          <strong>{% if config.tiene_api_key %}Hay una clave guardada{% else %}Aún no hay una clave{% endif %}</strong>
+          <small>{% if config.tiene_api_key %}Termina en ••••{{ config.api_key_sufijo }}. Puedes dejar la clave vacía para conservarla.{% else %}Obtén una clave del proveedor y pégala abajo.{% endif %}</small>
+        </div>
+      </div>
+
+      {% if connection_error %}
+        <div class="ai-provider-help ai-error" role="alert"><strong>No se pudo enlazar.</strong> {{ connection_error }}</div>
+      {% endif %}
+
+      <form method="post" class="ai-config-form" id="ai-config-form">
+        {% csrf_token %}
+        {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+
+        <div class="unfold-field{% if form.proveedor.errors %} has-error{% endif %}">
+          <label for="{{ form.proveedor.id_for_label }}">{{ form.proveedor.label }}</label>
+          {{ form.proveedor }}
+          {% for error in form.proveedor.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+        </div>
+
+        <div class="ai-provider-help" id="provider-help" aria-live="polite"></div>
+
+        <div class="unfold-field{% if form.api_key.errors %} has-error{% endif %}">
+          <label for="{{ form.api_key.id_for_label }}">{{ form.api_key.label }}</label>
+          {{ form.api_key }}
+          <div class="form-text">{{ form.api_key.help_text }}</div>
+          {% for error in form.api_key.errors %}<div class="field-error"><span class="material-symbols-outlined">error</span>{{ error }}</div>{% endfor %}
+        </div>
+
+        <details class="ai-advanced"{% if form.modelo.errors or form.url_base.errors or form.timeout_segundos.errors or form.proveedor.value == 'personalizado' %} open{% endif %}>
+          <summary>Opciones avanzadas</summary>
+          <div class="ai-advanced-fields">
+            {% for field in form.visible_fields %}
+              {% if field.name == 'modelo' or field.name == 'url_base' or field.name == 'timeout_segundos' %}
+                <div class="unfold-field{% if field.errors %} has-error{% endif %}">
+                  <label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}
+                  {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+                  {% for error in field.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+                </div>
+              {% endif %}
+            {% endfor %}
+          </div>
+        </details>
+
+        <div class="unfold-field unfold-check">
+          <div class="form-check">{{ form.activo }} <label class="form-check-label" for="{{ form.activo.id_for_label }}">{{ form.activo.label }}</label></div>
+        </div>
+
+        <div class="ai-actions">
+          <button class="btn btn-primary" type="submit" name="action" value="save_test">
+            <span class="material-symbols-outlined">wifi_tethering</span><span>Guardar y probar conexión</span>
+          </button>
+          <button class="btn btn-outline-secondary" type="submit" name="action" value="save">
+            <span class="material-symbols-outlined">save</span><span>Solo guardar</span>
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <aside class="panel">
+      <div class="panel-heading"><div><h2>Importante</h2></div></div>
+      <div class="ai-tip">
+        <span class="material-symbols-outlined">info</span>
+        <span><strong>ChatGPT y la API son servicios distintos.</strong> Pagar ChatGPT Plus no incluye saldo para usar la API de OpenAI. En OpenAI debes activar la facturación de API y crear una clave.</span>
+      </div>
+      <hr>
+      <div class="ai-tip">
+        <span class="material-symbols-outlined">lock</span>
+        <span>La clave se cifra antes de guardarse y nunca vuelve a mostrarse completa.</span>
+      </div>
+    </aside>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (() => {
+    const provider = document.getElementById("id_proveedor");
+    const model = document.getElementById("id_modelo");
+    const baseUrl = document.getElementById("id_url_base");
+    const help = document.getElementById("provider-help");
+    if (!provider || !model || !baseUrl || !help) return;
+
+    const presets = {
+      openai: {
+        model: "gpt-4o-mini", url: "https://api.openai.com/v1",
+        html: '<strong>OpenAI:</strong> crea una clave en <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com/api-keys</a>. Requiere facturación de API independiente de ChatGPT.'
+      },
+      gemini: {
+        model: "gemini-2.5-flash-lite", url: "https://generativelanguage.googleapis.com/v1beta/openai",
+        html: '<strong>Google Gemini:</strong> crea una clave en <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a>.'
+      },
+      groq: {
+        model: "openai/gpt-oss-20b", url: "https://api.groq.com/openai/v1",
+        html: '<strong>Groq:</strong> crea una clave en <a href="https://console.groq.com/keys" target="_blank" rel="noopener">Groq Console</a>.'
+      },
+      personalizado: {
+        html: '<strong>Servicio personalizado:</strong> escribe el modelo y la URL base de una API compatible con OpenAI en Opciones avanzadas.'
+      }
+    };
+
+    let previous = provider.value;
+    const refresh = (changeValues) => {
+      const selected = presets[provider.value];
+      help.innerHTML = selected.html;
+      if (changeValues && selected.model) {
+        model.value = selected.model;
+        baseUrl.value = selected.url;
+      }
+      previous = provider.value;
+    };
+    provider.addEventListener("change", () => refresh(provider.value !== previous));
+    refresh(false);
+  })();
+</script>
+{% endblock %}

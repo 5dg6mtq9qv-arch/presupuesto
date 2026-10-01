@@ -1194,10 +1194,18 @@ def _provider_message(messages, config, *, tools=None, max_tokens=600):
             raise AIAssistantError("La clave o el proyecto no tienen permiso para utilizar este modelo.") from exc
         if exc.code == 404:
             raise AIAssistantError("El modelo configurado no está disponible para este proyecto.") from exc
+        if exc.code == 402 or (exc.code == 429 and any(term in error_body.lower() for term in ("insufficient_quota", "billing", "quota"))):
+            raise AIAssistantError(
+                "La cuenta de la API no tiene saldo o cuota disponible. La suscripción de ChatGPT y el consumo de la API se facturan por separado."
+            ) from exc
         if exc.code == 429:
             raise AIAssistantError("Se alcanzó el límite temporal de consultas. Intenta nuevamente en unos minutos.") from exc
         if exc.code == 400:
             raise AIAssistantError("El proveedor rechazó la configuración o el formato de la consulta.") from exc
+        if exc.code >= 500:
+            raise AIAssistantError(
+                f"El proveedor está temporalmente fuera de servicio (HTTP {exc.code}). La clave quedó guardada; vuelve a probar en unos minutos."
+            ) from exc
         raise AIAssistantError(f"El proveedor de IA no pudo procesar la consulta (HTTP {exc.code}).") from exc
     except (URLError, TimeoutError) as exc:
         raise AIAssistantError("El proveedor de IA no está disponible en este momento.") from exc

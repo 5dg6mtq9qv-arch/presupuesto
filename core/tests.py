@@ -8,7 +8,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from .forms import MovimientoFinancieroForm
+from .forms import ConfiguracionIAForm, MovimientoFinancieroForm
 from .ai_assistant import (
     AI_TOOLS,
     _execute_tool,
@@ -1139,6 +1139,52 @@ class FinancialAssistantTests(TestCase):
         updated = form.save()
         self.assertEqual(updated.get_api_key(), "clave-existente")
         self.assertEqual(updated.timeout_segundos, 35)
+
+    @override_settings(AI_CONFIG_ENCRYPTION_KEY="clave-maestra-de-prueba")
+    @patch("core.views._provider_message")
+    def test_staff_configura_y_prueba_ia_desde_flujo_guiado(self, provider):
+        staff = get_user_model().objects.create_user(username="admin-ia", password="test", is_staff=True)
+        self.client.force_login(staff)
+
+        response = self.client.post(
+            reverse("configuracion_ia"),
+            {
+                "proveedor": "openai",
+                "modelo": "gpt-4o-mini",
+                "url_base": "https://api.openai.com/v1",
+                "timeout_segundos": "25",
+                "api_key": "sk-clave-de-prueba",
+                "activo": "on",
+                "action": "save_test",
+            },
+            follow=True,
+        )
+
+        self.assertContains(response, "¡Conexión correcta!")
+        config = ConfiguracionIA.objects.get()
+        self.assertEqual(config.proveedor, "openai")
+        self.assertEqual(config.get_api_key(), "sk-clave-de-prueba")
+        self.assertTrue(config.activo)
+        provider.assert_called_once()
+
+    def test_usuario_no_staff_no_puede_configurar_ia(self):
+        user = get_user_model().objects.create_user(username="sin-permiso", password="test")
+        self.client.force_login(user)
+        response = self.client.get(reverse("configuracion_ia"))
+        self.assertRedirects(response, reverse("dashboard"))
+
+    def test_formulario_guiado_exige_clave_para_activar(self):
+        form = ConfiguracionIAForm(
+            data={
+                "proveedor": "openai",
+                "modelo": "gpt-4o-mini",
+                "url_base": "https://api.openai.com/v1",
+                "timeout_segundos": "25",
+                "activo": "on",
+            }
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn("api_key", form.errors)
 
     @patch("core.ai_assistant.urlopen")
     def test_gemini_no_combina_herramientas_con_formato_json_en_primera_llamada(self, mocked_urlopen):

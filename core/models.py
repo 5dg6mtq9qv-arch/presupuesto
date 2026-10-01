@@ -37,6 +37,7 @@ class PerfilUsuario(models.Model):
 
 class ConfiguracionIA(models.Model):
     class Proveedor(models.TextChoices):
+        OPENAI = "openai", "OpenAI"
         GEMINI = "gemini", "Google Gemini"
         GROQ = "groq", "Groq"
         PERSONALIZADO = "personalizado", "Compatible con OpenAI"

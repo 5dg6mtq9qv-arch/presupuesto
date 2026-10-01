@@ -24,7 +24,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.views.decorators.http import require_POST
 
-from .ai_assistant import AIAssistantError, ask_financial_assistant, user_can_use_ai
+from .ai_assistant import AIAssistantError, _provider_message, ask_financial_assistant, user_can_use_ai
 from .ai_config import get_ai_runtime_config
 
 from .forms import (
@@ -47,6 +47,7 @@ from .forms import (
     PresupuestoMensualForm,
     RegistroUsuarioForm,
     CategoriaPrincipalForm,
+    ConfiguracionIAForm,
     SubcategoriaForm,
     TareaForm,
     TransferenciaCuentaForm,
@@ -58,6 +59,7 @@ from .models import (
     Acreedor,
     AjusteSaldo,
     Categoria,
+    ConfiguracionIA,
     CuentaFinanciera,
     Deuda,
     EliminacionRegistro,
@@ -516,6 +518,49 @@ def admin_required(view_func):
             login_url="dashboard",
             redirect_field_name=None,
         )(view_func)
+    )
+
+
+@admin_required
+def configuracion_ia(request):
+    config = ConfiguracionIA.objects.order_by("pk").first() or ConfiguracionIA()
+    connection_error = ""
+
+    if request.method == "POST":
+        form = ConfiguracionIAForm(request.POST, instance=config)
+        if form.is_valid():
+            config = form.save()
+            if request.POST.get("action") == "save_test":
+                runtime = get_ai_runtime_config()
+                try:
+                    _provider_message(
+                        [
+                            {"role": "system", "content": "Responde solamente JSON válido."},
+                            {"role": "user", "content": 'Devuelve {"ok": true} para confirmar la conexión.'},
+                        ],
+                        runtime,
+                        max_tokens=40,
+                    )
+                except AIAssistantError as exc:
+                    connection_error = str(exc)
+                    messages.error(request, f"La configuración se guardó, pero la prueba falló: {exc}")
+                else:
+                    messages.success(request, "¡Conexión correcta! El asistente ya puede usar este proveedor.")
+                    return redirect("configuracion_ia")
+            else:
+                messages.success(request, "Configuración de IA guardada.")
+                return redirect("configuracion_ia")
+    else:
+        form = ConfiguracionIAForm(instance=config)
+
+    return render(
+        request,
+        "core/configuracion_ia.html",
+        {
+            "form": form,
+            "config": config,
+            "connection_error": connection_error,
+        },
     )
 
 

@@ -10,6 +10,7 @@ from django.utils import timezone
 from .models import (
     Acreedor,
     Categoria,
+    ConfiguracionIA,
     CuentaFinanciera,
     Deuda,
     Etiqueta,
@@ -24,6 +25,55 @@ from .models import (
 )
 
 User = get_user_model()
+
+
+class ConfiguracionIAForm(forms.ModelForm):
+    """Formulario sencillo para conectar el proveedor sin entrar a Django Admin."""
+
+    api_key = forms.CharField(
+        label="Clave de API",
+        required=False,
+        widget=forms.PasswordInput(
+            render_value=False,
+            attrs={"autocomplete": "new-password", "placeholder": "Pega aquí tu clave privada"},
+        ),
+        help_text="Se guarda cifrada. Si ya existe una, deja este campo vacío para conservarla.",
+    )
+
+    class Meta:
+        model = ConfiguracionIA
+        fields = ["proveedor", "api_key", "modelo", "url_base", "timeout_segundos", "activo"]
+        labels = {
+            "proveedor": "¿Con qué servicio quieres conectar?",
+            "modelo": "Modelo",
+            "url_base": "Dirección de la API",
+            "timeout_segundos": "Tiempo máximo de espera",
+            "activo": "Activar el asistente al guardar",
+        }
+        help_texts = {
+            "modelo": "Se completa automáticamente al elegir un proveedor.",
+            "url_base": "Solo necesitas cambiarla si usas un servicio personalizado.",
+            "timeout_segundos": "Entre 5 y 60 segundos.",
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            widget = field.widget
+            current = widget.attrs.get("class", "")
+            css = "form-check-input" if isinstance(widget, forms.CheckboxInput) else (
+                "form-select" if isinstance(widget, forms.Select) else "form-control"
+            )
+            widget.attrs["class"] = f"{current} {css}".strip()
+
+    def clean(self):
+        cleaned_data = super().clean()
+        token = (cleaned_data.get("api_key") or "").strip()
+        if token:
+            self.instance.set_api_key(token)
+        if cleaned_data.get("activo") and not (token or self.instance.tiene_api_key):
+            self.add_error("api_key", "Pega una clave de API para poder activar y probar el asistente.")
+        return cleaned_data
 
 
 FINANCIAL_CATEGORY_TYPES = [
