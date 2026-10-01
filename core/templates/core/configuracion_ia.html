@@ -17,6 +17,7 @@
   .ai-provider-help { padding: 12px; border: 1px solid var(--line); border-radius: 12px; color: var(--muted); font-size: 13px; line-height: 1.5; }
   .ai-provider-help strong { color: var(--text); }
   .ai-provider-help a { font-weight: 700; }
+  .ai-config-form select[hidden] + .select2-container { display: none; }
   .ai-advanced { border: 1px solid var(--line); border-radius: 12px; padding: 0 14px; }
   .ai-advanced summary { cursor: pointer; padding: 13px 0; font-weight: 700; }
   .ai-advanced-fields { display: grid; gap: 14px; padding-bottom: 14px; }
@@ -164,6 +165,12 @@
     };
 
     let previous = provider.value;
+    const refreshModelPicker = () => {
+      if (window.jQuery && jQuery(modelPicker).data("select2")) {
+        jQuery(modelPicker).trigger("change.select2");
+      }
+    };
+
     const renderModels = (keepCurrent) => {
       const current = model.value;
       const options = modelOptions[provider.value] || [];
@@ -177,6 +184,7 @@
       if (isCustom) {
         customModel.value = keepCurrent ? current : "";
         model.value = customModel.value;
+        refreshModelPicker();
         return;
       }
 
@@ -201,6 +209,7 @@
       }
       modelPicker.value = keepCurrent && (exists || keepLegacy) ? current : (options[0]?.[0] || "");
       model.value = modelPicker.value;
+      refreshModelPicker();
     };
 
     const refresh = (changeValues) => {
@@ -221,6 +230,9 @@
 
     provider.addEventListener("input", syncProvider);
     provider.addEventListener("change", syncProvider);
+    if (window.jQuery) {
+      jQuery(provider).on("select2:select select2:clear change", syncProvider);
+    }
     modelPicker.addEventListener("change", () => { model.value = modelPicker.value; });
     customModel.addEventListener("input", () => { model.value = customModel.value.trim(); });
     ["focus", "pointerdown", "keydown"].forEach(eventName => {
