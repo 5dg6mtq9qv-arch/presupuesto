@@ -1186,6 +1186,28 @@ class FinancialAssistantTests(TestCase):
         self.assertFalse(form.is_valid())
         self.assertIn("api_key", form.errors)
 
+    def test_formulario_guiado_rechaza_modelo_de_otro_proveedor(self):
+        form = ConfiguracionIAForm(
+            data={
+                "proveedor": "openai",
+                "modelo": "gemini-3.8-flash",
+                "url_base": "https://api.openai.com/v1",
+                "timeout_segundos": "25",
+                "api_key": "sk-prueba",
+                "activo": "on",
+            }
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn("modelo", form.errors)
+
+    def test_pantalla_precarga_modelos_por_proveedor(self):
+        staff = get_user_model().objects.create_user(username="modelos-ia", password="test", is_staff=True)
+        self.client.force_login(staff)
+        response = self.client.get(reverse("configuracion_ia"))
+        self.assertContains(response, "GPT-4.1 Mini")
+        self.assertContains(response, "Gemini 3.8 Flash")
+        self.assertContains(response, "GPT-OSS 120B")
+
     @patch("core.ai_assistant.urlopen")
     def test_gemini_no_combina_herramientas_con_formato_json_en_primera_llamada(self, mocked_urlopen):
         response = MagicMock()

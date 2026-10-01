@@ -30,6 +30,7 @@ from .ai_config import get_ai_runtime_config
 from .forms import (
     AjusteSaldoForm,
     AcreedorForm,
+    AI_MODEL_OPTIONS,
     CategoriaForm,
     ConfirmarMovimientoForm,
     ConfirmarPagoDeudaForm,
@@ -560,6 +561,7 @@ def configuracion_ia(request):
             "form": form,
             "config": config,
             "connection_error": connection_error,
+            "ai_model_options": AI_MODEL_OPTIONS,
         },
     )
 

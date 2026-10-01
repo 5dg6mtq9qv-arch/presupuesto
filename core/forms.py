@@ -27,6 +27,30 @@ from .models import (
 User = get_user_model()
 
 
+AI_MODEL_OPTIONS = {
+    "openai": [
+        ("gpt-4.1-mini", "GPT-4.1 Mini — recomendado, rápido y económico"),
+        ("gpt-4.1", "GPT-4.1 — mayor capacidad"),
+        ("gpt-4o-mini", "GPT-4o Mini — económico"),
+        ("gpt-4o", "GPT-4o — uso general"),
+    ],
+    "gemini": [
+        ("gemini-3.8-flash", "Gemini 3.8 Flash — recomendado"),
+        ("gemini-3.7-flash", "Gemini 3.7 Flash"),
+        ("gemini-3.5-flash-lite", "Gemini 3.5 Flash-Lite — menor costo"),
+        ("gemini-2.5-flash", "Gemini 2.5 Flash — proyectos existentes"),
+        ("gemini-2.5-flash-lite", "Gemini 2.5 Flash-Lite — proyectos existentes"),
+        ("gemini-2.5-pro", "Gemini 2.5 Pro — proyectos existentes"),
+    ],
+    "groq": [
+        ("openai/gpt-oss-20b", "GPT-OSS 20B — recomendado, muy rápido"),
+        ("openai/gpt-oss-120b", "GPT-OSS 120B — mayor capacidad"),
+        ("llama-3.3-70b-versatile", "Llama 3.3 70B — versátil"),
+        ("llama-3.1-8b-instant", "Llama 3.1 8B — máxima velocidad"),
+    ],
+}
+
+
 class ConfiguracionIAForm(forms.ModelForm):
     """Formulario sencillo para conectar el proveedor sin entrar a Django Admin."""
 
@@ -58,6 +82,9 @@ class ConfiguracionIAForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.original_model = self.instance.modelo if self.instance and self.instance.pk else ""
+        self.original_provider = self.instance.proveedor if self.instance and self.instance.pk else ""
+        self.fields["modelo"].widget = forms.HiddenInput()
         for field in self.fields.values():
             widget = field.widget
             current = widget.attrs.get("class", "")
@@ -69,8 +96,18 @@ class ConfiguracionIAForm(forms.ModelForm):
     def clean(self):
         cleaned_data = super().clean()
         token = (cleaned_data.get("api_key") or "").strip()
+        provider = cleaned_data.get("proveedor")
+        model = (cleaned_data.get("modelo") or "").strip()
         if token:
             self.instance.set_api_key(token)
+        allowed_models = {value for value, _label in AI_MODEL_OPTIONS.get(provider, [])}
+        if provider != ConfiguracionIA.Proveedor.PERSONALIZADO and model not in allowed_models:
+            if not (
+                self.original_model
+                and model == self.original_model
+                and provider == self.original_provider
+            ):
+                self.add_error("modelo", "Selecciona uno de los modelos disponibles para este proveedor.")
         if cleaned_data.get("activo") and not (token or self.instance.tiene_api_key):
             self.add_error("api_key", "Pega una clave de API para poder activar y probar el asistente.")
         return cleaned_data

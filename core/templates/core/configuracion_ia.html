@@ -72,11 +72,20 @@
           {% for error in form.api_key.errors %}<div class="field-error"><span class="material-symbols-outlined">error</span>{{ error }}</div>{% endfor %}
         </div>
 
+        {{ form.modelo }}
+        <div class="unfold-field{% if form.modelo.errors %} has-error{% endif %}">
+          <label for="model-picker">Versión del modelo</label>
+          <select class="form-select" id="model-picker"></select>
+          <input class="form-control" id="custom-model" type="text" maxlength="120" placeholder="Ej.: mi-modelo-chat" hidden>
+          <div class="form-text" id="model-help">Elige la versión según velocidad, capacidad o costo.</div>
+          {% for error in form.modelo.errors %}<div class="field-error"><span class="material-symbols-outlined">error</span>{{ error }}</div>{% endfor %}
+        </div>
+
         <details class="ai-advanced"{% if form.modelo.errors or form.url_base.errors or form.timeout_segundos.errors or form.proveedor.value == 'personalizado' %} open{% endif %}>
           <summary>Opciones avanzadas</summary>
           <div class="ai-advanced-fields">
             {% for field in form.visible_fields %}
-              {% if field.name == 'modelo' or field.name == 'url_base' or field.name == 'timeout_segundos' %}
+              {% if field.name == 'url_base' or field.name == 'timeout_segundos' %}
                 <div class="unfold-field{% if field.errors %} has-error{% endif %}">
                   <label for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}
                   {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
@@ -116,6 +125,7 @@
     </aside>
   </div>
 </div>
+{{ ai_model_options|json_script:"ai-model-options" }}
 {% endblock %}
 
 {% block scripts %}
@@ -123,21 +133,26 @@
   (() => {
     const provider = document.getElementById("id_proveedor");
     const model = document.getElementById("id_modelo");
+    const modelPicker = document.getElementById("model-picker");
+    const customModel = document.getElementById("custom-model");
+    const modelHelp = document.getElementById("model-help");
     const baseUrl = document.getElementById("id_url_base");
     const help = document.getElementById("provider-help");
-    if (!provider || !model || !baseUrl || !help) return;
+    const modelOptionsNode = document.getElementById("ai-model-options");
+    if (!provider || !model || !modelPicker || !customModel || !baseUrl || !help || !modelOptionsNode) return;
+    const modelOptions = JSON.parse(modelOptionsNode.textContent);
 
     const presets = {
       openai: {
-        model: "gpt-4o-mini", url: "https://api.openai.com/v1",
+        url: "https://api.openai.com/v1",
         html: '<strong>OpenAI:</strong> crea una clave en <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com/api-keys</a>. Requiere facturación de API independiente de ChatGPT.'
       },
       gemini: {
-        model: "gemini-2.5-flash-lite", url: "https://generativelanguage.googleapis.com/v1beta/openai",
+        url: "https://generativelanguage.googleapis.com/v1beta/openai",
         html: '<strong>Google Gemini:</strong> crea una clave en <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a>.'
       },
       groq: {
-        model: "openai/gpt-oss-20b", url: "https://api.groq.com/openai/v1",
+        url: "https://api.groq.com/openai/v1",
         html: '<strong>Groq:</strong> crea una clave en <a href="https://console.groq.com/keys" target="_blank" rel="noopener">Groq Console</a>.'
       },
       personalizado: {
@@ -146,16 +161,52 @@
     };
 
     let previous = provider.value;
+    const renderModels = (keepCurrent) => {
+      const current = model.value;
+      const options = modelOptions[provider.value] || [];
+      const isCustom = provider.value === "personalizado";
+      modelPicker.hidden = isCustom;
+      customModel.hidden = !isCustom;
+      modelHelp.textContent = isCustom
+        ? "Escribe el identificador exacto que entrega tu proveedor."
+        : "Elige la versión según velocidad, capacidad o costo.";
+
+      if (isCustom) {
+        customModel.value = keepCurrent ? current : "";
+        model.value = customModel.value;
+        return;
+      }
+
+      modelPicker.replaceChildren();
+      options.forEach(([value, label]) => {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = `${label} (${value})`;
+        modelPicker.append(option);
+      });
+      const exists = options.some(([value]) => value === current);
+      if (keepCurrent && current && !exists) {
+        const legacy = document.createElement("option");
+        legacy.value = current;
+        legacy.textContent = `Modelo guardado (${current})`;
+        modelPicker.prepend(legacy);
+      }
+      modelPicker.value = keepCurrent && current ? current : (options[0]?.[0] || "");
+      model.value = modelPicker.value;
+    };
+
     const refresh = (changeValues) => {
       const selected = presets[provider.value];
       help.innerHTML = selected.html;
-      if (changeValues && selected.model) {
-        model.value = selected.model;
+      renderModels(!changeValues);
+      if (changeValues && selected.url) {
         baseUrl.value = selected.url;
       }
       previous = provider.value;
     };
     provider.addEventListener("change", () => refresh(provider.value !== previous));
+    modelPicker.addEventListener("change", () => { model.value = modelPicker.value; });
+    customModel.addEventListener("input", () => { model.value = customModel.value.trim(); });
     refresh(false);
   })();
 </script>
