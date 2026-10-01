@@ -110,20 +110,18 @@ class ConfiguracionIAForm(forms.ModelForm):
             self.instance.set_api_key(token)
         if self.original_provider and provider != self.original_provider and not token:
             self.add_error("api_key", "Al cambiar de proveedor debes pegar una clave de API de ese servicio.")
-        allowed_models = {value for value, _label in AI_MODEL_OPTIONS.get(provider, [])}
         known_models = {
             value
             for options in AI_MODEL_OPTIONS.values()
             for value, _label in options
         }
-        if provider != ConfiguracionIA.Proveedor.PERSONALIZADO and model not in allowed_models:
-            if not (
-                self.original_model
-                and model == self.original_model
-                and provider == self.original_provider
-                and model not in known_models
-            ):
-                self.add_error("modelo", "Selecciona uno de los modelos disponibles para este proveedor.")
+        provider_models = {value for value, _label in AI_MODEL_OPTIONS.get(provider, [])}
+        if (
+            provider != ConfiguracionIA.Proveedor.PERSONALIZADO
+            and model in known_models
+            and model not in provider_models
+        ):
+            self.add_error("modelo", "Ese modelo pertenece a otro proveedor. Vuelve a seleccionarlo para sincronizar el proveedor.")
         if cleaned_data.get("activo") and not (token or self.instance.tiene_api_key):
             self.add_error("api_key", "Pega una clave de API para poder activar y probar el asistente.")
         return cleaned_data

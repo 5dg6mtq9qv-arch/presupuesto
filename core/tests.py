@@ -1200,6 +1200,19 @@ class FinancialAssistantTests(TestCase):
         self.assertFalse(form.is_valid())
         self.assertIn("modelo", form.errors)
 
+    def test_formulario_guiado_permite_modelo_nuevo_del_proveedor(self):
+        form = ConfiguracionIAForm(
+            data={
+                "proveedor": "openai",
+                "modelo": "gpt-modelo-nuevo",
+                "url_base": "https://api.openai.com/v1",
+                "timeout_segundos": "25",
+                "api_key": "sk-prueba",
+                "activo": "on",
+            }
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+
     def test_formulario_no_conserva_modelo_conocido_de_proveedor_incorrecto(self):
         config = ConfiguracionIA(
             activo=True,
@@ -1253,6 +1266,8 @@ class FinancialAssistantTests(TestCase):
         self.assertContains(response, "GPT-4.1 Mini")
         self.assertContains(response, "Gemini 3.8 Flash")
         self.assertContains(response, "GPT-OSS 120B")
+        self.assertContains(response, "Modelo (todos los proveedores)")
+        self.assertContains(response, "Otro modelo")
 
     @patch("core.ai_assistant.urlopen")
     def test_gemini_no_combina_herramientas_con_formato_json_en_primera_llamada(self, mocked_urlopen):

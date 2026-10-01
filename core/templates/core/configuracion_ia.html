@@ -74,10 +74,10 @@
 
         {{ form.modelo }}
         <div class="unfold-field{% if form.modelo.errors %} has-error{% endif %}">
-          <label for="model-picker">Versión del modelo</label>
+          <label for="model-picker">Modelo (todos los proveedores)</label>
           <select class="form-select" id="model-picker"></select>
           <input class="form-control" id="custom-model" type="text" maxlength="120" placeholder="Ej.: mi-modelo-chat" hidden>
-          <div class="form-text" id="model-help">Elige la versión según velocidad, capacidad o costo.</div>
+          <div class="form-text" id="model-help">Puedes elegir cualquier opción del catálogo o escribir otro identificador.</div>
           {% for error in form.modelo.errors %}<div class="field-error"><span class="material-symbols-outlined">error</span>{{ error }}</div>{% endfor %}
         </div>
 
@@ -170,43 +170,49 @@
     };
 
     let previous = provider.value;
+    const providerLabels = {
+      openai: "OpenAI",
+      gemini: "Google Gemini",
+      groq: "Groq"
+    };
+    const customOptionValue = "__custom_model__";
+
     const renderModels = (keepCurrent) => {
       const current = model.value;
-      const options = modelOptions[provider.value] || [];
       const isCustom = provider.value === "personalizado";
-      modelPicker.hidden = isCustom;
-      customModel.hidden = !isCustom;
-      modelHelp.textContent = isCustom
-        ? "Escribe el identificador exacto que entrega tu proveedor."
-        : `${options.length} modelos disponibles. Abre la lista para escoger uno.`;
-
-      if (isCustom) {
-        customModel.value = keepCurrent ? current : "";
-        model.value = customModel.value;
-        return;
-      }
-
-      modelPicker.replaceChildren();
-      options.forEach(([value, label]) => {
-        const option = document.createElement("option");
-        option.value = value;
-        option.textContent = `${label} (${value})`;
-        modelPicker.append(option);
-      });
-      const exists = options.some(([value]) => value === current);
-      const belongsToAnotherProvider = Object.entries(modelOptions).some(
-        ([providerName, providerOptions]) => providerName !== provider.value
-          && providerOptions.some(([value]) => value === current)
+      const allModels = Object.entries(modelOptions).flatMap(
+        ([providerName, options]) => options.map(([value]) => [providerName, value])
       );
-      const keepLegacy = keepCurrent && current && !exists && !belongsToAnotherProvider;
-      if (keepLegacy) {
-        const legacy = document.createElement("option");
-        legacy.value = current;
-        legacy.textContent = `Modelo guardado (${current})`;
-        modelPicker.prepend(legacy);
-      }
-      modelPicker.value = keepCurrent && (exists || keepLegacy) ? current : (options[0]?.[0] || "");
-      model.value = modelPicker.value;
+      modelPicker.replaceChildren();
+      Object.entries(modelOptions).forEach(([providerName, options]) => {
+        const group = document.createElement("optgroup");
+        group.label = providerLabels[providerName] || providerName;
+        options.forEach(([value, label]) => {
+          const option = document.createElement("option");
+          option.value = value;
+          option.dataset.provider = providerName;
+          option.textContent = `${label} (${value})`;
+          group.append(option);
+        });
+        modelPicker.append(group);
+      });
+
+      const customOption = document.createElement("option");
+      customOption.value = customOptionValue;
+      customOption.textContent = "Otro modelo…";
+      modelPicker.append(customOption);
+
+      const currentIsKnown = allModels.some(([, value]) => value === current);
+      const useCustom = isCustom || (keepCurrent && current && !currentIsKnown);
+      modelPicker.value = useCustom ? customOptionValue : (
+        keepCurrent && currentIsKnown ? current : (modelOptions[provider.value]?.[0]?.[0] || customOptionValue)
+      );
+      customModel.hidden = !useCustom;
+      customModel.value = useCustom && keepCurrent ? current : "";
+      model.value = useCustom ? customModel.value : modelPicker.value;
+      modelHelp.textContent = useCustom
+        ? "Escribe el identificador exacto que entrega tu proveedor."
+        : `${allModels.length} modelos del catálogo. La selección ajusta el proveedor automáticamente.`;
     };
 
     const refresh = (changeValues) => {
@@ -230,14 +236,33 @@
     if (window.jQuery) {
       jQuery(provider).on("select2:select select2:clear change", syncProvider);
     }
-    modelPicker.addEventListener("change", () => { model.value = modelPicker.value; });
+    modelPicker.addEventListener("change", () => {
+      const wantsCustom = modelPicker.value === customOptionValue;
+      customModel.hidden = !wantsCustom;
+      if (wantsCustom) {
+        model.value = customModel.value.trim();
+        modelHelp.textContent = "Escribe el identificador exacto que entrega tu proveedor.";
+        customModel.focus();
+        return;
+      }
+      const selectedProvider = modelPicker.selectedOptions[0]?.dataset.provider;
+      if (selectedProvider && provider.value !== selectedProvider) {
+        const selectedModel = modelPicker.value;
+        provider.value = selectedProvider;
+        refresh(true);
+        modelPicker.value = selectedModel;
+        model.value = selectedModel;
+      } else {
+        model.value = modelPicker.value;
+      }
+    });
     customModel.addEventListener("input", () => { model.value = customModel.value.trim(); });
     ["focus", "pointerdown", "keydown"].forEach(eventName => {
       apiKey?.addEventListener(eventName, () => apiKey.removeAttribute("readonly"), {once: true});
     });
     form?.addEventListener("submit", () => {
       syncProvider();
-      model.value = provider.value === "personalizado" ? customModel.value.trim() : modelPicker.value;
+      model.value = modelPicker.value === customOptionValue ? customModel.value.trim() : modelPicker.value;
     });
     refresh(false);
 
