@@ -1200,6 +1200,52 @@ class FinancialAssistantTests(TestCase):
         self.assertFalse(form.is_valid())
         self.assertIn("modelo", form.errors)
 
+    def test_formulario_no_conserva_modelo_conocido_de_proveedor_incorrecto(self):
+        config = ConfiguracionIA(
+            activo=True,
+            proveedor="openai",
+            modelo="gemini-3.8-flash",
+            url_base="https://api.openai.com/v1",
+            timeout_segundos=25,
+        )
+        config.set_api_key("sk-prueba")
+        config.save()
+        form = ConfiguracionIAForm(
+            instance=config,
+            data={
+                "proveedor": "openai",
+                "modelo": "gemini-3.8-flash",
+                "url_base": "https://api.openai.com/v1",
+                "timeout_segundos": "25",
+                "activo": "on",
+            },
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn("modelo", form.errors)
+
+    def test_cambiar_proveedor_exige_clave_nueva(self):
+        config = ConfiguracionIA(
+            activo=True,
+            proveedor="gemini",
+            modelo="gemini-3.8-flash",
+            url_base="https://generativelanguage.googleapis.com/v1beta/openai",
+            timeout_segundos=25,
+        )
+        config.set_api_key("clave-gemini")
+        config.save()
+        form = ConfiguracionIAForm(
+            instance=config,
+            data={
+                "proveedor": "openai",
+                "modelo": "gpt-4.1-mini",
+                "url_base": "https://api.openai.com/v1",
+                "timeout_segundos": "25",
+                "activo": "on",
+            },
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn("api_key", form.errors)
+
     def test_pantalla_precarga_modelos_por_proveedor(self):
         staff = get_user_model().objects.create_user(username="modelos-ia", password="test", is_staff=True)
         self.client.force_login(staff)

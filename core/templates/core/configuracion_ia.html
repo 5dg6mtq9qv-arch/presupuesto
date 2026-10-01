@@ -68,7 +68,7 @@
         <div class="unfold-field{% if form.api_key.errors %} has-error{% endif %}">
           <label for="{{ form.api_key.id_for_label }}">{{ form.api_key.label }}</label>
           {{ form.api_key }}
-          <div class="form-text">{{ form.api_key.help_text }}</div>
+          <div class="form-text" id="api-key-help">{{ form.api_key.help_text }}</div>
           {% for error in form.api_key.errors %}<div class="field-error"><span class="material-symbols-outlined">error</span>{{ error }}</div>{% endfor %}
         </div>
 
@@ -136,8 +136,11 @@
     const modelPicker = document.getElementById("model-picker");
     const customModel = document.getElementById("custom-model");
     const modelHelp = document.getElementById("model-help");
+    const apiKey = document.getElementById("id_api_key");
+    const apiKeyHelp = document.getElementById("api-key-help");
     const baseUrl = document.getElementById("id_url_base");
     const help = document.getElementById("provider-help");
+    const form = document.getElementById("ai-config-form");
     const modelOptionsNode = document.getElementById("ai-model-options");
     if (!provider || !model || !modelPicker || !customModel || !baseUrl || !help || !modelOptionsNode) return;
     const modelOptions = JSON.parse(modelOptionsNode.textContent);
@@ -185,29 +188,58 @@
         modelPicker.append(option);
       });
       const exists = options.some(([value]) => value === current);
-      if (keepCurrent && current && !exists) {
+      const belongsToAnotherProvider = Object.entries(modelOptions).some(
+        ([providerName, providerOptions]) => providerName !== provider.value
+          && providerOptions.some(([value]) => value === current)
+      );
+      const keepLegacy = keepCurrent && current && !exists && !belongsToAnotherProvider;
+      if (keepLegacy) {
         const legacy = document.createElement("option");
         legacy.value = current;
         legacy.textContent = `Modelo guardado (${current})`;
         modelPicker.prepend(legacy);
       }
-      modelPicker.value = keepCurrent && current ? current : (options[0]?.[0] || "");
+      modelPicker.value = keepCurrent && (exists || keepLegacy) ? current : (options[0]?.[0] || "");
       model.value = modelPicker.value;
     };
 
     const refresh = (changeValues) => {
-      const selected = presets[provider.value];
+      const selected = presets[provider.value] || presets.personalizado;
       help.innerHTML = selected.html;
       renderModels(!changeValues);
       if (changeValues && selected.url) {
         baseUrl.value = selected.url;
       }
+      if (changeValues && apiKeyHelp) {
+        apiKeyHelp.textContent = "Cambiaste de proveedor: pega una clave nueva correspondiente a este servicio.";
+      }
       previous = provider.value;
     };
-    provider.addEventListener("change", () => refresh(provider.value !== previous));
+    const syncProvider = () => {
+      if (provider.value !== previous) refresh(true);
+    };
+
+    provider.addEventListener("input", syncProvider);
+    provider.addEventListener("change", syncProvider);
     modelPicker.addEventListener("change", () => { model.value = modelPicker.value; });
     customModel.addEventListener("input", () => { model.value = customModel.value.trim(); });
+    ["focus", "pointerdown", "keydown"].forEach(eventName => {
+      apiKey?.addEventListener(eventName, () => apiKey.removeAttribute("readonly"), {once: true});
+    });
+    form?.addEventListener("submit", () => {
+      syncProvider();
+      model.value = provider.value === "personalizado" ? customModel.value.trim() : modelPicker.value;
+    });
     refresh(false);
+
+    // Some browsers and password managers restore select values after scripts
+    // have initialized the page. Reconcile those late changes so the provider,
+    // help text, endpoint and model choices always describe the same service.
+    window.addEventListener("pageshow", syncProvider);
+    window.addEventListener("focus", syncProvider);
+    window.requestAnimationFrame(syncProvider);
+    window.setTimeout(syncProvider, 0);
+    window.setTimeout(syncProvider, 500);
   })();
 </script>
 {% endblock %}

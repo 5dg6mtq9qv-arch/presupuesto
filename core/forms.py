@@ -59,7 +59,15 @@ class ConfiguracionIAForm(forms.ModelForm):
         required=False,
         widget=forms.PasswordInput(
             render_value=False,
-            attrs={"autocomplete": "new-password", "placeholder": "Pega aquí tu clave privada"},
+            attrs={
+                "autocomplete": "off",
+                "placeholder": "Pega aquí tu clave privada",
+                "data-lpignore": "true",
+                "data-1p-ignore": "true",
+                "data-bwignore": "true",
+                "spellcheck": "false",
+                "readonly": "readonly",
+            },
         ),
         help_text="Se guarda cifrada. Si ya existe una, deja este campo vacío para conservarla.",
     )
@@ -100,12 +108,20 @@ class ConfiguracionIAForm(forms.ModelForm):
         model = (cleaned_data.get("modelo") or "").strip()
         if token:
             self.instance.set_api_key(token)
+        if self.original_provider and provider != self.original_provider and not token:
+            self.add_error("api_key", "Al cambiar de proveedor debes pegar una clave de API de ese servicio.")
         allowed_models = {value for value, _label in AI_MODEL_OPTIONS.get(provider, [])}
+        known_models = {
+            value
+            for options in AI_MODEL_OPTIONS.values()
+            for value, _label in options
+        }
         if provider != ConfiguracionIA.Proveedor.PERSONALIZADO and model not in allowed_models:
             if not (
                 self.original_model
                 and model == self.original_model
                 and provider == self.original_provider
+                and model not in known_models
             ):
                 self.add_error("modelo", "Selecciona uno de los modelos disponibles para este proveedor.")
         if cleaned_data.get("activo") and not (token or self.instance.tiene_api_key):
