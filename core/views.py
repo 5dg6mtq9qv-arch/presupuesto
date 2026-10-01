@@ -118,8 +118,8 @@ def asistente_financiero_preguntar(request):
     except (TypeError, ValueError, json.JSONDecodeError):
         return JsonResponse({"ok": False, "error": "La solicitud no tiene un formato válido."}, status=400)
     question = str(body.get("pregunta", "")).strip()
-    if len(question) < 3:
-        return JsonResponse({"ok": False, "error": "Escribe una pregunta un poco más clara."}, status=400)
+    if not question:
+        return JsonResponse({"ok": False, "error": "Escribe un mensaje para continuar."}, status=400)
     if len(question) > 600:
         return JsonResponse({"ok": False, "error": "La pregunta no puede superar 600 caracteres."}, status=400)
     raw_history = body.get("historial", [])

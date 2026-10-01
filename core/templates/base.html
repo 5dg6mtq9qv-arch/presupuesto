@@ -1647,7 +1647,7 @@
       form.addEventListener("submit", async event => {
         event.preventDefault();
         const value = question.value.trim();
-        if (value.length < 3 || submit.disabled) return;
+        if (!value || submit.disabled) return question.focus();
         addMessage(value, "user");
         const requestHistory = history.slice(-10);
         history.push({role: "user", content: value});

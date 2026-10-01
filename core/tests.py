@@ -1022,6 +1022,26 @@ class FinancialAssistantTests(TestCase):
         mocked_assistant.assert_called_once_with(self.user, "¿Cómo está mi balance?")
 
     @override_settings(AI_ASSISTANT_ENABLED=True, AI_API_KEY="secreto-de-prueba")
+    @patch("core.views.ask_financial_assistant")
+    def test_endpoint_acepta_respuesta_corta_de_confirmacion(self, mocked_assistant):
+        mocked_assistant.return_value = {
+            "respuesta": "Confirmado.",
+            "evidencia": [],
+            "advertencia": "",
+            "periodo": {},
+        }
+
+        response = self.client.post(
+            reverse("asistente_financiero_preguntar"),
+            data=json.dumps({"pregunta": "sí", "historial": []}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["ok"])
+        mocked_assistant.assert_called_once_with(self.user, "sí")
+
+    @override_settings(AI_ASSISTANT_ENABLED=True, AI_API_KEY="secreto-de-prueba")
     @patch("core.views.ask_financial_assistant", side_effect=RuntimeError("fallo inesperado"))
     def test_endpoint_devuelve_json_aun_ante_error_inesperado(self, mocked_assistant):
         response = self.client.post(
