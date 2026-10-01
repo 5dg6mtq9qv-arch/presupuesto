@@ -17,7 +17,6 @@
   .ai-provider-help { padding: 12px; border: 1px solid var(--line); border-radius: 12px; color: var(--muted); font-size: 13px; line-height: 1.5; }
   .ai-provider-help strong { color: var(--text); }
   .ai-provider-help a { font-weight: 700; }
-  .ai-config-form select[hidden] + .select2-container { display: none; }
   .ai-advanced { border: 1px solid var(--line); border-radius: 12px; padding: 0 14px; }
   .ai-advanced summary { cursor: pointer; padding: 13px 0; font-weight: 700; }
   .ai-advanced-fields { display: grid; gap: 14px; padding-bottom: 14px; }
@@ -146,6 +145,12 @@
     if (!provider || !model || !modelPicker || !customModel || !baseUrl || !help || !modelOptionsNode) return;
     const modelOptions = JSON.parse(modelOptionsNode.textContent);
 
+    // This select changes its complete option list whenever the provider
+    // changes. Keeping it native avoids Select2 retaining a stale result list.
+    if (window.jQuery && jQuery(modelPicker).data("select2")) {
+      jQuery(modelPicker).select2("destroy");
+    }
+
     const presets = {
       openai: {
         url: "https://api.openai.com/v1",
@@ -165,12 +170,6 @@
     };
 
     let previous = provider.value;
-    const refreshModelPicker = () => {
-      if (window.jQuery && jQuery(modelPicker).data("select2")) {
-        jQuery(modelPicker).trigger("change.select2");
-      }
-    };
-
     const renderModels = (keepCurrent) => {
       const current = model.value;
       const options = modelOptions[provider.value] || [];
@@ -179,12 +178,11 @@
       customModel.hidden = !isCustom;
       modelHelp.textContent = isCustom
         ? "Escribe el identificador exacto que entrega tu proveedor."
-        : "Elige la versión según velocidad, capacidad o costo.";
+        : `${options.length} modelos disponibles. Abre la lista para escoger uno.`;
 
       if (isCustom) {
         customModel.value = keepCurrent ? current : "";
         model.value = customModel.value;
-        refreshModelPicker();
         return;
       }
 
@@ -209,7 +207,6 @@
       }
       modelPicker.value = keepCurrent && (exists || keepLegacy) ? current : (options[0]?.[0] || "");
       model.value = modelPicker.value;
-      refreshModelPicker();
     };
 
     const refresh = (changeValues) => {
