@@ -691,6 +691,8 @@ def configuracion_ia(request):
 
 @admin_required
 def consumo_ia_panel(request):
+    from .ai_pricing import estimate_ai_cost_usd
+
     hoy = timezone.localdate()
     desde_texto = request.GET.get("desde", hoy.replace(day=1).isoformat()).strip()
     hasta_texto = request.GET.get("hasta", hoy.isoformat()).strip()
@@ -735,6 +737,25 @@ def consumo_ia_panel(request):
     resumen["duracion_media"] = round(resumen["duracion_media"] or 0)
     resumen["porcentaje_error"] = round(resumen["errores"] / resumen["peticiones"] * 100, 1) if resumen["peticiones"] else 0
 
+    costos_por_modelo = list(
+        consumos.values("proveedor", "modelo")
+        .annotate(
+            tokens_entrada=Sum("tokens_entrada"),
+            tokens_salida=Sum("tokens_salida"),
+            tokens_cacheados=Sum("tokens_cacheados"),
+        )
+    )
+    costos_conocidos = []
+    for item in costos_por_modelo:
+        costo = estimate_ai_cost_usd(
+            item["proveedor"], item["modelo"], item["tokens_entrada"],
+            item["tokens_salida"], item["tokens_cacheados"],
+        )
+        if costo is not None:
+            costos_conocidos.append(costo)
+    resumen["costo_estimado_usd"] = sum(costos_conocidos, start=Decimal("0"))
+    resumen["costo_incompleto"] = len(costos_conocidos) != len(costos_por_modelo)
+
     por_usuario = list(
         consumos.values("usuario_id", "usuario__username", "usuario__first_name", "usuario__last_name")
         .annotate(
@@ -751,12 +772,20 @@ def consumo_ia_panel(request):
         consumos.values("proveedor", "modelo")
         .annotate(
             peticiones=Count("id"),
+            tokens_entrada=Sum("tokens_entrada"),
+            tokens_salida=Sum("tokens_salida"),
             tokens_totales=Sum("tokens_totales"),
+            tokens_cacheados=Sum("tokens_cacheados"),
             duracion_media=Avg("duracion_ms"),
             errores=Count("id", filter=Q(exitoso=False)),
         )
         .order_by("-tokens_totales")
     )
+    for item in por_modelo:
+        item["costo_estimado_usd"] = estimate_ai_cost_usd(
+            item["proveedor"], item["modelo"], item["tokens_entrada"],
+            item["tokens_salida"], item["tokens_cacheados"],
+        )
     page_obj, list_querystring = paginate_queryset(request, consumos.order_by("-creado"), per_page=25)
 
     return render(

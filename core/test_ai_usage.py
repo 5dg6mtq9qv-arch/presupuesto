@@ -1,5 +1,6 @@
 import json
 import uuid
+from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 from django.contrib.auth import get_user_model
@@ -8,6 +9,7 @@ from django.urls import reverse
 
 from .ai_assistant import _provider_message
 from .ai_config import AIRuntimeConfig
+from .ai_pricing import estimate_ai_cost_usd
 from .models import ConsumoIA
 
 
@@ -66,6 +68,13 @@ class AIUsageTrackingTests(TestCase):
         self.assertTrue(consumo.exitoso)
         self.assertFalse(any(field.name in {"pregunta", "respuesta", "contenido", "prompt"} for field in ConsumoIA._meta.fields))
 
+    def test_calcula_costo_estimado_separando_tokens_cacheados(self):
+        costo = estimate_ai_cost_usd("openai", "gpt-4.1-mini", 1000, 200, 400)
+        self.assertEqual(costo, Decimal("0.000600"))
+
+    def test_modelo_sin_tarifa_no_inventa_un_costo(self):
+        self.assertIsNone(estimate_ai_cost_usd("proveedor", "modelo-desconocido", 1000, 200))
+
 
 class AIUsagePanelTests(TestCase):
     def setUp(self):
@@ -93,3 +102,5 @@ class AIUsagePanelTests(TestCase):
         self.assertContains(response, "Consumo de IA")
         self.assertContains(response, "cliente")
         self.assertEqual(response.context["resumen"]["tokens_totales"], 100)
+        self.assertEqual(response.context["resumen"]["costo_estimado_usd"], Decimal("0.000064"))
+        self.assertContains(response, "Costo estimado")

@@ -57,6 +57,7 @@
   <section class="panel usage-metric"><small>Razonamiento</small><strong>{{ resumen.tokens_razonamiento }}</strong></section>
   <section class="panel usage-metric"><small>Errores</small><strong>{{ resumen.errores }} <span class="usage-secondary">({{ resumen.porcentaje_error }}%)</span></strong></section>
   <section class="panel usage-metric"><small>Tiempo medio</small><strong>{{ resumen.duracion_media }} <span class="usage-secondary">ms</span></strong></section>
+  <section class="panel usage-metric"><small>Costo estimado</small><strong>${{ resumen.costo_estimado_usd|floatformat:6 }} <span class="usage-secondary">USD{% if resumen.costo_incompleto %} · parcial{% endif %}</span></strong></section>
 </div>
 
 <div class="usage-grid">
@@ -82,11 +83,11 @@
     <div class="panel-heading"><div><h2>Por modelo</h2><p class="muted mb-0">Comparación de volumen y rendimiento</p></div></div>
     <div class="table-wrap">
       <table class="table table-hover align-middle mb-0">
-        <thead><tr><th>Modelo</th><th>Peticiones</th><th>Tokens</th><th>Media</th></tr></thead>
+        <thead><tr><th>Modelo</th><th>Peticiones</th><th>Tokens</th><th>Costo est.</th><th>Media</th></tr></thead>
         <tbody>
           {% for item in por_modelo %}
-            <tr><td><strong>{{ item.modelo }}</strong><div class="usage-secondary">{{ item.proveedor|title }} · {{ item.errores }} errores</div></td><td>{{ item.peticiones }}</td><td>{{ item.tokens_totales }}</td><td>{{ item.duracion_media|floatformat:0 }} ms</td></tr>
-          {% empty %}<tr><td colspan="4" class="muted">Sin datos.</td></tr>{% endfor %}
+            <tr><td><strong>{{ item.modelo }}</strong><div class="usage-secondary">{{ item.proveedor|title }} · {{ item.errores }} errores</div></td><td>{{ item.peticiones }}</td><td>{{ item.tokens_totales }}</td><td>{% if item.costo_estimado_usd is not None %}${{ item.costo_estimado_usd|floatformat:6 }}{% else %}<span class="usage-secondary">N/D</span>{% endif %}</td><td>{{ item.duracion_media|floatformat:0 }} ms</td></tr>
+          {% empty %}<tr><td colspan="5" class="muted">Sin datos.</td></tr>{% endfor %}
         </tbody>
       </table>
     </div>
@@ -97,7 +98,7 @@
   <div class="panel-heading"><div><h2>Detalle de peticiones</h2><p class="muted mb-0">No se guardan preguntas, respuestas ni información financiera</p></div></div>
   <div class="table-wrap">
     <table class="table table-hover align-middle mb-0">
-      <thead><tr><th>Fecha</th><th>Usuario</th><th>Proveedor / modelo</th><th>Operación</th><th>Tokens</th><th>Duración</th><th>Estado</th></tr></thead>
+      <thead><tr><th>Fecha</th><th>Usuario</th><th>Proveedor / modelo</th><th>Operación</th><th>Tokens</th><th>Costo est.</th><th>Duración</th><th>Estado</th></tr></thead>
       <tbody>
         {% for consumo in consumos %}
           <tr>
@@ -106,10 +107,11 @@
             <td><strong>{{ consumo.modelo }}</strong><div class="usage-secondary">{{ consumo.proveedor|title }}</div></td>
             <td>{{ consumo.tipo_operacion|cut:"_"|title }}<div class="usage-secondary">{{ consumo.interaccion_id|stringformat:"s"|truncatechars:13 }}</div></td>
             <td><strong>{{ consumo.tokens_totales }}</strong><div class="usage-secondary">{{ consumo.tokens_entrada }} entrada · {{ consumo.tokens_salida }} salida</div></td>
+            <td>{% if consumo.costo_estimado_usd is not None %}${{ consumo.costo_estimado_usd|floatformat:6 }}{% else %}<span class="usage-secondary">N/D</span>{% endif %}</td>
             <td>{{ consumo.duracion_ms }} ms</td>
             <td>{% if consumo.exitoso %}<span class="badge rounded-pill text-bg-success">Correcta</span>{% else %}<span class="badge rounded-pill text-bg-danger">Error{% if consumo.http_status %} {{ consumo.http_status }}{% endif %}</span>{% endif %}</td>
           </tr>
-        {% empty %}<tr><td colspan="7" class="muted">No hay peticiones para mostrar.</td></tr>{% endfor %}
+        {% empty %}<tr><td colspan="8" class="muted">No hay peticiones para mostrar.</td></tr>{% endfor %}
       </tbody>
     </table>
   </div>

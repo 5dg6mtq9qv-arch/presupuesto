@@ -245,6 +245,18 @@ class ConsumoIA(models.Model):
         usuario = self.usuario.username if self.usuario_id else "Sin usuario"
         return f"{usuario} · {self.modelo} · {self.tokens_totales} tokens"
 
+    @property
+    def costo_estimado_usd(self):
+        from .ai_pricing import estimate_ai_cost_usd
+
+        return estimate_ai_cost_usd(
+            self.proveedor,
+            self.modelo,
+            self.tokens_entrada,
+            self.tokens_salida,
+            self.tokens_cacheados,
+        )
+
 
 class EliminacionRegistro(models.Model):
     usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
