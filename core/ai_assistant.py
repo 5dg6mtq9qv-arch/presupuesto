@@ -1,6 +1,8 @@
 import json
 import logging
+import time
 import unicodedata
+import uuid
 from calendar import monthrange
 from datetime import timedelta
 from decimal import Decimal
@@ -15,6 +17,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date
 
 from .ai_config import get_ai_runtime_config
+from .ai_usage import record_ai_usage
 from .autonomous_finance import recommendation_memory, serialize_goals, simulate_financial_scenario
 from .financial_profile import get_financial_behavior_profile
 from .forms import DeudaForm, MovimientoFinancieroForm
@@ -1519,7 +1522,26 @@ TOOL_HANDLERS = {
 }
 
 
-def _provider_message(messages, config, *, tools=None, max_tokens=600):
+def _provider_message(messages, config, *, tools=None, max_tokens=600, usage_context=None):
+    started_at = time.monotonic()
+    provider_data = {}
+
+    def record_call(*, successful, usage=None, http_status=None, error_code="", provider_request_id=""):
+        context = usage_context if isinstance(usage_context, dict) else {}
+        record_ai_usage(
+            user=context.get("user"),
+            interaction_id=context.get("interaction_id"),
+            provider=config.provider,
+            model=config.model,
+            operation=context.get("operation", "consulta"),
+            duration_ms=round((time.monotonic() - started_at) * 1000),
+            usage=usage,
+            successful=successful,
+            http_status=http_status,
+            error_code=error_code,
+            provider_request_id=provider_request_id,
+        )
+
     payload = {
         "model": config.model,
         "temperature": 0.2,
@@ -1549,12 +1571,28 @@ def _provider_message(messages, config, *, tools=None, max_tokens=600):
     try:
         with urlopen(request, timeout=config.timeout_seconds) as response:
             provider_data = json.loads(response.read().decode("utf-8"))
-        return provider_data["choices"][0]["message"]
+            http_status = getattr(response, "status", None)
+        message = provider_data["choices"][0]["message"]
+        record_call(
+            successful=True,
+            usage=provider_data.get("usage"),
+            http_status=http_status if isinstance(http_status, int) else 200,
+            provider_request_id=provider_data.get("id", ""),
+        )
+        return message
     except HTTPError as exc:
         try:
             error_body = exc.read().decode("utf-8", errors="replace")[:1500]
         except Exception:
             error_body = ""
+        error_code = "http_error"
+        try:
+            parsed_error = json.loads(error_body).get("error", {})
+            if isinstance(parsed_error, dict):
+                error_code = parsed_error.get("code") or parsed_error.get("type") or error_code
+        except (TypeError, ValueError, json.JSONDecodeError):
+            pass
+        record_call(successful=False, http_status=exc.code, error_code=error_code)
         logger.warning("AI provider HTTP error provider=%s model=%s status=%s body=%s", config.provider, config.model, exc.code, error_body)
         if exc.code == 401:
             raise AIAssistantError("La clave de la IA no es válida.") from exc
@@ -1576,8 +1614,15 @@ def _provider_message(messages, config, *, tools=None, max_tokens=600):
             ) from exc
         raise AIAssistantError(f"El proveedor de IA no pudo procesar la consulta (HTTP {exc.code}).") from exc
     except (URLError, TimeoutError) as exc:
+        record_call(successful=False, error_code="network_error")
         raise AIAssistantError("El proveedor de IA no está disponible en este momento.") from exc
     except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        record_call(
+            successful=False,
+            usage=provider_data.get("usage") if isinstance(provider_data, dict) else None,
+            error_code="invalid_response",
+            provider_request_id=provider_data.get("id", "") if isinstance(provider_data, dict) else "",
+        )
         raise AIAssistantError("La IA devolvió una respuesta que no se pudo validar.") from exc
 
 
@@ -1745,9 +1790,20 @@ def ask_financial_assistant(user, question, history=None):
             "content": f"ÚLTIMO_MENSAJE:\n{question}\n\nCONTEXTO_FINANCIERO:\n{json.dumps(context, ensure_ascii=False)}",
         }
     )
+    interaction_id = uuid.uuid4()
     total_tool_calls = 0
     for _round in range(4):
-        message = _provider_message(messages, config, tools=AI_TOOLS, max_tokens=900)
+        message = _provider_message(
+            messages,
+            config,
+            tools=AI_TOOLS,
+            max_tokens=900,
+            usage_context={
+                "user": user,
+                "interaction_id": interaction_id,
+                "operation": f"ronda_agente_{_round + 1}",
+            },
+        )
         tool_calls = (message.get("tool_calls") or [])[:3]
         if not tool_calls:
             try:
@@ -1772,7 +1828,16 @@ def ask_financial_assistant(user, question, history=None):
             "content": "Con la evidencia ya reunida, entrega ahora la respuesta final usando el JSON solicitado. No llames más herramientas ni agregues datos no verificados.",
         }
     )
-    message = _provider_message(messages, config, max_tokens=1200)
+    message = _provider_message(
+        messages,
+        config,
+        max_tokens=1200,
+        usage_context={
+            "user": user,
+            "interaction_id": interaction_id,
+            "operation": "respuesta_final",
+        },
+    )
 
     answer = _parse_assistant_answer(message.get("content"))
     return _validated_assistant_result(answer, context, user=user)

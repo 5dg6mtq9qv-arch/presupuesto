@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+
+{% block page_title %}Consumo de IA{% endblock %}
+{% block page_subtitle %}Uso de tokens por usuario dentro de la plataforma{% endblock %}
+
+{% block content %}
+<style>
+  .usage-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 18px; }
+  .usage-metric { padding: 18px; }
+  .usage-metric small { display: block; color: var(--muted); font-weight: 750; text-transform: uppercase; letter-spacing: .03em; }
+  .usage-metric strong { display: block; margin-top: 7px; font-size: 26px; line-height: 1; }
+  .usage-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(300px, .8fr); gap: 18px; margin-bottom: 18px; }
+  .usage-grid .panel { min-width: 0; }
+  .usage-secondary { color: var(--muted); font-size: 12px; }
+  .usage-error { color: var(--danger); font-weight: 750; }
+  @media (max-width: 900px) { .usage-grid { grid-template-columns: 1fr; } }
+</style>
+
+<section class="panel">
+  <form class="filter-form" method="get">
+    <div>
+      <label for="desde">Desde</label>
+      <input class="form-control" id="desde" name="desde" type="date" value="{{ filters.desde }}">
+    </div>
+    <div>
+      <label for="hasta">Hasta</label>
+      <input class="form-control" id="hasta" name="hasta" type="date" value="{{ filters.hasta }}">
+    </div>
+    <div>
+      <label for="usuario">Usuario</label>
+      <input class="form-control" id="usuario" name="usuario" value="{{ filters.usuario }}" placeholder="Nombre, usuario o correo">
+    </div>
+    <div>
+      <label for="proveedor">Proveedor</label>
+      <select class="form-select" id="proveedor" name="proveedor">
+        <option value="">Todos</option>
+        {% for item in proveedores %}<option value="{{ item }}"{% if filters.proveedor == item %} selected{% endif %}>{{ item|title }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="modelo">Modelo</label>
+      <select class="form-select" id="modelo" name="modelo">
+        <option value="">Todos</option>
+        {% for item in modelos %}<option value="{{ item }}"{% if filters.modelo == item %} selected{% endif %}>{{ item }}</option>{% endfor %}
+      </select>
+    </div>
+    <button class="btn btn-primary btn-icon" type="submit" title="Filtrar" aria-label="Filtrar"><span class="material-symbols-outlined">filter_alt</span></button>
+  </form>
+</section>
+
+<div class="usage-metrics">
+  <section class="panel usage-metric"><small>Peticiones</small><strong>{{ resumen.peticiones }}</strong></section>
+  <section class="panel usage-metric"><small>Tokens totales</small><strong>{{ resumen.tokens_totales }}</strong></section>
+  <section class="panel usage-metric"><small>Entrada</small><strong>{{ resumen.tokens_entrada }}</strong></section>
+  <section class="panel usage-metric"><small>Salida</small><strong>{{ resumen.tokens_salida }}</strong></section>
+  <section class="panel usage-metric"><small>En caché</small><strong>{{ resumen.tokens_cacheados }}</strong></section>
+  <section class="panel usage-metric"><small>Razonamiento</small><strong>{{ resumen.tokens_razonamiento }}</strong></section>
+  <section class="panel usage-metric"><small>Errores</small><strong>{{ resumen.errores }} <span class="usage-secondary">({{ resumen.porcentaje_error }}%)</span></strong></section>
+  <section class="panel usage-metric"><small>Tiempo medio</small><strong>{{ resumen.duracion_media }} <span class="usage-secondary">ms</span></strong></section>
+</div>
+
+<div class="usage-grid">
+  <section class="panel">
+    <div class="panel-heading"><div><h2>Consumo por usuario</h2><p class="muted mb-0">Máximo 50 usuarios, ordenados por consumo</p></div></div>
+    <div class="table-wrap">
+      <table class="table table-hover align-middle mb-0">
+        <thead><tr><th>Usuario</th><th>Peticiones</th><th>Entrada</th><th>Salida</th><th>Total</th><th>Errores</th></tr></thead>
+        <tbody>
+          {% for item in por_usuario %}
+            <tr>
+              <td><strong>{{ item.usuario__username|default:"Usuario eliminado" }}</strong>{% if item.usuario__first_name or item.usuario__last_name %}<div class="usage-secondary">{{ item.usuario__first_name }} {{ item.usuario__last_name }}</div>{% endif %}</td>
+              <td>{{ item.peticiones }}</td><td>{{ item.tokens_entrada }}</td><td>{{ item.tokens_salida }}</td><td><strong>{{ item.tokens_totales }}</strong></td>
+              <td{% if item.errores %} class="usage-error"{% endif %}>{{ item.errores }}</td>
+            </tr>
+          {% empty %}<tr><td colspan="6" class="muted">No hay consumo en el período seleccionado.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-heading"><div><h2>Por modelo</h2><p class="muted mb-0">Comparación de volumen y rendimiento</p></div></div>
+    <div class="table-wrap">
+      <table class="table table-hover align-middle mb-0">
+        <thead><tr><th>Modelo</th><th>Peticiones</th><th>Tokens</th><th>Media</th></tr></thead>
+        <tbody>
+          {% for item in por_modelo %}
+            <tr><td><strong>{{ item.modelo }}</strong><div class="usage-secondary">{{ item.proveedor|title }} · {{ item.errores }} errores</div></td><td>{{ item.peticiones }}</td><td>{{ item.tokens_totales }}</td><td>{{ item.duracion_media|floatformat:0 }} ms</td></tr>
+          {% empty %}<tr><td colspan="4" class="muted">Sin datos.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<section class="panel">
+  <div class="panel-heading"><div><h2>Detalle de peticiones</h2><p class="muted mb-0">No se guardan preguntas, respuestas ni información financiera</p></div></div>
+  <div class="table-wrap">
+    <table class="table table-hover align-middle mb-0">
+      <thead><tr><th>Fecha</th><th>Usuario</th><th>Proveedor / modelo</th><th>Operación</th><th>Tokens</th><th>Duración</th><th>Estado</th></tr></thead>
+      <tbody>
+        {% for consumo in consumos %}
+          <tr>
+            <td class="text-nowrap">{{ consumo.creado|date:"d/m/Y H:i:s" }}</td>
+            <td>{{ consumo.usuario.username|default:"Usuario eliminado" }}</td>
+            <td><strong>{{ consumo.modelo }}</strong><div class="usage-secondary">{{ consumo.proveedor|title }}</div></td>
+            <td>{{ consumo.tipo_operacion|cut:"_"|title }}<div class="usage-secondary">{{ consumo.interaccion_id|stringformat:"s"|truncatechars:13 }}</div></td>
+            <td><strong>{{ consumo.tokens_totales }}</strong><div class="usage-secondary">{{ consumo.tokens_entrada }} entrada · {{ consumo.tokens_salida }} salida</div></td>
+            <td>{{ consumo.duracion_ms }} ms</td>
+            <td>{% if consumo.exitoso %}<span class="badge rounded-pill text-bg-success">Correcta</span>{% else %}<span class="badge rounded-pill text-bg-danger">Error{% if consumo.http_status %} {{ consumo.http_status }}{% endif %}</span>{% endif %}</td>
+          </tr>
+        {% empty %}<tr><td colspan="7" class="muted">No hay peticiones para mostrar.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "core/includes/pagination.html" %}
+</section>
+{% endblock %}

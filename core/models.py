@@ -207,6 +207,45 @@ class ConfiguracionIA(models.Model):
         return f"{self.get_proveedor_display()} · {self.modelo}"
 
 
+class ConsumoIA(models.Model):
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="consumos_ia",
+    )
+    interaccion_id = models.UUIDField(default=uuid.uuid4, db_index=True, editable=False)
+    proveedor = models.CharField(max_length=30)
+    modelo = models.CharField(max_length=120)
+    tipo_operacion = models.CharField(max_length=50, default="consulta")
+    tokens_entrada = models.PositiveBigIntegerField(default=0)
+    tokens_salida = models.PositiveBigIntegerField(default=0)
+    tokens_totales = models.PositiveBigIntegerField(default=0)
+    tokens_cacheados = models.PositiveBigIntegerField(default=0)
+    tokens_razonamiento = models.PositiveBigIntegerField(default=0)
+    duracion_ms = models.PositiveIntegerField(default=0)
+    exitoso = models.BooleanField(default=True)
+    http_status = models.PositiveSmallIntegerField(null=True, blank=True)
+    codigo_error = models.CharField(max_length=80, blank=True)
+    solicitud_proveedor_id = models.CharField(max_length=120, blank=True)
+    creado = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = '"analisis"."consumo_ia"'
+        ordering = ["-creado"]
+        indexes = [
+            models.Index(fields=["usuario", "creado"], name="consumo_ia_usuario_fecha_idx"),
+            models.Index(fields=["proveedor", "modelo", "creado"], name="consumo_ia_modelo_fecha_idx"),
+        ]
+        verbose_name = "consumo de IA"
+        verbose_name_plural = "consumos de IA"
+
+    def __str__(self):
+        usuario = self.usuario.username if self.usuario_id else "Sin usuario"
+        return f"{usuario} · {self.modelo} · {self.tokens_totales} tokens"
+
+
 class EliminacionRegistro(models.Model):
     usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
     modelo = models.CharField(max_length=120)

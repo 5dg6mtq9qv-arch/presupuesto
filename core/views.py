@@ -2,6 +2,7 @@ import calendar
 import csv
 import json
 import logging
+import uuid
 from html import escape
 from ipaddress import ip_address
 from io import BytesIO
@@ -17,7 +18,7 @@ from django.core.paginator import Paginator
 from django.core.cache import cache
 from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
 from django.db import transaction
-from django.db.models import Min, Prefetch, Q, Sum
+from django.db.models import Avg, Count, Max, Min, Prefetch, Q, Sum
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -70,6 +71,7 @@ from .models import (
     AjusteSaldo,
     Categoria,
     ConfiguracionIA,
+    ConsumoIA,
     CuentaFinanciera,
     Deuda,
     EliminacionRegistro,
@@ -657,6 +659,11 @@ def configuracion_ia(request):
                         ],
                         runtime,
                         max_tokens=40,
+                        usage_context={
+                            "user": request.user,
+                            "interaction_id": uuid.uuid4(),
+                            "operation": "prueba_conexion",
+                        },
                     )
                 except AIAssistantError as exc:
                     connection_error = str(exc)
@@ -678,6 +685,99 @@ def configuracion_ia(request):
             "config": config,
             "connection_error": connection_error,
             "ai_model_options": AI_MODEL_OPTIONS,
+        },
+    )
+
+
+@admin_required
+def consumo_ia_panel(request):
+    hoy = timezone.localdate()
+    desde_texto = request.GET.get("desde", hoy.replace(day=1).isoformat()).strip()
+    hasta_texto = request.GET.get("hasta", hoy.isoformat()).strip()
+    usuario_texto = request.GET.get("usuario", "").strip()
+    proveedor = request.GET.get("proveedor", "").strip()
+    modelo = request.GET.get("modelo", "").strip()
+
+    consumos = ConsumoIA.objects.select_related("usuario")
+    desde = parse_date(desde_texto)
+    hasta = parse_date(hasta_texto)
+    if desde:
+        consumos = consumos.filter(creado__date__gte=desde)
+    if hasta:
+        consumos = consumos.filter(creado__date__lte=hasta)
+    if usuario_texto:
+        consumos = consumos.filter(
+            Q(usuario__username__icontains=usuario_texto)
+            | Q(usuario__first_name__icontains=usuario_texto)
+            | Q(usuario__last_name__icontains=usuario_texto)
+            | Q(usuario__email__icontains=usuario_texto)
+        )
+    if proveedor:
+        consumos = consumos.filter(proveedor=proveedor)
+    if modelo:
+        consumos = consumos.filter(modelo=modelo)
+
+    resumen = consumos.aggregate(
+        peticiones=Count("id"),
+        tokens_entrada=Sum("tokens_entrada"),
+        tokens_salida=Sum("tokens_salida"),
+        tokens_totales=Sum("tokens_totales"),
+        tokens_cacheados=Sum("tokens_cacheados"),
+        tokens_razonamiento=Sum("tokens_razonamiento"),
+        duracion_media=Avg("duracion_ms"),
+        errores=Count("id", filter=Q(exitoso=False)),
+    )
+    for key in (
+        "peticiones", "tokens_entrada", "tokens_salida", "tokens_totales",
+        "tokens_cacheados", "tokens_razonamiento", "errores",
+    ):
+        resumen[key] = resumen[key] or 0
+    resumen["duracion_media"] = round(resumen["duracion_media"] or 0)
+    resumen["porcentaje_error"] = round(resumen["errores"] / resumen["peticiones"] * 100, 1) if resumen["peticiones"] else 0
+
+    por_usuario = list(
+        consumos.values("usuario_id", "usuario__username", "usuario__first_name", "usuario__last_name")
+        .annotate(
+            peticiones=Count("id"),
+            tokens_entrada=Sum("tokens_entrada"),
+            tokens_salida=Sum("tokens_salida"),
+            tokens_totales=Sum("tokens_totales"),
+            errores=Count("id", filter=Q(exitoso=False)),
+            ultima_peticion=Max("creado"),
+        )
+        .order_by("-tokens_totales", "usuario__username")[:50]
+    )
+    por_modelo = list(
+        consumos.values("proveedor", "modelo")
+        .annotate(
+            peticiones=Count("id"),
+            tokens_totales=Sum("tokens_totales"),
+            duracion_media=Avg("duracion_ms"),
+            errores=Count("id", filter=Q(exitoso=False)),
+        )
+        .order_by("-tokens_totales")
+    )
+    page_obj, list_querystring = paginate_queryset(request, consumos.order_by("-creado"), per_page=25)
+
+    return render(
+        request,
+        "core/consumo_ia_panel.html",
+        {
+            "resumen": resumen,
+            "por_usuario": por_usuario,
+            "por_modelo": por_modelo,
+            "consumos": page_obj,
+            "page_obj": page_obj,
+            "list_querystring": list_querystring,
+            "proveedores": ConsumoIA.objects.order_by("proveedor").values_list("proveedor", flat=True).distinct(),
+            "modelos": ConsumoIA.objects.order_by("modelo").values_list("modelo", flat=True).distinct(),
+            "filters": {
+                "desde": desde_texto,
+                "hasta": hasta_texto,
+                "usuario": usuario_texto,
+                "proveedor": proveedor,
+                "modelo": modelo,
+            },
         },
     )
 

@@ -1468,6 +1468,7 @@
           <ul class="nav-list">
             <li><a class="nav-link {% if 'usuario' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'usuario_list' %}"><span class="material-symbols-outlined">group</span> Usuarios</a></li>
             <li><a class="nav-link {% if request.resolver_match.url_name == 'configuracion_ia' %}active{% endif %}" href="{% url 'configuracion_ia' %}"><span class="material-symbols-outlined">tune</span> Conectar IA</a></li>
+            <li><a class="nav-link {% if request.resolver_match.url_name == 'consumo_ia_panel' %}active{% endif %}" href="{% url 'consumo_ia_panel' %}"><span class="material-symbols-outlined">data_usage</span> Consumo IA</a></li>
             <li><a class="nav-link" href="{% url 'admin:index' %}"><span class="material-symbols-outlined">admin_panel_settings</span> Admin Django</a></li>
           </ul>
         {% endif %}
