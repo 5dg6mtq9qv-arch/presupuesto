@@ -35,6 +35,29 @@ class PerfilUsuario(models.Model):
         return f"Perfil de {self.usuario}"
 
 
+class PerfilComportamientoFinanciero(models.Model):
+    usuario = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="perfil_comportamiento_financiero",
+    )
+    datos = models.JSONField(default=dict, blank=True)
+    version = models.PositiveSmallIntegerField(default=1)
+    desactualizado = models.BooleanField(default=True)
+    calculado_para_fecha = models.DateField(null=True, blank=True)
+    calculado_en = models.DateTimeField(null=True, blank=True)
+    actualizado = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = '"analisis"."perfil_comportamiento_financiero"'
+        verbose_name = "perfil de comportamiento financiero"
+        verbose_name_plural = "perfiles de comportamiento financiero"
+
+    def __str__(self):
+        estado = "pendiente" if self.desactualizado else "actualizado"
+        return f"Comportamiento financiero de {self.usuario} ({estado})"
+
+
 class ConfiguracionIA(models.Model):
     class Proveedor(models.TextChoices):
         OPENAI = "openai", "OpenAI"

@@ -19,6 +19,7 @@ from .models import (
     MovimientoFinanciero,
     MovimientoRecurrente,
     PagoDeuda,
+    PerfilComportamientoFinanciero,
     PerfilUsuario,
     PresupuestoMensual,
     RegistroAuditoria,
@@ -136,6 +137,35 @@ class PerfilUsuarioAdmin(ModelAdmin):
     list_display = ("usuario", "telefono", "puede_usar_asistente_ia", "actualizado")
     list_filter = ("puede_usar_asistente_ia",)
     search_fields = ("usuario__username", "usuario__first_name", "usuario__last_name", "telefono")
+
+
+@admin.register(PerfilComportamientoFinanciero)
+class PerfilComportamientoFinancieroAdmin(ModelAdmin):
+    list_display = ("usuario", "calidad", "desactualizado", "calculado_para_fecha", "calculado_en")
+    list_filter = ("desactualizado", "calculado_para_fecha")
+    search_fields = ("usuario__username", "usuario__first_name", "usuario__last_name")
+    readonly_fields = (
+        "usuario",
+        "datos",
+        "version",
+        "desactualizado",
+        "calculado_para_fecha",
+        "calculado_en",
+        "actualizado",
+    )
+
+    @admin.display(description="Calidad")
+    def calidad(self, obj):
+        return obj.datos.get("calidad", {}).get("nivel", "-")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(EliminacionRegistro)

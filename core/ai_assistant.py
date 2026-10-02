@@ -15,6 +15,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date
 
 from .ai_config import get_ai_runtime_config
+from .financial_profile import get_financial_behavior_profile
 from .forms import DeudaForm, MovimientoFinancieroForm
 from .models import (
     Acreedor,
@@ -380,6 +381,7 @@ def build_financial_context(user, today=None):
     active_accounts = list(CuentaFinanciera.objects.filter(usuario=user, activa=True).order_by("nombre"))
     account_rows = [_account_result(account) for account in active_accounts]
     available_balance = sum((Decimal(row["saldo_actual"]) for row in account_rows), Decimal("0"))
+    behavior_profile = get_financial_behavior_profile(user, today=today)
 
     return {
         "moneda": "USD",
@@ -409,7 +411,7 @@ def build_financial_context(user, today=None):
         },
         "presupuestos_del_mes": _money(budget_total),
         "principales_categorias_de_gasto": categories,
-        "analisis_avanzado_gastos": analyze_spending(user, {"meses_historial": 6}, today=today),
+        "perfil_comportamiento_financiero": behavior_profile,
         "calidad": {
             "movimientos_confirmados": movements.count(),
             "categorias_mostradas": len(categories),
@@ -1326,6 +1328,8 @@ def ask_financial_assistant(user, question, history=None):
         "Para preguntas financieras, empieza con la respuesta concreta; evita sonar burocrático o repetir la pregunta. "
         "Usa frases breves y, cuando haya varios registros, una lista fácil de leer. "
         "Para cifras y registros usa exclusivamente CONTEXTO_FINANCIERO y los resultados de herramientas. "
+        "Usa perfil_comportamiento_financiero para comparar la situación actual con los hábitos del usuario y personalizar sugerencias. "
+        "Trata sus tendencias como patrones orientativos, no como certezas; si su calidad es baja, aclara que existe poco historial. "
         "Para saldos de cuentas, registros recientes, periodos distintos al resumen actual, listados o fechas solicitadas, debes usar la herramienta adecuada. "
         "Las herramientas limitan los datos al usuario autenticado; nunca solicites SQL ni identificadores internos. "
         "Nunca inventes registros, importes, categorías ni causas. Distingue consumo de salida de caja. "

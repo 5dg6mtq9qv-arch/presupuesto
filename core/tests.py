@@ -9,6 +9,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from .forms import ConfiguracionIAForm, MovimientoFinancieroForm
+from .financial_profile import calculate_financial_behavior_profile, get_financial_behavior_profile
 from .ai_assistant import (
     AI_TOOLS,
     _execute_tool,
@@ -34,6 +35,7 @@ from .models import (
     MovimientoFinanciero,
     MovimientoRecurrente,
     PagoDeuda,
+    PerfilComportamientoFinanciero,
     PerfilUsuario,
     TransferenciaCuenta,
 )
@@ -686,6 +688,92 @@ class FinancialAssistantTests(TestCase):
         self.assertEqual(context["principales_categorias_de_gasto"][0]["categoria"], "Alimentación")
         self.assertNotIn("Dato privado", serialized)
         self.assertNotIn("9999", serialized)
+
+    def test_perfil_comportamiento_resume_habitos_sin_conceptos_privados(self):
+        for month in range(1, 8):
+            MovimientoFinanciero.objects.create(
+                usuario=self.user,
+                tipo=MovimientoFinanciero.Tipo.INGRESO,
+                concepto="Nómina reservada",
+                monto="1000.00",
+                fecha=datetime(2026, month, 1).date(),
+            )
+            MovimientoFinanciero.objects.create(
+                usuario=self.user,
+                tipo=MovimientoFinanciero.Tipo.GASTO,
+                categoria=self.category,
+                concepto="Compra privada",
+                monto=str(month * 10),
+                fecha=datetime(2026, month, 5).date(),
+            )
+        MovimientoFinanciero.objects.create(
+            usuario=self.other,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+            concepto="Movimiento ajeno",
+            monto="9000.00",
+            fecha=datetime(2026, 7, 5).date(),
+        )
+
+        profile = calculate_financial_behavior_profile(self.user, today=datetime(2026, 7, 20).date())
+        serialized = json.dumps(profile, ensure_ascii=False)
+
+        self.assertEqual(profile["calidad"]["movimientos_confirmados"], 14)
+        self.assertEqual(profile["flujo_mensual_habitual"]["ingresos_promedio"], "1000.00")
+        self.assertEqual(profile["habitos_de_gasto"]["categorias_principales"][0]["categoria"], "Alimentación")
+        self.assertNotIn("Compra privada", serialized)
+        self.assertNotIn("9000", serialized)
+
+    def test_perfil_persistido_se_reutiliza_y_se_invalida_con_nuevos_movimientos(self):
+        date = datetime(2026, 9, 28).date()
+        MovimientoFinanciero.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+            categoria=self.category,
+            concepto="Inicial",
+            monto="25.00",
+            fecha=date,
+        )
+
+        first = get_financial_behavior_profile(self.user, today=date)
+        stored = PerfilComportamientoFinanciero.objects.get(usuario=self.user)
+        calculated_at = stored.calculado_en
+        second = get_financial_behavior_profile(self.user, today=date)
+        stored.refresh_from_db()
+
+        self.assertEqual(first, second)
+        self.assertEqual(stored.calculado_en, calculated_at)
+        MovimientoFinanciero.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+            categoria=self.category,
+            concepto="Nuevo",
+            monto="35.00",
+            fecha=date,
+        )
+        stored.refresh_from_db()
+        self.assertTrue(stored.desactualizado)
+
+        refreshed = get_financial_behavior_profile(self.user, today=date)
+        stored.refresh_from_db()
+        self.assertFalse(stored.desactualizado)
+        self.assertEqual(refreshed["calidad"]["movimientos_confirmados"], 2)
+
+    def test_contexto_del_asistente_incluye_perfil_compacto(self):
+        date = datetime(2026, 9, 28).date()
+        MovimientoFinanciero.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+            categoria=self.category,
+            concepto="Compra",
+            monto="40.00",
+            fecha=date,
+        )
+
+        context = build_financial_context(self.user, today=date)
+
+        profile = context["perfil_comportamiento_financiero"]
+        self.assertEqual(profile["version"], 1)
+        self.assertEqual(profile["calidad"]["movimientos_confirmados"], 1)
 
     def test_pagina_indica_si_falta_configurar_clave(self):
         with override_settings(AI_ASSISTANT_ENABLED=True, AI_API_KEY=""):
