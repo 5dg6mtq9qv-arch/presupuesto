@@ -58,6 +58,104 @@ class PerfilComportamientoFinanciero(models.Model):
         return f"Comportamiento financiero de {self.usuario} ({estado})"
 
 
+class ObjetivoFinanciero(models.Model):
+    class Tipo(models.TextChoices):
+        AHORRO = "ahorro", "Ahorro"
+        FONDO_EMERGENCIA = "fondo_emergencia", "Fondo de emergencia"
+        REDUCIR_DEUDA = "reducir_deuda", "Reducir deuda"
+        LIMITE_GASTO = "limite_gasto", "Límite de gasto"
+        OTRO = "otro", "Otro"
+
+    class Estado(models.TextChoices):
+        ACTIVO = "activo", "Activo"
+        LOGRADO = "logrado", "Logrado"
+        PAUSADO = "pausado", "Pausado"
+        CANCELADO = "cancelado", "Cancelado"
+
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="objetivos_financieros",
+    )
+    nombre = models.CharField(max_length=140)
+    tipo = models.CharField(max_length=30, choices=Tipo.choices, default=Tipo.AHORRO)
+    monto_objetivo = models.DecimalField(max_digits=12, decimal_places=2)
+    monto_actual = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    fecha_objetivo = models.DateField(null=True, blank=True)
+    prioridad = models.PositiveSmallIntegerField(default=3)
+    estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.ACTIVO)
+    descripcion = models.TextField(blank=True)
+    creado = models.DateTimeField(auto_now_add=True)
+    actualizado = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = '"analisis"."objetivo_financiero"'
+        ordering = ["-prioridad", "fecha_objetivo", "nombre"]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(monto_objetivo__gt=0), name="objetivo_monto_positivo"),
+            models.CheckConstraint(condition=models.Q(monto_actual__gte=0), name="objetivo_avance_no_negativo"),
+            models.CheckConstraint(condition=models.Q(prioridad__gte=1, prioridad__lte=5), name="objetivo_prioridad_valida"),
+        ]
+
+    @property
+    def progreso_porcentual(self):
+        if not self.monto_objetivo:
+            return 0
+        return min(100, round(float(self.monto_actual / self.monto_objetivo * 100), 1))
+
+    def __str__(self):
+        return self.nombre
+
+
+class RecomendacionFinanciera(models.Model):
+    class Estado(models.TextChoices):
+        NUEVA = "nueva", "Nueva"
+        ACEPTADA = "aceptada", "Aceptada"
+        DESCARTADA = "descartada", "Descartada"
+        COMPLETADA = "completada", "Completada"
+
+    class Confianza(models.TextChoices):
+        BAJA = "baja", "Baja"
+        MEDIA = "media", "Media"
+        ALTA = "alta", "Alta"
+
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="recomendaciones_financieras",
+    )
+    codigo = models.CharField(max_length=100)
+    titulo = models.CharField(max_length=180)
+    resumen = models.TextField()
+    acciones = models.JSONField(default=list, blank=True)
+    evidencia = models.JSONField(default=dict, blank=True)
+    prioridad = models.PositiveSmallIntegerField(default=5)
+    confianza = models.CharField(max_length=10, choices=Confianza.choices, default=Confianza.BAJA)
+    estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.NUEVA)
+    requiere_aclaracion = models.BooleanField(default=False)
+    pregunta_aclaratoria = models.CharField(max_length=300, blank=True)
+    contexto_hash = models.CharField(max_length=64, blank=True)
+    resultado = models.JSONField(default=dict, blank=True)
+    generado_para_fecha = models.DateField()
+    vigente_hasta = models.DateField(null=True, blank=True)
+    creado = models.DateTimeField(auto_now_add=True)
+    actualizado = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = '"analisis"."recomendacion_financiera"'
+        ordering = ["-generado_para_fecha", "-prioridad", "-creado"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["usuario", "codigo", "generado_para_fecha"],
+                name="recomendacion_diaria_unica",
+            ),
+            models.CheckConstraint(condition=models.Q(prioridad__gte=1, prioridad__lte=10), name="recomendacion_prioridad_valida"),
+        ]
+
+    def __str__(self):
+        return self.titulo
+
+
 class ConfiguracionIA(models.Model):
     class Proveedor(models.TextChoices):
         OPENAI = "openai", "OpenAI"

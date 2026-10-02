@@ -17,6 +17,7 @@ from .models import (
     MetodoPago,
     MovimientoFinanciero,
     MovimientoRecurrente,
+    ObjetivoFinanciero,
     PagoDeuda,
     PerfilUsuario,
     PresupuestoMensual,
@@ -25,6 +26,36 @@ from .models import (
 )
 
 User = get_user_model()
+
+
+class ObjetivoFinancieroForm(forms.ModelForm):
+    class Meta:
+        model = ObjetivoFinanciero
+        fields = ["nombre", "tipo", "monto_objetivo", "monto_actual", "fecha_objetivo", "prioridad", "descripcion"]
+        labels = {
+            "monto_objetivo": "Meta",
+            "monto_actual": "Avance actual",
+            "fecha_objetivo": "Fecha objetivo",
+            "prioridad": "Prioridad (1–5)",
+        }
+        widgets = {
+            "monto_objetivo": forms.NumberInput(attrs={"step": "0.01", "min": "0.01"}),
+            "monto_actual": forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
+            "fecha_objetivo": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
+            "prioridad": forms.NumberInput(attrs={"min": "1", "max": "5"}),
+            "descripcion": forms.Textarea(attrs={"rows": 2}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs["class"] = "form-select" if isinstance(field.widget, forms.Select) else "form-control"
+
+    def clean_prioridad(self):
+        value = self.cleaned_data["prioridad"]
+        if not 1 <= value <= 5:
+            raise forms.ValidationError("La prioridad debe estar entre 1 y 5.")
+        return value
 
 
 AI_MODEL_OPTIONS = {

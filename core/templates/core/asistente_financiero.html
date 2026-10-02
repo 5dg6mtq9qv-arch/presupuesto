@@ -24,6 +24,20 @@
   .assistant-suggestion { width: 100%; text-align: left; justify-content: flex-start; white-space: normal; }
   .assistant-privacy { display: flex; gap: 9px; color: var(--muted); font-size: 12px; line-height: 1.5; }
   .assistant-privacy .material-symbols-outlined { color: var(--success); }
+  .assistant-side-stack { display: grid; gap: 14px; }
+  .assistant-goal, .assistant-rec { border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--surface-soft); }
+  .assistant-goal + .assistant-goal, .assistant-rec + .assistant-rec { margin-top: 9px; }
+  .assistant-goal-head, .assistant-rec-head { display: flex; justify-content: space-between; gap: 8px; align-items: start; }
+  .assistant-goal h3, .assistant-rec h3 { font-size: 13px; margin: 0 0 5px; }
+  .assistant-progress { height: 7px; border-radius: 999px; background: var(--line); overflow: hidden; margin: 8px 0; }
+  .assistant-progress span { display: block; height: 100%; background: var(--primary); }
+  .assistant-inline-form { display: flex; gap: 6px; align-items: center; }
+  .assistant-inline-form input { min-width: 0; }
+  .assistant-rec p { margin: 6px 0; font-size: 12px; color: var(--muted); }
+  .assistant-rec-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+  .assistant-objective-form { display: grid; gap: 9px; }
+  .assistant-objective-form .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .assistant-clarification { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); color: var(--primary-hover); font-weight: 650; }
   @media (max-width: 900px) { .assistant-layout { grid-template-columns: 1fr; } .assistant-chat { min-height: 500px; } }
   @media (max-width: 560px) { .assistant-form { grid-template-columns: 1fr; } .assistant-message { max-width: 95%; } }
 </style>
@@ -57,7 +71,54 @@
     </form>
   </section>
 
-  <aside>
+  <aside class="assistant-side-stack">
+    <section class="panel">
+      <div class="panel-heading"><div><h2>Recomendaciones de hoy</h2><p class="muted mb-0">El asistente recuerda tu respuesta</p></div></div>
+      {% for recomendacion in recomendaciones %}
+        <article class="assistant-rec">
+          <div class="assistant-rec-head">
+            <h3>{{ recomendacion.titulo }}</h3>
+            <span class="badge rounded-pill {% if recomendacion.prioridad >= 9 %}text-bg-danger{% elif recomendacion.prioridad >= 7 %}text-bg-warning{% else %}text-bg-primary{% endif %}">{{ recomendacion.confianza }}</span>
+          </div>
+          <p>{{ recomendacion.resumen }}</p>
+          {% if recomendacion.pregunta_aclaratoria %}<p><strong>{{ recomendacion.pregunta_aclaratoria }}</strong></p>{% endif %}
+          <div class="assistant-rec-actions">
+            <form method="post" action="{% url 'recomendacion_financiera_feedback' recomendacion.pk %}">{% csrf_token %}<input type="hidden" name="estado" value="aceptada"><button class="btn btn-sm btn-outline-primary" type="submit">La seguiré</button></form>
+            <form method="post" action="{% url 'recomendacion_financiera_feedback' recomendacion.pk %}">{% csrf_token %}<input type="hidden" name="estado" value="completada"><button class="btn btn-sm btn-outline-success" type="submit">Completada</button></form>
+            <form method="post" action="{% url 'recomendacion_financiera_feedback' recomendacion.pk %}">{% csrf_token %}<input type="hidden" name="estado" value="descartada"><button class="btn btn-sm btn-outline-secondary" type="submit">Descartar</button></form>
+          </div>
+        </article>
+      {% empty %}<p class="muted mb-0">Aún no hay recomendaciones guardadas.</p>{% endfor %}
+    </section>
+
+    <section class="panel">
+      <div class="panel-heading"><div><h2>Objetivos financieros</h2><p class="muted mb-0">La IA los usa para priorizar sus consejos</p></div></div>
+      {% for objetivo in objetivos %}
+        <article class="assistant-goal">
+          <div class="assistant-goal-head"><h3>{{ objetivo.nombre }}</h3><span class="badge text-bg-light">{{ objetivo.get_estado_display }}</span></div>
+          <div class="muted small">{{ objetivo.monto_actual }} de {{ objetivo.monto_objetivo }} · {{ objetivo.progreso_porcentual }}%</div>
+          <div class="assistant-progress"><span style="width: {{ objetivo.progreso_porcentual }}%"></span></div>
+          <form class="assistant-inline-form" method="post" action="{% url 'objetivo_financiero_actualizar' objetivo.pk %}">
+            {% csrf_token %}<input type="hidden" name="accion" value="progreso">
+            <input class="form-control form-control-sm" type="number" step="0.01" min="0" name="monto_actual" value="{{ objetivo.monto_actual }}" aria-label="Avance actual">
+            <button class="btn btn-sm btn-outline-primary" type="submit">Actualizar</button>
+          </form>
+        </article>
+      {% empty %}<p class="muted">Añade una meta para que el agente pueda construir un plan y darle seguimiento.</p>{% endfor %}
+      <details class="mt-3">
+        <summary class="btn btn-sm btn-outline-primary">Nuevo objetivo</summary>
+        <form class="assistant-objective-form mt-3" method="post" action="{% url 'objetivo_financiero_crear' %}">
+          {% csrf_token %}
+          <div>{{ objetivo_form.nombre.label_tag }}{{ objetivo_form.nombre }}</div>
+          <div>{{ objetivo_form.tipo.label_tag }}{{ objetivo_form.tipo }}</div>
+          <div class="field-row"><div>{{ objetivo_form.monto_objetivo.label_tag }}{{ objetivo_form.monto_objetivo }}</div><div>{{ objetivo_form.monto_actual.label_tag }}{{ objetivo_form.monto_actual }}</div></div>
+          <div class="field-row"><div>{{ objetivo_form.fecha_objetivo.label_tag }}{{ objetivo_form.fecha_objetivo }}</div><div>{{ objetivo_form.prioridad.label_tag }}{{ objetivo_form.prioridad }}</div></div>
+          <div>{{ objetivo_form.descripcion.label_tag }}{{ objetivo_form.descripcion }}</div>
+          <button class="btn btn-primary btn-sm" type="submit">Guardar objetivo</button>
+        </form>
+      </details>
+    </section>
+
     <section class="panel">
       <div class="panel-heading"><div><h2>Prueba preguntando</h2><p class="muted mb-0">Consultas sobre el mes actual</p></div></div>
       <div class="assistant-suggestions">
@@ -110,6 +171,12 @@
         warning.className = "assistant-warning";
         warning.textContent = data.advertencia;
         node.append(warning);
+      }
+      if (data.pregunta_aclaratoria) {
+        const clarification = document.createElement("div");
+        clarification.className = "assistant-clarification";
+        clarification.textContent = data.pregunta_aclaratoria;
+        node.append(clarification);
       }
       messages.append(node);
       messages.scrollTop = messages.scrollHeight;

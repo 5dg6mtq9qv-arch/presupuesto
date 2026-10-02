@@ -18,14 +18,31 @@ from .models import (
     MetodoPago,
     MovimientoFinanciero,
     MovimientoRecurrente,
+    ObjetivoFinanciero,
     PagoDeuda,
     PerfilComportamientoFinanciero,
     PerfilUsuario,
     PresupuestoMensual,
     RegistroAuditoria,
+    RecomendacionFinanciera,
     Tarea,
     TransferenciaCuenta,
 )
+
+
+@admin.register(ObjetivoFinanciero)
+class ObjetivoFinancieroAdmin(ModelAdmin):
+    list_display = ("nombre", "usuario", "tipo", "monto_objetivo", "monto_actual", "estado", "fecha_objetivo")
+    list_filter = ("tipo", "estado", "prioridad")
+    search_fields = ("nombre", "usuario__username")
+
+
+@admin.register(RecomendacionFinanciera)
+class RecomendacionFinancieraAdmin(ModelAdmin):
+    list_display = ("titulo", "usuario", "prioridad", "confianza", "estado", "generado_para_fecha")
+    list_filter = ("estado", "confianza", "generado_para_fecha")
+    search_fields = ("titulo", "codigo", "usuario__username")
+    readonly_fields = ("codigo", "evidencia", "acciones", "contexto_hash", "resultado", "creado", "actualizado")
 
 
 class ConfiguracionIAAdminForm(forms.ModelForm):

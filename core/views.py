@@ -25,6 +25,7 @@ from django.utils.dateparse import parse_date
 from django.views.decorators.http import require_POST
 
 from .ai_assistant import AIAssistantError, _provider_message, ask_financial_assistant, user_can_use_ai
+from .autonomous_finance import generate_proactive_recommendations
 from .ai_config import get_ai_runtime_config
 
 from .forms import (
@@ -42,6 +43,7 @@ from .forms import (
     MiPasswordChangeForm,
     MovimientoFinancieroForm,
     MovimientoRecurrenteForm,
+    ObjetivoFinancieroForm,
     PagoDeudaForm,
     PerfilCuentaForm,
     PerfilUsuarioForm,
@@ -68,10 +70,12 @@ from .models import (
     MetodoPago,
     MovimientoFinanciero,
     MovimientoRecurrente,
+    ObjetivoFinanciero,
     PagoDeuda,
     PerfilUsuario,
     PresupuestoMensual,
     RegistroAuditoria,
+    RecomendacionFinanciera,
     Tarea,
     TransferenciaCuenta,
 )
@@ -96,14 +100,84 @@ def asistente_financiero(request):
     if not user_can_use_ai(request.user):
         return HttpResponseForbidden("No tienes autorización para utilizar el asistente de IA.")
     ai_config = get_ai_runtime_config()
+    today = timezone.localdate()
+    if not RecomendacionFinanciera.objects.filter(usuario=request.user, generado_para_fecha=today).exists():
+        generate_proactive_recommendations(request.user, today=today)
     return render(
         request,
         "core/asistente_financiero.html",
         {
             "ai_configured": ai_config.configured,
             "ai_provider": ai_config.provider,
+            "objetivos": ObjetivoFinanciero.objects.filter(usuario=request.user).exclude(estado=ObjetivoFinanciero.Estado.CANCELADO)[:10],
+            "objetivo_form": ObjetivoFinancieroForm(),
+            "recomendaciones": RecomendacionFinanciera.objects.filter(usuario=request.user)[:8],
         },
     )
+
+
+@login_required
+@require_POST
+def objetivo_financiero_crear(request):
+    if not user_can_use_ai(request.user):
+        return HttpResponseForbidden("No tienes autorización para utilizar el asistente de IA.")
+    form = ObjetivoFinancieroForm(request.POST)
+    if form.is_valid():
+        goal = form.save(commit=False)
+        goal.usuario = request.user
+        goal.save()
+        messages.success(request, "Objetivo financiero creado.")
+    else:
+        messages.error(request, "Revisa los datos del objetivo.")
+    return redirect("asistente_financiero")
+
+
+@login_required
+@require_POST
+def objetivo_financiero_actualizar(request, pk):
+    if not user_can_use_ai(request.user):
+        return HttpResponseForbidden("No tienes autorización para utilizar el asistente de IA.")
+    goal = get_object_or_404(ObjetivoFinanciero, pk=pk, usuario=request.user)
+    action = request.POST.get("accion")
+    if action == "progreso":
+        try:
+            amount = Decimal(request.POST.get("monto_actual", ""))
+        except (ArithmeticError, TypeError, ValueError):
+            messages.error(request, "El avance debe ser un monto válido.")
+            return redirect("asistente_financiero")
+        if amount < 0:
+            messages.error(request, "El avance no puede ser negativo.")
+            return redirect("asistente_financiero")
+        goal.monto_actual = amount
+        if amount >= goal.monto_objetivo:
+            goal.estado = ObjetivoFinanciero.Estado.LOGRADO
+        goal.save(update_fields=("monto_actual", "estado", "actualizado"))
+    elif action in {ObjetivoFinanciero.Estado.ACTIVO, ObjetivoFinanciero.Estado.PAUSADO, ObjetivoFinanciero.Estado.LOGRADO, ObjetivoFinanciero.Estado.CANCELADO}:
+        goal.estado = action
+        goal.save(update_fields=("estado", "actualizado"))
+    else:
+        return HttpResponseBadRequest("Acción no válida.")
+    messages.success(request, "Objetivo actualizado.")
+    return redirect("asistente_financiero")
+
+
+@login_required
+@require_POST
+def recomendacion_financiera_feedback(request, pk):
+    if not user_can_use_ai(request.user):
+        return HttpResponseForbidden("No tienes autorización para utilizar el asistente de IA.")
+    recommendation = get_object_or_404(RecomendacionFinanciera, pk=pk, usuario=request.user)
+    state = request.POST.get("estado")
+    if state not in {RecomendacionFinanciera.Estado.ACEPTADA, RecomendacionFinanciera.Estado.DESCARTADA, RecomendacionFinanciera.Estado.COMPLETADA}:
+        return HttpResponseBadRequest("Estado no válido.")
+    recommendation.estado = state
+    recommendation.resultado = {
+        "comentario": str(request.POST.get("comentario") or "").strip()[:500],
+        "registrado_en": timezone.now().isoformat(),
+    }
+    recommendation.save(update_fields=("estado", "resultado", "actualizado"))
+    messages.success(request, "Tu respuesta se guardó en la memoria del asistente.")
+    return redirect("asistente_financiero")
 
 
 @login_required
