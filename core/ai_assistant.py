@@ -1298,6 +1298,20 @@ def _parse_assistant_answer(content):
     return answer
 
 
+def _validated_assistant_result(answer, context):
+    response_text = str(answer.get("respuesta", "")).strip()
+    evidence = answer.get("evidencia", [])
+    warning = str(answer.get("advertencia", "")).strip()
+    if not response_text or not isinstance(evidence, list):
+        raise AIAssistantError("La IA devolvió una respuesta incompleta.")
+    return {
+        "respuesta": response_text[:6000],
+        "evidencia": [str(item)[:300] for item in evidence[:3]],
+        "advertencia": warning[:500],
+        "periodo": context["periodo"],
+    }
+
+
 def ask_financial_assistant(user, question, history=None):
     config = get_ai_runtime_config()
     if not config.configured:
@@ -1363,6 +1377,14 @@ def ask_financial_assistant(user, question, history=None):
                 }
             )
     else:
+        # Providers commonly honor the JSON instruction on the first call. In
+        # that case a second round trip only adds latency and can exceed the
+        # web proxy timeout, especially after a cold start.
+        try:
+            answer = _parse_assistant_answer(message.get("content"))
+            return _validated_assistant_result(answer, context)
+        except AIAssistantError:
+            pass
         messages.append({"role": "assistant", "content": message.get("content") or ""})
         messages.append(
             {
@@ -1373,15 +1395,4 @@ def ask_financial_assistant(user, question, history=None):
     message = _provider_message(messages, config, max_tokens=1200)
 
     answer = _parse_assistant_answer(message.get("content"))
-
-    response_text = str(answer.get("respuesta", "")).strip()
-    evidence = answer.get("evidencia", [])
-    warning = str(answer.get("advertencia", "")).strip()
-    if not response_text or not isinstance(evidence, list):
-        raise AIAssistantError("La IA devolvió una respuesta incompleta.")
-    return {
-        "respuesta": response_text[:6000],
-        "evidencia": [str(item)[:300] for item in evidence[:3]],
-        "advertencia": warning[:500],
-        "periodo": context["periodo"],
-    }
+    return _validated_assistant_result(answer, context)

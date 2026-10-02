@@ -963,6 +963,37 @@ class FinancialAssistantTests(TestCase):
 
     @override_settings(AI_ASSISTANT_ENABLED=True, AI_API_KEY="secreto-de-prueba")
     @patch("core.ai_assistant._provider_message")
+    def test_asistente_usa_una_sola_llamada_si_la_primera_respuesta_es_final(self, provider):
+        provider.return_value = {
+            "content": json.dumps(
+                {"respuesta": "¡Hola! ¿En qué puedo ayudarte?", "evidencia": [], "advertencia": ""}
+            )
+        }
+
+        answer = ask_financial_assistant(self.user, "hola")
+
+        self.assertEqual(answer["respuesta"], "¡Hola! ¿En qué puedo ayudarte?")
+        self.assertEqual(provider.call_count, 1)
+
+    @override_settings(AI_ASSISTANT_ENABLED=True, AI_API_KEY="secreto-de-prueba")
+    @patch("core.ai_assistant._provider_message")
+    def test_asistente_reintenta_formato_si_la_primera_respuesta_no_es_json(self, provider):
+        provider.side_effect = [
+            {"content": "¡Hola! ¿En qué puedo ayudarte?"},
+            {
+                "content": json.dumps(
+                    {"respuesta": "¡Hola! ¿En qué puedo ayudarte?", "evidencia": [], "advertencia": ""}
+                )
+            },
+        ]
+
+        answer = ask_financial_assistant(self.user, "hola")
+
+        self.assertEqual(answer["respuesta"], "¡Hola! ¿En qué puedo ayudarte?")
+        self.assertEqual(provider.call_count, 2)
+
+    @override_settings(AI_ASSISTANT_ENABLED=True, AI_API_KEY="secreto-de-prueba")
+    @patch("core.ai_assistant._provider_message")
     def test_asistente_ejecuta_herramienta_solo_lectura_y_redacta_resultado(self, provider):
         MovimientoFinanciero.objects.create(
             usuario=self.user,
