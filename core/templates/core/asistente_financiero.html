@@ -38,6 +38,7 @@
   .assistant-objective-form { display: grid; gap: 9px; }
   .assistant-objective-form .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .assistant-clarification { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); color: var(--primary-hover); font-weight: 650; }
+  .assistant-draft-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
   @media (max-width: 900px) { .assistant-layout { grid-template-columns: 1fr; } .assistant-chat { min-height: 500px; } }
   @media (max-width: 560px) { .assistant-form { grid-template-columns: 1fr; } .assistant-message { max-width: 95%; } }
 </style>
@@ -178,9 +179,58 @@
         clarification.textContent = data.pregunta_aclaratoria;
         node.append(clarification);
       }
+      if (data.borrador_movimiento) {
+        const actions = document.createElement("div");
+        actions.className = "assistant-draft-actions";
+        const choices = [
+          ["Confirmar y guardar", "confirmar", "btn-primary"],
+          ["Corregir", "corregir", "btn-outline-primary"],
+          ["Cancelar", "cancelar", "btn-outline-secondary"],
+        ];
+        choices.forEach(([label, action, style]) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = `btn btn-sm ${style}`;
+          button.textContent = label;
+          button.addEventListener("click", () => {
+            if (action === "corregir") {
+              question.value = "Quiero corregir el movimiento antes de guardarlo.";
+              question.focus();
+              return;
+            }
+            runDraftAction(action, label, actions);
+          });
+          actions.append(button);
+        });
+        node.append(actions);
+      }
       messages.append(node);
       messages.scrollTop = messages.scrollHeight;
       return node;
+    };
+
+    const runDraftAction = async (action, label, actionsNode) => {
+      actionsNode.querySelectorAll("button").forEach(button => { button.disabled = true; });
+      addMessage(label, "user");
+      history.push({role: "user", content: label});
+      const pending = addMessage(action === "confirmar" ? "Guardando…" : "Cancelando…", "ai");
+      try {
+        const urlTemplate = "{% url 'asistente_borrador_movimiento_accion' 'ACCION' %}";
+        const response = await fetch(urlTemplate.replace("ACCION", action), {
+          method: "POST",
+          headers: {"X-CSRFToken": csrfToken, "X-Requested-With": "XMLHttpRequest"},
+        });
+        const data = await response.json();
+        pending.remove();
+        if (!response.ok || !data.ok) throw new Error(data.error || "No fue posible completar la acción.");
+        addMessage(data.respuesta, "ai", data);
+        history.push({role: "assistant", content: data.respuesta});
+        actionsNode.remove();
+      } catch (error) {
+        pending.remove();
+        addMessage(error.message || "No fue posible completar la acción.", "ai");
+        actionsNode.querySelectorAll("button").forEach(button => { button.disabled = false; });
+      }
     };
 
     form.addEventListener("submit", async event => {

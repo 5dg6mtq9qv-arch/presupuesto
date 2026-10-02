@@ -9,7 +9,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from django.db import transaction
-from django.db.models import Sum, Value
+from django.db.models import Count, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -20,6 +20,7 @@ from .financial_profile import get_financial_behavior_profile
 from .forms import DeudaForm, MovimientoFinancieroForm
 from .models import (
     Acreedor,
+    BorradorMovimientoIA,
     Categoria,
     CuentaFinanciera,
     Deuda,
@@ -415,6 +416,7 @@ def build_financial_context(user, today=None):
         "perfil_comportamiento_financiero": behavior_profile,
         "objetivos_financieros": serialize_goals(user),
         "memoria_recomendaciones": recommendation_memory(user, limit=8),
+        "borrador_movimiento_pendiente": _pending_draft_payload(user),
         "calidad": {
             "movimientos_confirmados": movements.count(),
             "categorias_mostradas": len(categories),
@@ -756,6 +758,276 @@ def _find_category(user, value):
     return _find_named(queryset, text, "la categoría")
 
 
+def _category_label(category):
+    return f"{category.parent.nombre} > {category.nombre}" if category.parent_id else category.nombre
+
+
+def _pending_draft(user, *, lock=False):
+    queryset = BorradorMovimientoIA.objects.filter(
+        usuario=user,
+        estado=BorradorMovimientoIA.Estado.PENDIENTE,
+    )
+    if lock:
+        queryset = queryset.select_for_update()
+    else:
+        queryset = queryset.select_related("categoria", "categoria__parent", "cuenta", "metodo_pago")
+    draft = queryset.order_by("-creado").first()
+    if draft and draft.expira_en <= timezone.now():
+        draft.estado = BorradorMovimientoIA.Estado.EXPIRADO
+        draft.save(update_fields=("estado", "actualizado"))
+        return None
+    return draft
+
+
+def _draft_payload(draft):
+    if not draft:
+        return None
+    return {
+        "id": str(draft.token),
+        "tipo": draft.tipo,
+        "monto": _money(draft.monto),
+        "concepto": draft.concepto,
+        "fecha": draft.fecha.isoformat(),
+        "categoria": _category_label(draft.categoria),
+        "cuenta": draft.cuenta.nombre if draft.cuenta_id else None,
+        "metodo_pago": draft.metodo_pago.nombre if draft.metodo_pago_id else None,
+        "acreedor": draft.acreedor or None,
+        "numero_cuotas": draft.numero_cuotas,
+        "fecha_pago": draft.fecha_pago.isoformat() if draft.fecha_pago else None,
+        "inferencias": draft.inferencias,
+        "expira_en": draft.expira_en.isoformat(),
+    }
+
+
+def _pending_draft_payload(user):
+    return _draft_payload(_pending_draft(user))
+
+
+def _infer_category(user, movement_type, concept, requested_name=""):
+    categories = list(
+        Categoria.objects.filter(usuario=user, tipo=Categoria.Tipo.FINANZAS)
+        .select_related("parent")
+        .order_by("parent__nombre", "nombre")
+    )
+    if requested_name:
+        return _find_category(user, requested_name), False
+
+    normalized_concept = _normalize_text(concept)
+    name_matches = [
+        category
+        for category in categories
+        if _normalize_text(category.nombre) in normalized_concept
+        or (category.parent_id and _normalize_text(category.parent.nombre) in normalized_concept)
+    ]
+    if name_matches:
+        name_matches.sort(key=lambda item: (bool(item.parent_id), len(item.nombre)), reverse=True)
+        return name_matches[0], True
+
+    previous = (
+        MovimientoFinanciero.objects.filter(
+            usuario=user,
+            tipo=movement_type,
+            estado=MovimientoFinanciero.Estado.CONFIRMADO,
+            categoria__isnull=False,
+            concepto__iexact=concept,
+        )
+        .values("categoria_id")
+        .annotate(uses=Count("id"))
+        .order_by("-uses")
+        .first()
+    )
+    if previous:
+        return next((item for item in categories if item.pk == previous["categoria_id"]), None), True
+
+    if movement_type == MovimientoFinanciero.Tipo.INGRESO:
+        income_keywords = ("salario", "sueldo", "nomina", "venta", "freelance", "interes")
+        for keyword in income_keywords:
+            if keyword in normalized_concept:
+                match = next((item for item in categories if keyword in _normalize_text(item.nombre)), None)
+                if match:
+                    return match, True
+        income_categories = [
+            item for item in categories
+            if "ingreso" in _normalize_text(item.nombre)
+            or (item.parent_id and "ingreso" in _normalize_text(item.parent.nombre))
+        ]
+        if len(income_categories) == 1:
+            return income_categories[0], True
+
+    leaf_categories = [item for item in categories if item.parent_id]
+    if len(leaf_categories) == 1:
+        return leaf_categories[0], True
+    return None, False
+
+
+def _infer_account(user, movement_type, category, concept, requested_name=""):
+    accounts = CuentaFinanciera.objects.filter(usuario=user, activa=True)
+    if requested_name:
+        return _find_named(accounts, requested_name, "la cuenta"), False
+    normalized = _normalize_text(concept)
+    mentioned = [item for item in accounts if _normalize_text(item.nombre) in normalized]
+    if len(mentioned) == 1:
+        return mentioned[0], True
+    previous = (
+        MovimientoFinanciero.objects.filter(
+            usuario=user,
+            tipo=movement_type,
+            estado=MovimientoFinanciero.Estado.CONFIRMADO,
+            categoria=category,
+            cuenta__isnull=False,
+        )
+        .values("cuenta_id")
+        .annotate(uses=Count("id"))
+        .order_by("-uses")
+        .first()
+    )
+    if previous:
+        return accounts.filter(pk=previous["cuenta_id"]).first(), True
+    if accounts.count() == 1:
+        return accounts.first(), True
+    return None, False
+
+
+def _infer_payment_method(user, movement_type, category, account, requested_name=""):
+    methods = MetodoPago.objects.filter(usuario=user, activo=True)
+    if requested_name:
+        return _find_named(methods, requested_name, "el método de pago"), False
+    if account and account.tipo == CuentaFinanciera.Tipo.EFECTIVO:
+        cash_methods = methods.filter(tipo=MetodoPago.Tipo.EFECTIVO)
+        if cash_methods.count() == 1:
+            return cash_methods.first(), True
+    previous = (
+        MovimientoFinanciero.objects.filter(
+            usuario=user,
+            tipo=movement_type,
+            estado=MovimientoFinanciero.Estado.CONFIRMADO,
+            categoria=category,
+            metodo_pago__isnull=False,
+        )
+        .values("metodo_pago_id")
+        .annotate(uses=Count("id"))
+        .order_by("-uses")
+        .first()
+    )
+    if previous:
+        return methods.filter(pk=previous["metodo_pago_id"]).first(), True
+    return None, False
+
+
+@transaction.atomic
+def prepare_quick_movement(user, arguments):
+    movement_type = arguments.get("tipo")
+    if movement_type not in {MovimientoFinanciero.Tipo.INGRESO, MovimientoFinanciero.Tipo.GASTO}:
+        raise ValueError("Indica si es un ingreso o un gasto.")
+    try:
+        amount = Decimal(str(arguments.get("monto")))
+    except (ArithmeticError, TypeError, ValueError) as exc:
+        raise ValueError("Indica un monto válido.") from exc
+    if amount <= 0:
+        raise ValueError("El monto debe ser mayor que cero.")
+    concept = str(arguments.get("concepto") or "").strip()[:160]
+    if not concept:
+        raise ValueError("Indica brevemente el concepto del movimiento.")
+    movement_date = _parse_tool_date(arguments.get("fecha"), "fecha") or timezone.localdate()
+
+    category, category_inferred = _infer_category(user, movement_type, concept, arguments.get("categoria") or "")
+    if not category:
+        options = [_category_label(item) for item in Categoria.objects.filter(usuario=user, tipo=Categoria.Tipo.FINANZAS).select_related("parent")[:12]]
+        return {"preparado": False, "requiere_dato": "categoria", "pregunta": "¿Qué categoría corresponde a este movimiento?", "opciones": options}
+
+    payment_method, method_inferred = _infer_payment_method(
+        user, movement_type, category, None, arguments.get("metodo_pago") or ""
+    )
+    is_credit = movement_type == MovimientoFinanciero.Tipo.GASTO and payment_method and payment_method.tipo == MetodoPago.Tipo.CREDITO
+    account = None
+    account_inferred = False
+    if not is_credit:
+        account, account_inferred = _infer_account(user, movement_type, category, concept, arguments.get("cuenta") or "")
+        if not account:
+            options = list(CuentaFinanciera.objects.filter(usuario=user, activa=True).values_list("nombre", flat=True)[:12])
+            return {"preparado": False, "requiere_dato": "cuenta", "pregunta": "¿En qué cuenta ocurrió el movimiento?", "opciones": options}
+        if not payment_method:
+            payment_method, method_inferred = _infer_payment_method(user, movement_type, category, account)
+
+    creditor = str(arguments.get("acreedor") or "").strip()[:120]
+    payment_date = _parse_tool_date(arguments.get("fecha_pago"), "fecha_pago")
+    try:
+        installments = max(1, int(arguments.get("numero_cuotas", 1)))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("El número de cuotas debe ser válido.") from exc
+    if is_credit and not creditor:
+        return {"preparado": False, "requiere_dato": "acreedor", "pregunta": "¿Cuál es la tarjeta o acreedor de esta compra?"}
+    if is_credit and not payment_date:
+        return {"preparado": False, "requiere_dato": "fecha_pago", "pregunta": "¿Cuál es la fecha máxima de pago de la primera cuota?"}
+
+    BorradorMovimientoIA.objects.filter(
+        usuario=user,
+        estado=BorradorMovimientoIA.Estado.PENDIENTE,
+    ).update(estado=BorradorMovimientoIA.Estado.CANCELADO)
+    inferences = []
+    if category_inferred:
+        inferences.append("categoria")
+    if account_inferred:
+        inferences.append("cuenta")
+    if method_inferred and payment_method:
+        inferences.append("metodo_pago")
+    if not arguments.get("fecha"):
+        inferences.append("fecha_hoy")
+    draft = BorradorMovimientoIA.objects.create(
+        usuario=user,
+        tipo=movement_type,
+        monto=amount,
+        concepto=concept,
+        fecha=movement_date,
+        categoria=category,
+        cuenta=account,
+        metodo_pago=payment_method,
+        acreedor=creditor,
+        numero_cuotas=installments,
+        fecha_pago=payment_date,
+        inferencias=inferences,
+        expira_en=timezone.now() + timedelta(minutes=15),
+    )
+    return {"preparado": True, "requiere_confirmacion": True, "borrador": _draft_payload(draft)}
+
+
+@transaction.atomic
+def confirm_quick_movement(user, arguments):
+    draft = _pending_draft(user, lock=True)
+    if not draft:
+        return {"creado": False, "error": "No hay un borrador vigente para confirmar."}
+    result = create_movement(
+        user,
+        {
+            "tipo": draft.tipo,
+            "monto": str(draft.monto),
+            "concepto": draft.concepto,
+            "fecha": draft.fecha.isoformat(),
+            "categoria": _category_label(draft.categoria),
+            "cuenta": draft.cuenta.nombre if draft.cuenta_id else "",
+            "metodo_pago": draft.metodo_pago.nombre if draft.metodo_pago_id else "",
+            "acreedor": draft.acreedor,
+            "numero_cuotas": draft.numero_cuotas,
+            "fecha_pago": draft.fecha_pago.isoformat() if draft.fecha_pago else "",
+        },
+    )
+    movement = MovimientoFinanciero.objects.get(pk=result.pop("_movimiento_id"), usuario=user)
+    draft.estado = BorradorMovimientoIA.Estado.CONFIRMADO
+    draft.movimiento = movement
+    draft.save(update_fields=("estado", "movimiento", "actualizado"))
+    result["borrador_confirmado"] = str(draft.token)
+    return result
+
+
+def cancel_quick_movement(user, arguments):
+    draft = _pending_draft(user)
+    if not draft:
+        return {"cancelado": False, "mensaje": "No hay un borrador vigente."}
+    draft.estado = BorradorMovimientoIA.Estado.CANCELADO
+    draft.save(update_fields=("estado", "actualizado"))
+    return {"cancelado": True, "mensaje": "Borrador cancelado; no se guardó ningún movimiento."}
+
+
 def _form_errors(form):
     messages = []
     for field, errors in form.errors.items():
@@ -832,6 +1104,7 @@ def create_movement(user, arguments):
     sincronizar_deuda_compra_credito(movement)
     _record_ai_creation(user, movement, {"monto": _money(movement.monto), "origen": "asistente_ia"})
     return {
+        "_movimiento_id": movement.pk,
         "creado": True,
         "tipo": movement.tipo,
         "concepto": movement.concepto,
@@ -918,6 +1191,51 @@ def create_debt(user, arguments):
 
 
 AI_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "preparar_movimiento_rapido",
+            "description": "Prepara un borrador temporal de ingreso o gasto desde una frase. Resuelve categorías, cuentas y métodos reales del usuario, pero no guarda el movimiento hasta una confirmación posterior.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "tipo": {"type": "string", "enum": ["ingreso", "gasto"]},
+                    "monto": {"type": "number", "exclusiveMinimum": 0},
+                    "concepto": {"type": "string"},
+                    "fecha": {"type": "string", "description": "AAAA-MM-DD; omitir significa hoy"},
+                    "categoria": {"type": "string", "description": "Categoría mencionada explícitamente; omitir permite inferirla"},
+                    "cuenta": {"type": "string", "description": "Cuenta mencionada explícitamente; omitir permite inferirla"},
+                    "metodo_pago": {"type": "string", "description": "Método mencionado explícitamente; omitir permite inferirlo"},
+                    "acreedor": {"type": "string", "description": "Tarjeta o acreedor cuando es crédito"},
+                    "numero_cuotas": {"type": "integer", "minimum": 1},
+                    "fecha_pago": {"type": "string", "description": "Fecha máxima de pago de la primera cuota, AAAA-MM-DD"},
+                },
+                "required": ["tipo", "monto", "concepto"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "confirmar_movimiento_preparado",
+            "description": "Guarda exactamente el último borrador mostrado. Úsala solo cuando el último mensaje del usuario confirme explícitamente.",
+            "parameters": {
+                "type": "object",
+                "properties": {"confirmado": {"type": "boolean"}},
+                "required": ["confirmado"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "cancelar_movimiento_preparado",
+            "description": "Cancela el borrador de movimiento vigente sin guardar nada.",
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+    },
     {
         "type": "function",
         "function": {
@@ -1178,6 +1496,9 @@ AI_TOOLS = [
 
 
 TOOL_HANDLERS = {
+    "preparar_movimiento_rapido": prepare_quick_movement,
+    "confirmar_movimiento_preparado": confirm_quick_movement,
+    "cancelar_movimiento_preparado": cancel_quick_movement,
     "consultar_objetivos_financieros": lambda user, arguments: {"objetivos": serialize_goals(user)},
     "consultar_memoria_recomendaciones": lambda user, arguments: {
         "recomendaciones": recommendation_memory(user, limit=max(1, min(int(arguments.get("limite", 12)), 20)))
@@ -1260,7 +1581,7 @@ def _provider_message(messages, config, *, tools=None, max_tokens=600):
         raise AIAssistantError("La IA devolvió una respuesta que no se pudo validar.") from exc
 
 
-WRITE_TOOLS = {"crear_movimiento", "crear_presupuesto", "crear_deuda"}
+WRITE_TOOLS = {"crear_movimiento", "confirmar_movimiento_preparado", "crear_presupuesto", "crear_deuda"}
 
 
 def _has_explicit_confirmation(question, history=None):
@@ -1306,7 +1627,10 @@ def _execute_tool(user, tool_call, *, allow_writes=False):
                     "error": "Antes de guardar, resume todos los datos y pide al usuario una confirmación explícita.",
                 }
             arguments.pop("confirmado", None)
-        return handler(user, arguments)
+        result = handler(user, arguments)
+        if isinstance(result, dict):
+            result = {key: value for key, value in result.items() if not str(key).startswith("_")}
+        return result
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         return {"error": str(exc) or "La consulta solicitada no es válida."}
 
@@ -1345,7 +1669,7 @@ def _parse_assistant_answer(content):
     return answer
 
 
-def _validated_assistant_result(answer, context):
+def _validated_assistant_result(answer, context, *, user=None):
     response_text = str(answer.get("respuesta", "")).strip()
     evidence = answer.get("evidencia", [])
     warning = str(answer.get("advertencia", "")).strip()
@@ -1353,7 +1677,7 @@ def _validated_assistant_result(answer, context):
     clarification = str(answer.get("pregunta_aclaratoria", "")).strip()
     if not response_text or not isinstance(evidence, list):
         raise AIAssistantError("La IA devolvió una respuesta incompleta.")
-    return {
+    result = {
         "respuesta": response_text[:6000],
         "evidencia": [str(item)[:300] for item in evidence[:3]],
         "advertencia": warning[:500],
@@ -1361,6 +1685,9 @@ def _validated_assistant_result(answer, context):
         "pregunta_aclaratoria": clarification[:500],
         "periodo": context["periodo"],
     }
+    if user is not None:
+        result["borrador_movimiento"] = _pending_draft_payload(user)
+    return result
 
 
 def ask_financial_assistant(user, question, history=None):
@@ -1383,6 +1710,10 @@ def ask_financial_assistant(user, question, history=None):
         "Para saldos de cuentas, registros recientes, periodos distintos al resumen actual, listados o fechas solicitadas, debes usar la herramienta adecuada. "
         "Las herramientas limitan los datos al usuario autenticado; nunca solicites SQL ni identificadores internos. "
         "Nunca inventes registros, importes, categorías ni causas. Distingue consumo de salida de caja. "
+        "Para registrar un ingreso o gasto expresado en lenguaje natural, usa inmediatamente preparar_movimiento_rapido cuando tengas tipo, monto y concepto; no consultes catálogos antes porque esa herramienta resuelve valores reales e inferencias seguras. "
+        "Si preparar_movimiento_rapido devuelve un borrador, muestra exactamente sus datos, señala brevemente los campos inferidos y pide una única confirmación. "
+        "Si CONTEXTO_FINANCIERO contiene borrador_movimiento_pendiente y el último mensaje confirma, llama confirmar_movimiento_preparado con confirmado=true. Si pide cancelar, llama cancelar_movimiento_preparado. "
+        "Nunca vuelvas a extraer ni reconstruyas los datos al confirmar: guarda el borrador existente. Para ingresos y gastos prefiere siempre este flujo rápido sobre crear_movimiento. "
         "Puedes guiar interactivamente la creación de ingresos, gastos, presupuestos y deudas. Pide únicamente los datos obligatorios que falten, "
         "una pregunta breve a la vez o agrupando campos relacionados. Consulta los catálogos si necesitas conocer opciones reales. "
         "Antes de crear cualquier registro, muestra un resumen completo y pregunta si desea guardarlo. No llames una herramienta crear_* hasta que "
@@ -1421,7 +1752,7 @@ def ask_financial_assistant(user, question, history=None):
         if not tool_calls:
             try:
                 answer = _parse_assistant_answer(message.get("content"))
-                return _validated_assistant_result(answer, context)
+                return _validated_assistant_result(answer, context, user=user)
             except AIAssistantError:
                 messages.append({"role": "assistant", "content": message.get("content") or ""})
                 break
@@ -1444,4 +1775,4 @@ def ask_financial_assistant(user, question, history=None):
     message = _provider_message(messages, config, max_tokens=1200)
 
     answer = _parse_assistant_answer(message.get("content"))
-    return _validated_assistant_result(answer, context)
+    return _validated_assistant_result(answer, context, user=user)

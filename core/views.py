@@ -24,7 +24,14 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.views.decorators.http import require_POST
 
-from .ai_assistant import AIAssistantError, _provider_message, ask_financial_assistant, user_can_use_ai
+from .ai_assistant import (
+    AIAssistantError,
+    _provider_message,
+    ask_financial_assistant,
+    cancel_quick_movement,
+    confirm_quick_movement,
+    user_can_use_ai,
+)
 from .autonomous_finance import generate_proactive_recommendations
 from .ai_config import get_ai_runtime_config
 
@@ -236,6 +243,41 @@ def asistente_financiero_preguntar(request):
             status=500,
         )
     return JsonResponse({"ok": True, **answer})
+
+
+@login_required
+@require_POST
+def asistente_borrador_movimiento_accion(request, accion):
+    if not user_can_use_ai(request.user):
+        return JsonResponse({"ok": False, "error": "No tienes autorización para utilizar el asistente de IA."}, status=403)
+    try:
+        if accion == "confirmar":
+            result = confirm_quick_movement(request.user, {})
+            if not result.get("creado"):
+                return JsonResponse({"ok": False, "error": result.get("error", "No fue posible confirmar el movimiento.")}, status=400)
+            return JsonResponse(
+                {
+                    "ok": True,
+                    "respuesta": f"{result['tipo'].capitalize()} registrado: {result['concepto']} por {result['monto']} USD.",
+                    "evidencia": [f"Fecha: {result['fecha']}", f"Categoría: {result['categoria']}"],
+                    "advertencia": "",
+                    "borrador_movimiento": None,
+                }
+            )
+        if accion == "cancelar":
+            result = cancel_quick_movement(request.user, {})
+            return JsonResponse(
+                {
+                    "ok": True,
+                    "respuesta": result["mensaje"],
+                    "evidencia": [],
+                    "advertencia": "",
+                    "borrador_movimiento": None,
+                }
+            )
+    except (ValueError, AIAssistantError) as exc:
+        return JsonResponse({"ok": False, "error": str(exc)}, status=400)
+    return JsonResponse({"ok": False, "error": "Acción no válida."}, status=400)
 
 
 @transaction.atomic

@@ -1,3 +1,5 @@
+import uuid
+
 from django.db import models
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -521,6 +523,66 @@ class MovimientoFinanciero(models.Model):
 
     def __str__(self):
         return f"{self.get_tipo_display()}: {self.concepto}"
+
+
+class BorradorMovimientoIA(models.Model):
+    class Estado(models.TextChoices):
+        PENDIENTE = "pendiente", "Pendiente de confirmación"
+        CONFIRMADO = "confirmado", "Confirmado"
+        CANCELADO = "cancelado", "Cancelado"
+        EXPIRADO = "expirado", "Expirado"
+
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="borradores_movimiento_ia",
+    )
+    token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    tipo = models.CharField(max_length=20, choices=MovimientoFinanciero.Tipo.choices)
+    monto = models.DecimalField(max_digits=12, decimal_places=2)
+    concepto = models.CharField(max_length=160)
+    fecha = models.DateField()
+    categoria = models.ForeignKey(Categoria, on_delete=models.PROTECT, related_name="borradores_ia")
+    cuenta = models.ForeignKey(
+        CuentaFinanciera,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="borradores_ia",
+    )
+    metodo_pago = models.ForeignKey(
+        MetodoPago,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="borradores_ia",
+    )
+    acreedor = models.CharField(max_length=120, blank=True)
+    numero_cuotas = models.PositiveIntegerField(default=1)
+    fecha_pago = models.DateField(null=True, blank=True)
+    inferencias = models.JSONField(default=list, blank=True)
+    estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.PENDIENTE)
+    expira_en = models.DateTimeField()
+    movimiento = models.OneToOneField(
+        MovimientoFinanciero,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="borrador_ia_origen",
+    )
+    creado = models.DateTimeField(auto_now_add=True)
+    actualizado = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = '"analisis"."borrador_movimiento_ia"'
+        ordering = ["-creado"]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(monto__gt=0), name="borrador_ia_monto_positivo"),
+            models.CheckConstraint(condition=models.Q(numero_cuotas__gte=1), name="borrador_ia_cuotas_positivas"),
+        ]
+
+    def __str__(self):
+        return f"{self.get_tipo_display()} {self.monto}: {self.concepto}"
 
 
 class PresupuestoMensual(models.Model):

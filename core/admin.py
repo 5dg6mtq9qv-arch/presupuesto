@@ -9,6 +9,7 @@ from .ai_config import get_ai_runtime_config
 from .models import (
     Acreedor,
     AjusteSaldo,
+    BorradorMovimientoIA,
     Categoria,
     CuentaFinanciera,
     ConfiguracionIA,
@@ -28,6 +29,21 @@ from .models import (
     Tarea,
     TransferenciaCuenta,
 )
+
+
+@admin.register(BorradorMovimientoIA)
+class BorradorMovimientoIAAdmin(ModelAdmin):
+    list_display = ("concepto", "usuario", "tipo", "monto", "estado", "expira_en", "creado")
+    list_filter = ("tipo", "estado", "creado")
+    search_fields = ("concepto", "usuario__username", "token")
+    readonly_fields = (
+        "usuario", "token", "tipo", "monto", "concepto", "fecha", "categoria", "cuenta",
+        "metodo_pago", "acreedor", "numero_cuotas", "fecha_pago", "inferencias", "estado",
+        "expira_en", "movimiento", "creado", "actualizado",
+    )
+
+    def has_add_permission(self, request):
+        return False
 
 
 @admin.register(ObjetivoFinanciero)

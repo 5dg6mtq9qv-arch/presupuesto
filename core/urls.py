@@ -9,6 +9,7 @@ urlpatterns = [
     path("analisis/", views.analisis_financiero, name="analisis_financiero"),
     path("asistente/", views.asistente_financiero, name="asistente_financiero"),
     path("asistente/preguntar/", views.asistente_financiero_preguntar, name="asistente_financiero_preguntar"),
+    path("asistente/borrador/<str:accion>/", views.asistente_borrador_movimiento_accion, name="asistente_borrador_movimiento_accion"),
     path("asistente/objetivos/nuevo/", views.objetivo_financiero_crear, name="objetivo_financiero_crear"),
     path("asistente/objetivos/<int:pk>/actualizar/", views.objetivo_financiero_actualizar, name="objetivo_financiero_actualizar"),
     path("asistente/recomendaciones/<int:pk>/feedback/", views.recomendacion_financiera_feedback, name="recomendacion_financiera_feedback"),
