@@ -3496,6 +3496,14 @@ def deuda_list(request):
     q = request.GET.get("q", "").strip()
     estado = request.GET.get("estado", "")
     categoria_id = request.GET.get("categoria", "")
+    pago_desde_texto = request.GET.get("pago_desde", request.GET.get("desde", "")).strip()
+    pago_hasta_texto = request.GET.get("pago_hasta", request.GET.get("hasta", "")).strip()
+    generacion_desde_texto = request.GET.get("generacion_desde", "").strip()
+    generacion_hasta_texto = request.GET.get("generacion_hasta", "").strip()
+    pago_desde = parse_date(pago_desde_texto)
+    pago_hasta = parse_date(pago_hasta_texto)
+    generacion_desde = parse_date(generacion_desde_texto)
+    generacion_hasta = parse_date(generacion_hasta_texto)
     if q:
         deudas = deudas.filter(
             Q(acreedor__icontains=q)
@@ -3507,6 +3515,17 @@ def deuda_list(request):
         deudas = deudas.filter(estado=estado)
     if categoria_id.isdigit():
         deudas = deudas.filter(categoria_id=categoria_id)
+    if pago_desde or pago_hasta:
+        filtros_fecha_pago = {}
+        if pago_desde:
+            filtros_fecha_pago["pagos__fecha__gte"] = pago_desde
+        if pago_hasta:
+            filtros_fecha_pago["pagos__fecha__lte"] = pago_hasta
+        deudas = deudas.filter(**filtros_fecha_pago).distinct()
+    if generacion_desde:
+        deudas = deudas.filter(fecha_inicio__gte=generacion_desde)
+    if generacion_hasta:
+        deudas = deudas.filter(fecha_inicio__lte=generacion_hasta)
     page_obj, list_querystring = paginate_queryset(request, deudas)
     for deuda in page_obj:
         pagos = list(deuda.pagos.all())
@@ -3552,7 +3571,15 @@ def deuda_list(request):
             "page_obj": page_obj,
             "list_querystring": list_querystring,
             "categorias": categorias,
-            "filters": {"q": q, "estado": estado, "categoria": categoria_id},
+            "filters": {
+                "q": q,
+                "estado": estado,
+                "categoria": categoria_id,
+                "pago_desde": pago_desde_texto,
+                "pago_hasta": pago_hasta_texto,
+                "generacion_desde": generacion_desde_texto,
+                "generacion_hasta": generacion_hasta_texto,
+            },
         },
     )
 
@@ -4005,6 +4032,7 @@ def comprobante_revisar(request, pk):
     form = RevisionComprobanteForm(request.POST or None, user=request.user, initial=initial)
     if request.method == "POST" and form.is_valid():
         BorradorMovimientoIA.objects.filter(usuario=request.user, estado=BorradorMovimientoIA.Estado.PENDIENTE).update(estado=BorradorMovimientoIA.Estado.CANCELADO)
+        acreedor = form.cleaned_data["acreedor_credito"]
         draft = BorradorMovimientoIA.objects.create(
             usuario=request.user,
             tipo=form.cleaned_data["tipo"],
@@ -4014,6 +4042,9 @@ def comprobante_revisar(request, pk):
             categoria=form.cleaned_data["categoria"],
             cuenta=form.cleaned_data["cuenta"],
             metodo_pago=form.cleaned_data["metodo_pago"],
+            acreedor=acreedor.nombre if acreedor else form.cleaned_data["nuevo_acreedor_credito"],
+            numero_cuotas=form.cleaned_data["numero_cuotas_credito"] or 1,
+            fecha_pago=form.cleaned_data["fecha_pago"],
             inferencias=["comprobante"],
             expira_en=timezone.now() + timedelta(minutes=30),
         )

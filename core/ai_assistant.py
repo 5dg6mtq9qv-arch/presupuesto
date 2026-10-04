@@ -11,7 +11,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from django.db import transaction
-from django.db.models import Count, Sum, Value
+from django.db.models import Count, Prefetch, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -411,15 +411,24 @@ def _parse_tool_date(value, field_name):
 
 
 def _apply_date_range(queryset, arguments):
-    start = _parse_tool_date(arguments.get("fecha_inicio"), "fecha_inicio")
-    end = _parse_tool_date(arguments.get("fecha_fin"), "fecha_fin")
-    if start and end and start > end:
-        raise ValueError("fecha_inicio no puede ser posterior a fecha_fin.")
+    start, end = _parse_date_range(arguments)
     if start:
         queryset = queryset.filter(fecha__gte=start)
     if end:
         queryset = queryset.filter(fecha__lte=end)
     return queryset, start, end
+
+
+def _parse_date_range(arguments):
+    return _parse_named_date_range(arguments, "fecha_inicio", "fecha_fin")
+
+
+def _parse_named_date_range(arguments, start_field, end_field):
+    start = _parse_tool_date(arguments.get(start_field), start_field)
+    end = _parse_tool_date(arguments.get(end_field), end_field)
+    if start and end and start > end:
+        raise ValueError(f"{start_field} no puede ser posterior a {end_field}.")
+    return start, end
 
 
 def _query_limit(arguments):
@@ -481,7 +490,11 @@ def query_movements(user, arguments):
 
 def query_debt_payments(user, arguments):
     queryset = PagoDeuda.objects.filter(deuda__usuario=user)
-    queryset, start, end = _apply_date_range(queryset, arguments)
+    payment_arguments = {
+        "fecha_inicio": arguments.get("fecha_pago_desde", arguments.get("fecha_inicio")),
+        "fecha_fin": arguments.get("fecha_pago_hasta", arguments.get("fecha_fin")),
+    }
+    queryset, start, end = _apply_date_range(queryset, payment_arguments)
     state = arguments.get("estado")
     if state in {PagoDeuda.Estado.CONFIRMADO, PagoDeuda.Estado.PENDIENTE}:
         queryset = queryset.filter(estado=state)
@@ -493,8 +506,8 @@ def query_debt_payments(user, arguments):
     )
     return {
         "filtros": {
-            "fecha_inicio": start.isoformat() if start else None,
-            "fecha_fin": end.isoformat() if end else None,
+            "fecha_pago_desde": start.isoformat() if start else None,
+            "fecha_pago_hasta": end.isoformat() if end else None,
             "estado": state if state in {"confirmado", "pendiente"} else "todos",
         },
         "cantidad_total": count,
@@ -503,6 +516,7 @@ def query_debt_payments(user, arguments):
         "registros": [
             {
                 "fecha": item.fecha.isoformat(),
+                "fecha_pago": item.fecha.isoformat(),
                 "estado": item.estado,
                 "acreedor": item.deuda.acreedor,
                 "concepto": item.deuda.concepto,
@@ -517,30 +531,84 @@ def query_debt_payments(user, arguments):
 
 def query_debts(user, arguments):
     queryset = Deuda.objects.filter(usuario=user)
+    payment_arguments = {
+        "fecha_pago_desde": arguments.get("fecha_pago_desde", arguments.get("fecha_inicio")),
+        "fecha_pago_hasta": arguments.get("fecha_pago_hasta", arguments.get("fecha_fin")),
+    }
+    payment_start, payment_end = _parse_named_date_range(
+        payment_arguments,
+        "fecha_pago_desde",
+        "fecha_pago_hasta",
+    )
+    generation_start, generation_end = _parse_named_date_range(
+        arguments,
+        "fecha_generacion_desde",
+        "fecha_generacion_hasta",
+    )
     state = arguments.get("estado")
     if state in {Deuda.Estado.ACTIVA, Deuda.Estado.PAGADA, Deuda.Estado.CANCELADA}:
         queryset = queryset.filter(estado=state)
+    payments_in_range = PagoDeuda.objects.filter(deuda__usuario=user)
+    if payment_start:
+        payments_in_range = payments_in_range.filter(fecha__gte=payment_start)
+    if payment_end:
+        payments_in_range = payments_in_range.filter(fecha__lte=payment_end)
+    if payment_start or payment_end:
+        queryset = queryset.filter(pk__in=payments_in_range.values("deuda_id"))
+    if generation_start:
+        queryset = queryset.filter(fecha_inicio__gte=generation_start)
+    if generation_end:
+        queryset = queryset.filter(fecha_inicio__lte=generation_end)
     count = queryset.count()
     total = queryset.aggregate(total=Sum("saldo_actual"))["total"] or Decimal("0")
-    rows = list(queryset.order_by("estado", "fecha_vencimiento", "acreedor")[:_query_limit(arguments)])
+    rows_queryset = queryset.order_by("estado", "fecha_vencimiento", "acreedor")
+    if payment_start or payment_end:
+        rows_queryset = rows_queryset.prefetch_related(
+            Prefetch(
+                "pagos",
+                queryset=payments_in_range.order_by("fecha", "cuota_numero"),
+                to_attr="pagos_en_rango",
+            )
+        )
+    rows = list(rows_queryset[:_query_limit(arguments)])
+    records = []
+    for item in rows:
+        record = {
+            "acreedor": item.acreedor,
+            "concepto": item.concepto,
+            "estado": item.estado,
+            "monto_inicial": _money(item.monto_inicial),
+            "saldo_actual": _money(item.saldo_actual),
+            "numero_cuotas": item.numero_cuotas,
+            "fecha_inicio": item.fecha_inicio.isoformat(),
+            "fecha_generacion": item.fecha_inicio.isoformat(),
+            "fecha_primera_cuota": item.fecha_primera_cuota.isoformat() if item.fecha_primera_cuota else None,
+            "fecha_vencimiento": item.fecha_vencimiento.isoformat() if item.fecha_vencimiento else None,
+        }
+        if payment_start or payment_end:
+            record["pagos_en_rango"] = [
+                {
+                    "fecha_pago": payment.fecha.isoformat(),
+                    "estado": payment.estado,
+                    "cuota": payment.cuota_numero,
+                    "monto": _money(payment.monto),
+                }
+                for payment in item.pagos_en_rango
+            ]
+        records.append(record)
     return {
         "estado": state if state in {"activa", "pagada", "cancelada"} else "todos",
+        "filtros": {
+            "estado": state if state in {"activa", "pagada", "cancelada"} else "todos",
+            "fecha_pago_desde": payment_start.isoformat() if payment_start else None,
+            "fecha_pago_hasta": payment_end.isoformat() if payment_end else None,
+            "fecha_generacion_desde": generation_start.isoformat() if generation_start else None,
+            "fecha_generacion_hasta": generation_end.isoformat() if generation_end else None,
+        },
         "cantidad_total": count,
         "saldo_total": _money(total),
         "detalle_completo": count <= len(rows),
-        "registros": [
-            {
-                "acreedor": item.acreedor,
-                "concepto": item.concepto,
-                "estado": item.estado,
-                "monto_inicial": _money(item.monto_inicial),
-                "saldo_actual": _money(item.saldo_actual),
-                "numero_cuotas": item.numero_cuotas,
-                "fecha_inicio": item.fecha_inicio.isoformat(),
-                "fecha_vencimiento": item.fecha_vencimiento.isoformat() if item.fecha_vencimiento else None,
-            }
-            for item in rows
-        ],
+        "registros": records,
     }
 
 
@@ -1287,12 +1355,12 @@ AI_TOOLS = [
         "type": "function",
         "function": {
             "name": "consultar_pagos_deuda",
-            "description": "Consulta cuotas o pagos de deuda por fecha y estado, con acreedor, concepto e importe.",
+            "description": "Consulta cuotas o pagos de deuda por su fecha de pago y estado, con acreedor, concepto e importe. Usa esta herramienta para preguntas sobre pagos que vencen en una fecha o periodo.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "fecha_inicio": {"type": "string", "description": "Fecha inclusiva AAAA-MM-DD"},
-                    "fecha_fin": {"type": "string", "description": "Fecha inclusiva AAAA-MM-DD"},
+                    "fecha_pago_desde": {"type": "string", "description": "Fecha de pago inicial inclusiva AAAA-MM-DD"},
+                    "fecha_pago_hasta": {"type": "string", "description": "Fecha de pago final inclusiva AAAA-MM-DD"},
                     "estado": {"type": "string", "enum": ["confirmado", "pendiente"]},
                     "limite": {"type": "integer", "minimum": 1, "maximum": 50},
                 },
@@ -1304,10 +1372,14 @@ AI_TOOLS = [
         "type": "function",
         "function": {
             "name": "consultar_deudas",
-            "description": "Consulta deudas activas, pagadas o canceladas y sus saldos.",
+            "description": "Consulta deudas activas, pagadas o canceladas y sus saldos. Distingue la fecha de generación u origen de la deuda de las fechas de pago de sus cuotas, y permite filtrar por ambos rangos.",
             "parameters": {
                 "type": "object",
                 "properties": {
+                    "fecha_pago_desde": {"type": "string", "description": "Fecha de pago de cuota inicial inclusiva AAAA-MM-DD"},
+                    "fecha_pago_hasta": {"type": "string", "description": "Fecha de pago de cuota final inclusiva AAAA-MM-DD"},
+                    "fecha_generacion_desde": {"type": "string", "description": "Fecha de generación u origen inicial inclusiva AAAA-MM-DD"},
+                    "fecha_generacion_hasta": {"type": "string", "description": "Fecha de generación u origen final inclusiva AAAA-MM-DD"},
                     "estado": {"type": "string", "enum": ["activa", "pagada", "cancelada"]},
                     "limite": {"type": "integer", "minimum": 1, "maximum": 50},
                 },

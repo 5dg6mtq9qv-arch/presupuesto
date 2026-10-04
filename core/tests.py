@@ -19,6 +19,7 @@ from .ai_assistant import (
     ask_financial_assistant,
     build_financial_context,
     query_accounts,
+    query_debts,
     query_debt_payments,
     query_movements,
 )
@@ -961,6 +962,74 @@ class FinancialAssistantTests(TestCase):
         self.assertEqual(len(result["registros"]), 1)
         self.assertFalse(result["detalle_completo"])
 
+    def test_herramienta_deudas_filtra_por_fecha_de_pago(self):
+        dentro = Deuda.objects.create(
+            usuario=self.user,
+            acreedor="Banco propio",
+            concepto="Crédito dentro del rango",
+            monto_inicial="200.00",
+            saldo_actual="150.00",
+            fecha_inicio="2026-01-01",
+        )
+        fuera = Deuda.objects.create(
+            usuario=self.user,
+            acreedor="Banco propio",
+            concepto="Crédito fuera del rango",
+            monto_inicial="300.00",
+            saldo_actual="300.00",
+            fecha_inicio="2026-09-15",
+        )
+        ajena = Deuda.objects.create(
+            usuario=self.other,
+            acreedor="Banco ajeno",
+            concepto="Crédito ajeno",
+            monto_inicial="900.00",
+            saldo_actual="900.00",
+            fecha_inicio="2026-01-01",
+        )
+        PagoDeuda.objects.create(
+            deuda=dentro,
+            cuota_numero=1,
+            monto="50.00",
+            fecha="2026-09-15",
+            estado=PagoDeuda.Estado.PENDIENTE,
+        )
+        PagoDeuda.objects.create(
+            deuda=fuera,
+            cuota_numero=1,
+            monto="100.00",
+            fecha="2026-10-15",
+            estado=PagoDeuda.Estado.PENDIENTE,
+        )
+        PagoDeuda.objects.create(
+            deuda=ajena,
+            cuota_numero=1,
+            monto="900.00",
+            fecha="2026-09-15",
+            estado=PagoDeuda.Estado.PENDIENTE,
+        )
+
+        result = query_debts(
+            self.user,
+            {"fecha_pago_desde": "2026-09-01", "fecha_pago_hasta": "2026-09-30"},
+        )
+
+        self.assertEqual(result["cantidad_total"], 1)
+        self.assertEqual(result["saldo_total"], "150.00")
+        self.assertEqual(result["registros"][0]["concepto"], "Crédito dentro del rango")
+        self.assertEqual(result["registros"][0]["pagos_en_rango"][0]["fecha_pago"], "2026-09-15")
+        self.assertNotIn("Crédito fuera del rango", json.dumps(result))
+        self.assertNotIn("Crédito ajeno", json.dumps(result))
+
+        generated_result = query_debts(
+            self.user,
+            {"fecha_generacion_desde": "2026-09-15", "fecha_generacion_hasta": "2026-09-15"},
+        )
+
+        self.assertEqual(generated_result["cantidad_total"], 1)
+        self.assertEqual(generated_result["registros"][0]["concepto"], "Crédito fuera del rango")
+        self.assertEqual(generated_result["registros"][0]["fecha_generacion"], "2026-09-15")
+
     def test_contexto_y_herramienta_cuentas_calculan_saldo_y_aislan_usuario(self):
         date = datetime(2026, 9, 28).date()
         account = CuentaFinanciera.objects.create(
@@ -1600,6 +1669,83 @@ class GuidedFinancialFlowsTests(TestCase):
         response = self.client.get(reverse("presupuesto_sugerencia"), {"categoria": category.pk})
 
         self.assertEqual(response.status_code, 404)
+
+
+class DeudaListFilterTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="filtro-deudas", password="test")
+        self.client.force_login(self.user)
+        for concepto, fecha_generacion, fecha_pago in (
+            ("Deuda anterior", "2026-09-15", "2026-08-10"),
+            ("Deuda dentro del rango", "2026-01-01", "2026-09-15"),
+            ("Deuda posterior", "2026-10-20", "2026-10-20"),
+        ):
+            deuda = Deuda.objects.create(
+                usuario=self.user,
+                acreedor="Banco",
+                concepto=concepto,
+                monto_inicial="100.00",
+                saldo_actual="100.00",
+                fecha_inicio=fecha_generacion,
+                estado=Deuda.Estado.CANCELADA,
+            )
+            PagoDeuda.objects.create(
+                deuda=deuda,
+                monto="100.00",
+                fecha=fecha_pago,
+                cuota_numero=1,
+                estado=PagoDeuda.Estado.CONFIRMADO,
+            )
+
+    def test_fechas_vacias_muestran_todas_las_deudas(self):
+        response = self.client.get(
+            reverse("deuda_list"),
+            {
+                "pago_desde": "",
+                "pago_hasta": "",
+                "generacion_desde": "",
+                "generacion_hasta": "",
+            },
+        )
+
+        self.assertContains(response, "Deuda anterior")
+        self.assertContains(response, "Deuda dentro del rango")
+        self.assertContains(response, "Deuda posterior")
+        self.assertContains(response, "Fecha de pago desde")
+        self.assertContains(response, "Fecha de generación desde")
+
+    def test_filtra_fecha_de_pago_con_limites_inclusivos(self):
+        response = self.client.get(
+            reverse("deuda_list"),
+            {"pago_desde": "2026-09-15", "pago_hasta": "2026-09-15"},
+        )
+
+        self.assertNotContains(response, "Deuda anterior")
+        self.assertContains(response, "Deuda dentro del rango")
+        self.assertNotContains(response, "Deuda posterior")
+        self.assertEqual(response.context["filters"]["pago_desde"], "2026-09-15")
+        self.assertEqual(response.context["filters"]["pago_hasta"], "2026-09-15")
+
+    def test_filtra_por_fecha_de_generacion_independientemente(self):
+        response = self.client.get(
+            reverse("deuda_list"),
+            {"generacion_desde": "2026-09-15", "generacion_hasta": "2026-09-15"},
+        )
+
+        self.assertContains(response, "Deuda anterior")
+        self.assertNotContains(response, "Deuda dentro del rango")
+        self.assertNotContains(response, "Deuda posterior")
+
+    def test_permite_usar_solo_un_limite_de_fecha(self):
+        desde_response = self.client.get(reverse("deuda_list"), {"pago_desde": "2026-09-01"})
+        hasta_response = self.client.get(reverse("deuda_list"), {"pago_hasta": "2026-09-30"})
+
+        self.assertNotContains(desde_response, "Deuda anterior")
+        self.assertContains(desde_response, "Deuda dentro del rango")
+        self.assertContains(desde_response, "Deuda posterior")
+        self.assertContains(hasta_response, "Deuda anterior")
+        self.assertContains(hasta_response, "Deuda dentro del rango")
+        self.assertNotContains(hasta_response, "Deuda posterior")
 
 
 class MovimientoRecurrenteServiceTests(TestCase):

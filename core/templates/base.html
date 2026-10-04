@@ -1138,7 +1138,9 @@
       margin-bottom: 16px;
     }
     .debt-filter-heading h2 { margin-bottom: 4px; }
-    .debt-filter-form { grid-template-columns: minmax(240px, 2fr) minmax(190px, 1.25fr) minmax(170px, 1fr) auto; }
+    .debt-filter-form { grid-template-columns: repeat(4, minmax(145px, 1fr)); }
+    .debt-filter-form .debt-search-field { grid-column: span 2; }
+    .debt-filter-form .debt-filter-submit { grid-column: 4; }
     .debt-filter-submit { min-width: 112px; }
     .input-with-icon { position: relative; }
     .input-with-icon > .material-symbols-outlined {
@@ -1192,6 +1194,7 @@
       font-size: 12px;
       font-weight: 650;
     }
+    .debt-category .material-symbols-outlined { font-size: 16px; }
     .debt-card-tools { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }
     .debt-card-body { display: grid; grid-template-columns: minmax(220px, 270px) minmax(0, 1fr); gap: 24px; padding: 20px; }
     .debt-balance {
@@ -1547,7 +1550,7 @@
     @media (max-width: 1200px) {
       .debt-filter-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .debt-search-field { grid-column: 1 / -1; }
-      .debt-filter-submit { width: 100%; }
+      .debt-filter-form .debt-filter-submit { width: 100%; grid-column: 1 / -1; }
       .debt-card-body { grid-template-columns: 1fr; }
     }
 

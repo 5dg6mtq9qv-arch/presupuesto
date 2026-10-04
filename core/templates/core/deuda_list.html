@@ -19,9 +19,9 @@
   <div class="debt-filter-heading">
     <div>
       <h2 id="debt-filter-title">Buscar y filtrar</h2>
-      <p class="muted mb-0">Encuentra una deuda por acreedor, concepto o categoría.</p>
+      <p class="muted mb-0">Filtra por la fecha de generación de la deuda o por la fecha de pago de sus cuotas.</p>
     </div>
-    {% if filters.q or filters.categoria or filters.estado %}
+    {% if filters.q or filters.categoria or filters.estado or filters.pago_desde or filters.pago_hasta or filters.generacion_desde or filters.generacion_hasta %}
       <a class="btn btn-sm btn-light" href="{% url 'deuda_list' %}">
         <span class="material-symbols-outlined">filter_alt_off</span><span>Limpiar filtros</span>
       </a>
@@ -53,6 +53,22 @@
         <option value="cancelada"{% if filters.estado == "cancelada" %} selected{% endif %}>Cancelada</option>
       </select>
     </div>
+    <div>
+      <label for="pago_desde">Fecha de pago desde</label>
+      <input class="form-control" id="pago_desde" name="pago_desde" type="date" value="{{ filters.pago_desde }}">
+    </div>
+    <div>
+      <label for="pago_hasta">Fecha de pago hasta</label>
+      <input class="form-control" id="pago_hasta" name="pago_hasta" type="date" value="{{ filters.pago_hasta }}">
+    </div>
+    <div>
+      <label for="generacion_desde">Fecha de generación desde</label>
+      <input class="form-control" id="generacion_desde" name="generacion_desde" type="date" value="{{ filters.generacion_desde }}">
+    </div>
+    <div>
+      <label for="generacion_hasta">Fecha de generación hasta</label>
+      <input class="form-control" id="generacion_hasta" name="generacion_hasta" type="date" value="{{ filters.generacion_hasta }}">
+    </div>
     <button class="btn btn-primary debt-filter-submit" type="submit">
       <span class="material-symbols-outlined">filter_alt</span><span>Aplicar</span>
     </button>
@@ -77,6 +93,10 @@
               {% else %}
                 <span class="muted">Sin categoría</span>
               {% endif %}
+              <span class="debt-category">
+                <span class="material-symbols-outlined">event</span>
+                Generada {{ deuda.fecha_inicio|date:"d/m/Y" }}
+              </span>
             </div>
           </div>
         </div>

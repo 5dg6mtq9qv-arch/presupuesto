@@ -1,4 +1,74 @@
 {% extends "base.html" %}
 {% block page_title %}Revisar comprobante{% endblock %}
 {% block page_subtitle %}Corrige cualquier dato antes de preparar el movimiento{% endblock %}
-{% block content %}<div class="receipt-review"><section class="panel"><img class="receipt-preview" src="{{ captura.archivo.url }}" alt="Comprobante cargado"></section><section class="panel form-panel">{% if captura.error_analisis %}<div class="alert alert-warning">{{ captura.error_analisis }}</div>{% endif %}<form class="form-grid" method="post">{% csrf_token %}{% include "core/includes/unfold_form_fields.html" %}<div class="form-actions"><a class="btn btn-outline-secondary" href="{% url 'comprobante_nuevo' %}">Otra foto</a><button class="btn btn-primary" type="submit"><span class="material-symbols-outlined">arrow_forward</span>Revisar confirmación</button></div></form></section></div>{% endblock %}
+{% block content %}
+<div class="receipt-review">
+  <section class="panel">
+    <img class="receipt-preview" src="{{ captura.archivo.url }}" alt="Comprobante cargado">
+  </section>
+  <section class="panel form-panel">
+    {% if captura.error_analisis %}<div class="alert alert-warning">{{ captura.error_analisis }}</div>{% endif %}
+    <form class="form-grid" method="post" data-receipt-review-form>
+      {% csrf_token %}
+      {% include "core/includes/unfold_form_fields.html" %}
+      <div class="form-actions">
+        <a class="btn btn-outline-secondary" href="{% url 'comprobante_nuevo' %}">Otra foto</a>
+        <button class="btn btn-primary" type="submit"><span class="material-symbols-outlined">arrow_forward</span>Revisar confirmación</button>
+      </div>
+    </form>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (() => {
+    const form = document.querySelector("[data-receipt-review-form]");
+    const tipo = document.getElementById("id_tipo");
+    const metodo = document.getElementById("id_metodo_pago");
+    const cuenta = document.getElementById("id_cuenta");
+    const fechaCompra = document.getElementById("id_fecha");
+    const fechaPago = document.getElementById("id_fecha_pago");
+    const acreedor = document.getElementById("id_acreedor_credito");
+    const nuevoAcreedor = document.getElementById("id_nuevo_acreedor_credito");
+    const numeroCuotas = document.getElementById("id_numero_cuotas_credito");
+    if (!form || !tipo || !metodo) return;
+
+    const camposCredito = [fechaPago, acreedor, nuevoAcreedor, numeroCuotas].filter(Boolean);
+    const esCredito = () => tipo.value === "gasto" && metodo.selectedOptions[0]?.dataset.tipo === "credito";
+    const sumarUnMes = value => {
+      const [anio, mes, dia] = value.split("-").map(Number);
+      if (!anio || !mes || !dia) return "";
+      const anioSiguiente = anio + Math.floor(mes / 12);
+      const mesSiguiente = (mes % 12) + 1;
+      const ultimoDia = new Date(anioSiguiente, mesSiguiente, 0).getDate();
+      return [
+        anioSiguiente,
+        String(mesSiguiente).padStart(2, "0"),
+        String(Math.min(dia, ultimoDia)).padStart(2, "0"),
+      ].join("-");
+    };
+    const actualizar = () => {
+      const credito = esCredito();
+      camposCredito.forEach(campo => {
+        campo.closest(".unfold-field").hidden = !credito;
+      });
+      if (cuenta) {
+        cuenta.closest(".unfold-field").hidden = credito;
+        cuenta.required = !credito;
+      }
+      if (credito && fechaPago && !fechaPago.value && fechaCompra?.value) {
+        fechaPago.value = sumarUnMes(fechaCompra.value);
+      }
+      if (fechaPago) fechaPago.required = credito;
+      if (numeroCuotas) numeroCuotas.required = credito;
+    };
+
+    tipo.addEventListener("change", actualizar);
+    metodo.addEventListener("change", actualizar);
+    fechaCompra?.addEventListener("change", actualizar);
+    if (window.jQuery) window.jQuery(metodo).on("change.receiptCredit", actualizar);
+    actualizar();
+  })();
+</script>
+{% endblock %}

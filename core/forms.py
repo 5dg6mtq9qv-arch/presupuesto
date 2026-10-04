@@ -1170,8 +1170,36 @@ class RevisionComprobanteForm(forms.Form):
     concepto = forms.CharField(label="Concepto", max_length=160)
     fecha = forms.DateField(label="Fecha", widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}))
     categoria = forms.ModelChoiceField(queryset=Categoria.objects.none(), label="Categoría")
-    cuenta = forms.ModelChoiceField(queryset=CuentaFinanciera.objects.none(), label="Cuenta")
-    metodo_pago = forms.ModelChoiceField(queryset=MetodoPago.objects.none(), label="Método de pago", required=False)
+    metodo_pago = forms.ModelChoiceField(
+        queryset=MetodoPago.objects.none(),
+        label="Método de pago",
+        required=False,
+        widget=MetodoPagoSelect(),
+    )
+    cuenta = forms.ModelChoiceField(queryset=CuentaFinanciera.objects.none(), label="Cuenta", required=False)
+    acreedor_credito = forms.ModelChoiceField(
+        queryset=Acreedor.objects.none(),
+        label="Acreedor",
+        required=False,
+    )
+    nuevo_acreedor_credito = forms.CharField(
+        label="Nuevo acreedor (si no está en la lista)",
+        max_length=120,
+        required=False,
+    )
+    numero_cuotas_credito = forms.IntegerField(
+        label="Número de cuotas",
+        min_value=1,
+        initial=1,
+        required=False,
+        widget=forms.NumberInput(attrs={"min": "1"}),
+    )
+    fecha_pago = forms.DateField(
+        label="Fecha máxima de pago de la primera cuota",
+        required=False,
+        widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
+        help_text="Las cuotas siguientes se programarán mensualmente desde esta fecha.",
+    )
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -1181,8 +1209,48 @@ class RevisionComprobanteForm(forms.Form):
         self.fields["categoria"].label_from_instance = lambda obj: f"{obj.parent.nombre} > {obj.nombre}"
         self.fields["cuenta"].queryset = CuentaFinanciera.objects.filter(usuario=user, activa=True).order_by("nombre")
         self.fields["metodo_pago"].queryset = MetodoPago.objects.filter(usuario=user, activo=True).order_by("nombre")
+        self.fields["acreedor_credito"].queryset = Acreedor.objects.filter(usuario=user, activo=True).order_by("nombre")
+        self.fields["acreedor_credito"].empty_label = "Selecciona un acreedor"
         for field in self.fields.values():
             field.widget.attrs["class"] = "form-select" if isinstance(field.widget, forms.Select) else "form-control"
+
+    def clean(self):
+        cleaned_data = super().clean()
+        tipo = cleaned_data.get("tipo")
+        metodo_pago = cleaned_data.get("metodo_pago")
+        cuenta = cleaned_data.get("cuenta")
+        acreedor = cleaned_data.get("acreedor_credito")
+        nuevo_acreedor = (cleaned_data.get("nuevo_acreedor_credito") or "").strip()
+        numero_cuotas = cleaned_data.get("numero_cuotas_credito")
+        fecha = cleaned_data.get("fecha")
+        fecha_pago = cleaned_data.get("fecha_pago")
+        es_credito = (
+            tipo == MovimientoFinanciero.Tipo.GASTO
+            and metodo_pago
+            and metodo_pago.tipo == MetodoPago.Tipo.CREDITO
+        )
+
+        if es_credito:
+            if acreedor and nuevo_acreedor:
+                self.add_error("nuevo_acreedor_credito", "Selecciona un acreedor o crea uno nuevo, no ambos.")
+            elif not acreedor and not nuevo_acreedor:
+                self.add_error("acreedor_credito", "Selecciona un acreedor o escribe uno nuevo para la compra a crédito.")
+            if not numero_cuotas:
+                self.add_error("numero_cuotas_credito", "Indica al menos una cuota.")
+            if not fecha_pago:
+                self.add_error("fecha_pago", "Indica la fecha máxima de pago de la primera cuota.")
+            elif fecha and fecha_pago < fecha:
+                self.add_error("fecha_pago", "La fecha máxima de pago no puede ser anterior a la fecha de compra.")
+            cleaned_data["cuenta"] = None
+        else:
+            if not cuenta:
+                self.add_error("cuenta", "Selecciona la cuenta donde ocurrió el movimiento.")
+            cleaned_data["acreedor_credito"] = None
+            cleaned_data["nuevo_acreedor_credito"] = ""
+            cleaned_data["numero_cuotas_credito"] = 1
+            cleaned_data["fecha_pago"] = None
+
+        return cleaned_data
 
 
 class TransferenciaCuentaForm(UserScopedModelForm):

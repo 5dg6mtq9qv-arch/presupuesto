@@ -13,6 +13,7 @@ from .models import (
     CapturaComprobante,
     Categoria,
     ImportacionBancaria,
+    MetodoPago,
     MovimientoFinanciero,
     Notificacion,
     PagoDeuda,
@@ -186,3 +187,60 @@ class ProductFeaturesTests(TestCase):
         response = self.client.post(reverse("comprobante_confirmar", args=[capture.pk]))
         self.assertRedirects(response, reverse("actividad_financiera"))
         self.assertEqual(MovimientoFinanciero.objects.filter(usuario=self.user, concepto="Almuerzo").count(), 1)
+
+    def test_receipt_credit_creates_debt_and_installments(self):
+        image = BytesIO()
+        Image.new("RGB", (24, 24), "white").save(image, "JPEG")
+        self.client.post(
+            reverse("comprobante_nuevo"),
+            {"archivo": SimpleUploadedFile("credito.jpg", image.getvalue(), content_type="image/jpeg")},
+        )
+        capture = CapturaComprobante.objects.get(usuario=self.user)
+        category = self.user.categoria_set.filter(tipo=Categoria.Tipo.FINANZAS, parent__isnull=False).first()
+        credit_method = self.user.metodopago_set.get(tipo=MetodoPago.Tipo.CREDITO)
+        purchase_date = timezone.localdate()
+        payment_date = purchase_date + timedelta(days=35)
+
+        review = self.client.get(reverse("comprobante_revisar", args=[capture.pk]))
+        self.assertContains(review, "Fecha máxima de pago de la primera cuota")
+        self.assertContains(review, "Número de cuotas")
+        self.assertContains(review, 'data-tipo="credito"')
+
+        response = self.client.post(
+            reverse("comprobante_revisar", args=[capture.pk]),
+            {
+                "tipo": MovimientoFinanciero.Tipo.GASTO,
+                "monto": "90.00",
+                "concepto": "Compra fotografiada a crédito",
+                "fecha": purchase_date.isoformat(),
+                "categoria": category.pk,
+                "cuenta": "",
+                "metodo_pago": credit_method.pk,
+                "acreedor_credito": "",
+                "nuevo_acreedor_credito": "Visa comprobante",
+                "numero_cuotas_credito": "3",
+                "fecha_pago": payment_date.isoformat(),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Crédito con Visa comprobante")
+        self.assertContains(response, "3 cuotas")
+        self.assertEqual(MovimientoFinanciero.objects.filter(usuario=self.user).count(), 0)
+
+        response = self.client.post(reverse("comprobante_confirmar", args=[capture.pk]))
+
+        self.assertRedirects(response, reverse("actividad_financiera"))
+        movement = MovimientoFinanciero.objects.get(
+            usuario=self.user,
+            concepto="Compra fotografiada a crédito",
+        )
+        self.assertIsNone(movement.cuenta)
+        self.assertEqual(movement.metodo_pago, credit_method)
+        self.assertEqual(movement.acreedor_credito.nombre, "Visa comprobante")
+        self.assertEqual(movement.fecha_pago, payment_date)
+        self.assertTrue(movement.comprobante.name.endswith("credito.jpg"))
+        debt = Deuda.objects.get(movimiento_origen=movement)
+        self.assertEqual(debt.numero_cuotas, 3)
+        self.assertEqual(debt.pagos.count(), 3)
+        self.assertEqual(debt.pagos.get(cuota_numero=1).fecha, payment_date)
