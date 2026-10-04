@@ -847,13 +847,24 @@ class PresupuestoMensualForm(UserScopedModelForm):
 
         target_categoria = subcategoria or categoria
         cleaned_data["categoria"] = target_categoria
-        if target_categoria and anio and mes and PresupuestoMensual.objects.filter(
-            usuario=self.user,
-            categoria=target_categoria,
-            anio=anio,
-            mes=mes,
-        ).exclude(pk=self.instance.pk).exists():
-            self.add_error("categoria", "Ya existe presupuesto para esa categoría o subcategoría en ese mes.")
+        if target_categoria and anio and mes:
+            period_budgets = PresupuestoMensual.objects.filter(
+                usuario=self.user,
+                anio=anio,
+                mes=mes,
+            ).exclude(pk=self.instance.pk)
+            if period_budgets.filter(categoria=target_categoria).exists():
+                self.add_error("categoria", "Ya existe presupuesto para esa categoría o subcategoría en ese mes.")
+            elif target_categoria.parent_id and period_budgets.filter(categoria=target_categoria.parent).exists():
+                self.add_error(
+                    "subcategoria",
+                    "Ya existe un presupuesto para toda esta categoría. Edítalo o elimínalo antes de crear uno por subcategoría.",
+                )
+            elif not target_categoria.parent_id and period_budgets.filter(categoria__parent=target_categoria).exists():
+                self.add_error(
+                    "categoria",
+                    "Ya existen presupuestos para subcategorías de esta categoría. Edítalos o elimínalos antes de presupuestar el total.",
+                )
         return cleaned_data
 
     def save(self, commit=True):
@@ -1134,9 +1145,17 @@ class CapturaComprobanteForm(forms.ModelForm):
     class Meta:
         model = CapturaComprobante
         fields = ["archivo"]
-        labels = {"archivo": "Foto del comprobante"}
-        help_texts = {"archivo": "Toma una foto o elige una imagen. Máximo 5 MB."}
-        widgets = {"archivo": forms.FileInput(attrs={"accept": "image/*", "capture": "environment", "class": "form-control"})}
+        labels = {"archivo": "Imagen del comprobante"}
+        help_texts = {"archivo": "Puedes tomar una foto o elegir una imagen guardada en Galería, Fotos o Descargas. Máximo 5 MB."}
+        widgets = {
+            "archivo": forms.FileInput(
+                attrs={
+                    "accept": "image/*,.jpg,.jpeg,.png,.webp",
+                    "class": "receipt-file-input",
+                    "data-receipt-file": "",
+                }
+            )
+        }
 
     def clean_archivo(self):
         uploaded = self.cleaned_data["archivo"]

@@ -536,33 +536,102 @@ def resumen_presupuesto(user, fecha):
     items = []
     total_presupuesto = Decimal("0")
     total_usado = Decimal("0")
+    total_proyectado = Decimal("0")
+    hoy = timezone.localdate()
+    dias_mes = calendar.monthrange(fecha.year, fecha.month)[1]
+    if (fecha.year, fecha.month) < (hoy.year, hoy.month):
+        dias_transcurridos = dias_mes
+        dias_restantes = 0
+    elif (fecha.year, fecha.month) > (hoy.year, hoy.month):
+        dias_transcurridos = 0
+        dias_restantes = dias_mes
+    else:
+        dias_transcurridos = hoy.day
+        dias_restantes = max(0, dias_mes - hoy.day + 1)
+    root_budget_ids = {
+        presupuesto.categoria_id
+        for presupuesto in presupuestos
+        if not presupuesto.categoria.parent_id
+    }
+    covered_category_ids = set()
 
     for presupuesto in presupuestos:
         categoria_ids = [presupuesto.categoria_id]
         if not presupuesto.categoria.parent_id:
             categoria_ids.extend(presupuesto.categoria.subcategorias.values_list("pk", flat=True))
+        overlaps_parent = bool(
+            presupuesto.categoria.parent_id
+            and presupuesto.categoria.parent_id in root_budget_ids
+        )
         usado = movimientos.filter(categoria_id__in=categoria_ids).aggregate(total=Sum("monto"))["total"] or Decimal("0")
-        total_presupuesto += presupuesto.monto
-        total_usado += usado
+        if not overlaps_parent:
+            total_presupuesto += presupuesto.monto
+            total_usado += usado
+            covered_category_ids.update(categoria_ids)
         porcentaje = Decimal("0")
         if presupuesto.monto:
             porcentaje = (usado / presupuesto.monto * Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        proyectado = usado
+        if dias_transcurridos and dias_transcurridos < dias_mes:
+            proyectado = (usado / Decimal(dias_transcurridos) * Decimal(dias_mes)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        if not overlaps_parent:
+            total_proyectado += proyectado
+        restante = presupuesto.monto - usado
+        disponible_diario = Decimal("0")
+        if restante > 0 and dias_restantes:
+            disponible_diario = (restante / Decimal(dias_restantes)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        if usado > presupuesto.monto:
+            estado = "excedido"
+        elif proyectado > presupuesto.monto:
+            estado = "riesgo"
+        elif porcentaje >= Decimal("80"):
+            estado = "atencion"
+        else:
+            estado = "bien"
         items.append(
             {
+                "id": presupuesto.pk,
                 "categoria": categoria_grafica(presupuesto.categoria)[0],
+                "detalle_categoria": (
+                    f"{presupuesto.categoria.parent.nombre} > {presupuesto.categoria.nombre}"
+                    if presupuesto.categoria.parent_id else presupuesto.categoria.nombre
+                ),
                 "color": categoria_grafica(presupuesto.categoria)[1],
                 "presupuesto": presupuesto.monto,
                 "usado": usado,
-                "restante": presupuesto.monto - usado,
+                "restante": restante,
                 "porcentaje": porcentaje,
+                "porcentaje_visual": min(porcentaje, Decimal("100")),
+                "proyectado": proyectado,
+                "disponible_diario": disponible_diario,
+                "estado": estado,
+                "solapado": overlaps_parent,
+                "nota": presupuesto.nota,
             }
         )
+
+    total_gastos = movimientos.aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    gasto_sin_presupuesto = movimientos.exclude(categoria_id__in=covered_category_ids).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    cobertura = Decimal("0")
+    if total_gastos:
+        cobertura = ((total_gastos - gasto_sin_presupuesto) / total_gastos * Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    restante_total = total_presupuesto - total_usado
+    disponible_diario_total = Decimal("0")
+    if restante_total > 0 and dias_restantes:
+        disponible_diario_total = (restante_total / Decimal(dias_restantes)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
     return {
         "items": items,
         "total_presupuesto": total_presupuesto,
         "total_usado": total_usado,
-        "total_restante": total_presupuesto - total_usado,
+        "total_restante": restante_total,
+        "total_proyectado": total_proyectado,
+        "total_gastos": total_gastos,
+        "gasto_sin_presupuesto": gasto_sin_presupuesto,
+        "cobertura": cobertura,
+        "dias_restantes": dias_restantes,
+        "disponible_diario": disponible_diario_total,
+        "tiene_solapamientos": any(item["solapado"] for item in items),
     }
 
 
@@ -1072,24 +1141,131 @@ def etiqueta_list(request):
 
 @login_required
 def presupuesto_list(request):
-    form = PresupuestoMensualForm(user=request.user)
+    hoy = timezone.localdate()
+    try:
+        selected_month = int(request.GET.get("mes", hoy.month))
+        selected_year = int(request.GET.get("anio", hoy.year))
+    except (TypeError, ValueError):
+        selected_month, selected_year = hoy.month, hoy.year
+    if not 1 <= selected_month <= 12:
+        selected_month = hoy.month
+    if not 2000 <= selected_year <= hoy.year + 10:
+        selected_year = hoy.year
+    selected_date = hoy.replace(year=selected_year, month=selected_month, day=1)
+    form = PresupuestoMensualForm(user=request.user, initial={"anio": selected_year, "mes": selected_month})
     if request.method == "POST":
         form = PresupuestoMensualForm(request.POST, user=request.user)
         if form.is_valid():
-            assign_user_and_save(form, request.user)
+            budget = assign_user_and_save(form, request.user)
             messages.success(request, "Presupuesto creado.")
-            return redirect("presupuesto_list")
+            return redirect(f"{reverse('presupuesto_list')}?anio={budget.anio}&mes={budget.mes}")
 
-    presupuestos = PresupuestoMensual.objects.filter(usuario=request.user).select_related("categoria__parent")
+    presupuestos = PresupuestoMensual.objects.filter(
+        usuario=request.user,
+        anio=selected_year,
+        mes=selected_month,
+    ).select_related("categoria__parent")
     q = request.GET.get("q", "").strip()
     if q:
         presupuestos = presupuestos.filter(Q(categoria__nombre__icontains=q) | Q(categoria__parent__nombre__icontains=q))
-    page_obj, list_querystring = paginate_queryset(request, presupuestos)
+    summary = resumen_presupuesto(request.user, selected_date)
+    visible_ids = set(presupuestos.values_list("pk", flat=True))
+    summary["items"] = [item for item in summary["items"] if item["id"] in visible_ids]
+    previous_month = selected_month - 1
+    previous_year = selected_year
+    if previous_month == 0:
+        previous_month = 12
+        previous_year -= 1
+    previous_count = PresupuestoMensual.objects.filter(
+        usuario=request.user,
+        anio=previous_year,
+        mes=previous_month,
+    ).count()
+    month_index = selected_year * 12 + selected_month - 1
+    previous_index = month_index - 1
+    next_index = month_index + 1
     return render(
         request,
         "core/presupuesto_list.html",
-        {"form": form, "presupuestos": page_obj, "page_obj": page_obj, "list_querystring": list_querystring, "filters": {"q": q}},
+        {
+            "form": form,
+            "presupuestos": presupuestos,
+            "resumen": summary,
+            "filters": {"q": q, "mes": selected_month, "anio": selected_year},
+            "periodo": selected_date,
+            "previous_count": previous_count,
+            "previous_period": {"mes": previous_index % 12 + 1, "anio": previous_index // 12},
+            "next_period": {"mes": next_index % 12 + 1, "anio": next_index // 12},
+            "chart_data": {
+                "labels": [item["detalle_categoria"] for item in summary["items"] if not item["solapado"]],
+                "usado": [float(item["usado"]) for item in summary["items"] if not item["solapado"]],
+                "limite": [float(item["presupuesto"]) for item in summary["items"] if not item["solapado"]],
+                "proyectado": [float(item["proyectado"]) for item in summary["items"] if not item["solapado"]],
+            },
+        },
     )
+
+
+@login_required
+@require_POST
+def presupuesto_copiar_anterior(request):
+    try:
+        month = int(request.POST.get("mes", ""))
+        year = int(request.POST.get("anio", ""))
+    except (TypeError, ValueError):
+        return HttpResponseBadRequest("Periodo no válido.")
+    if not 1 <= month <= 12 or not 2000 <= year <= timezone.localdate().year + 10:
+        return HttpResponseBadRequest("Periodo no válido.")
+    previous_month = month - 1
+    previous_year = year
+    if previous_month == 0:
+        previous_month = 12
+        previous_year -= 1
+    source = list(
+        PresupuestoMensual.objects.filter(
+            usuario=request.user,
+            anio=previous_year,
+            mes=previous_month,
+        ).select_related("categoria__parent").order_by("categoria__parent_id", "categoria_id")
+    )
+    root_ids = {item.categoria_id for item in source if not item.categoria.parent_id}
+    target_budgets = PresupuestoMensual.objects.filter(
+        usuario=request.user,
+        anio=year,
+        mes=month,
+    )
+    created = 0
+    for item in source:
+        if item.categoria.parent_id and item.categoria.parent_id in root_ids:
+            continue
+        if item.categoria.parent_id:
+            has_overlap = target_budgets.filter(categoria=item.categoria.parent).exists()
+        else:
+            has_overlap = target_budgets.filter(categoria__parent=item.categoria).exists()
+        if has_overlap:
+            continue
+        _budget, was_created = PresupuestoMensual.objects.get_or_create(
+            usuario=request.user,
+            categoria=item.categoria,
+            anio=year,
+            mes=month,
+            defaults={"monto": item.monto, "nota": item.nota},
+        )
+        created += int(was_created)
+        if was_created:
+            registrar_auditoria(
+                request,
+                RegistroAuditoria.Accion.CREAR,
+                _budget,
+                cambios={"origen": "copia_mes_anterior", "monto": str(_budget.monto)},
+            )
+    if created:
+        messages.success(request, f"Se copiaron {created} presupuestos del mes anterior.")
+    elif source:
+        messages.info(request, "Los presupuestos del mes anterior ya estaban copiados.")
+    else:
+        messages.info(request, "El mes anterior no tiene presupuestos para copiar.")
+    return redirect(f"{reverse('presupuesto_list')}?anio={year}&mes={month}")
 
 
 @login_required
@@ -1263,7 +1439,9 @@ def reporte_financiero_pdf(request):
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import mm
-    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from reportlab.graphics.charts.barcharts import VerticalBarChart
+    from reportlab.graphics.shapes import Drawing
+    from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
     hoy = timezone.localdate()
     fecha_inicio = parse_date(request.GET.get("fecha_inicio", "")) or hoy.replace(day=1)
@@ -1290,6 +1468,30 @@ def reporte_financiero_pdf(request):
     pagos_deuda = PagoDeuda.objects.filter(deuda__usuario=request.user, estado=PagoDeuda.Estado.CONFIRMADO, fecha__range=(fecha_inicio, fecha_fin)).aggregate(total=Sum("monto"))["total"] or Decimal("0")
     pagos_aplicados = pagos_deuda if vista == "caja" else Decimal("0")
     margen = ingresos - gastos - pagos_aplicados
+    cuentas_reporte = saldos_por_cuenta(request.user)
+    saldo_disponible = sum((item["saldo"] for item in cuentas_reporte), Decimal("0"))
+    patrimonio_neto = saldo_disponible - saldo_deudas
+
+    duracion = fecha_fin - fecha_inicio
+    fecha_fin_anterior = fecha_inicio - timedelta(days=1)
+    fecha_inicio_anterior = fecha_fin_anterior - duracion
+    movimientos_anteriores = MovimientoFinanciero.objects.filter(
+        usuario=request.user,
+        estado=MovimientoFinanciero.Estado.CONFIRMADO,
+        fecha__range=(fecha_inicio_anterior, fecha_fin_anterior),
+    )
+    ingresos_anteriores = movimientos_anteriores.filter(tipo=MovimientoFinanciero.Tipo.INGRESO).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    gastos_anteriores_qs = movimientos_anteriores.filter(tipo=MovimientoFinanciero.Tipo.GASTO)
+    if vista == "caja":
+        gastos_anteriores_qs = gastos_anteriores_qs.exclude(metodo_pago__tipo=MetodoPago.Tipo.CREDITO)
+    gastos_anteriores = gastos_anteriores_qs.aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    pagos_anteriores = PagoDeuda.objects.filter(
+        deuda__usuario=request.user,
+        estado=PagoDeuda.Estado.CONFIRMADO,
+        fecha__range=(fecha_inicio_anterior, fecha_fin_anterior),
+    ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    resultado_anterior = ingresos_anteriores - gastos_anteriores - (pagos_anteriores if vista == "caja" else Decimal("0"))
+    tasa_resultado = (margen / ingresos * Decimal("100")).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP) if ingresos else Decimal("0")
 
     recurrentes_gasto = [item for item in recurrentes if item.tipo == MovimientoFinanciero.Tipo.GASTO]
     inicio_proximas_cuotas = max(hoy, fecha_fin)
@@ -1306,9 +1508,15 @@ def reporte_financiero_pdf(request):
         ),
         Decimal("0"),
     )
+    cuotas_proximas_detalle = sorted(
+        [item for item in cuotas_proximas_detalle if item["estado"] == PagoDeuda.Estado.PENDIENTE],
+        key=lambda item: (item["fecha"], item["cuota_numero"] or 0),
+    )
+    presupuesto_resumen = None
     presupuesto_reporte = []
     if fecha_inicio.year == fecha_fin.year and fecha_inicio.month == fecha_fin.month:
-        presupuesto_reporte = resumen_presupuesto(request.user, fecha_inicio)["items"]
+        presupuesto_resumen = resumen_presupuesto(request.user, fecha_inicio)
+        presupuesto_reporte = presupuesto_resumen["items"]
     deuda_prioritaria_reporte = Deuda.objects.filter(
         usuario=request.user,
         estado=Deuda.Estado.ACTIVA,
@@ -1332,61 +1540,221 @@ def reporte_financiero_pdf(request):
         presupuestos=presupuesto_reporte,
         deuda_prioritaria=deuda_prioritaria_reporte,
     )
+    deudas_reporte = Deuda.objects.filter(
+        usuario=request.user,
+        estado=Deuda.Estado.ACTIVA,
+    ).select_related("categoria__parent").order_by("fecha_vencimiento", "acreedor")
+    proyeccion_reporte = proyeccion_recurrente(request.user, hoy, saldo_inicial=saldo_disponible)
+    movimientos_destacados = movimientos.select_related("categoria__parent", "cuenta").order_by("-monto", "-fecha")[:12]
 
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=18 * mm, leftMargin=18 * mm, topMargin=18 * mm, bottomMargin=18 * mm, title="Informe financiero personal")
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=16 * mm,
+        leftMargin=16 * mm,
+        topMargin=16 * mm,
+        bottomMargin=17 * mm,
+        title="Informe financiero personal",
+        author="Gestor de Finanzas Personales",
+    )
     styles = getSampleStyleSheet()
-    styles.add(ParagraphStyle(name="ReportTitle", parent=styles["Title"], textColor=colors.HexColor("#167f75"), fontSize=20, leading=24, alignment=TA_CENTER, spaceAfter=10))
-    styles.add(ParagraphStyle(name="Section", parent=styles["Heading2"], textColor=colors.HexColor("#1b2431"), fontSize=13, leading=16, spaceBefore=12, spaceAfter=7))
-    styles.add(ParagraphStyle(name="SmallMuted", parent=styles["BodyText"], textColor=colors.HexColor("#687588"), fontSize=8, leading=11))
+    styles.add(ParagraphStyle(name="ReportTitle", parent=styles["Title"], textColor=colors.HexColor("#167f75"), fontSize=21, leading=25, alignment=TA_CENTER, spaceAfter=8))
+    styles.add(ParagraphStyle(name="Section", parent=styles["Heading2"], textColor=colors.HexColor("#1b2431"), fontSize=13, leading=16, spaceBefore=11, spaceAfter=6))
+    styles.add(ParagraphStyle(name="BodyCompact", parent=styles["BodyText"], textColor=colors.HexColor("#334155"), fontSize=9, leading=13))
+    styles.add(ParagraphStyle(name="SmallMuted", parent=styles["BodyText"], textColor=colors.HexColor("#687588"), fontSize=7.5, leading=10))
+    styles.add(ParagraphStyle(name="Callout", parent=styles["BodyText"], textColor=colors.HexColor("#164e63"), backColor=colors.HexColor("#ecfeff"), borderColor=colors.HexColor("#a5f3fc"), borderWidth=.5, borderPadding=8, fontSize=9, leading=13, spaceAfter=8))
+
+    def report_table(data, widths, header_color="#e6f7f5", aligns=None):
+        table = Table(data, colWidths=widths, repeatRows=1, hAlign="LEFT")
+        commands = [
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(header_color)),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#1f5f59")),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 7.7),
+            ("LEADING", (0, 0), (-1, -1), 10),
+            ("GRID", (0, 0), (-1, -1), .3, colors.HexColor("#d9e2e8")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
+        ]
+        for column, alignment in enumerate(aligns or []):
+            commands.append(("ALIGN", (column, 1), (column, -1), alignment))
+        table.setStyle(TableStyle(commands))
+        return table
+
+    user_name = request.user.get_full_name().strip() or request.user.username
     story = [
         Paragraph("Informe financiero personal", styles["ReportTitle"]),
-        Paragraph(f"{fecha_inicio.strftime('%d/%m/%Y')} al {fecha_fin.strftime('%d/%m/%Y')} - lectura de {'flujo de caja' if vista == 'caja' else 'consumo'} - generado el {hoy.strftime('%d/%m/%Y')}", styles["SmallMuted"]),
-        Spacer(1, 5 * mm),
+        Paragraph(escape(user_name), ParagraphStyle(name="ReportUser", parent=styles["BodyCompact"], alignment=TA_CENTER, textColor=colors.HexColor("#1b2431"))),
+        Paragraph(f"Periodo: {fecha_inicio.strftime('%d/%m/%Y')} al {fecha_fin.strftime('%d/%m/%Y')} | Lectura: {'flujo de caja' if vista == 'caja' else 'consumo'} | Generado: {hoy.strftime('%d/%m/%Y')}", styles["SmallMuted"]),
+        Spacer(1, 4 * mm),
     ]
     resumen = [
-        ["Ingresos", "Gastos", "Pagos de deuda" if vista == "caja" else "Pagos (informativos)", "Resultado"],
+        ["Ingresos", "Gastos", "Pagos de deuda" if vista == "caja" else "Pagos informativos", "Resultado"],
         [f"{ingresos:.2f}", f"{gastos:.2f}", f"{pagos_deuda:.2f}", f"{margen:.2f}"],
     ]
-    tabla = Table(resumen, colWidths=[42 * mm] * 4)
-    tabla.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e6f7f5")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#167f75")),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-        ("GRID", (0, 0), (-1, -1), .35, colors.HexColor("#d9e2e8")), ("TOPPADDING", (0, 0), (-1, -1), 8), ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-    ]))
-    story.extend([tabla, Paragraph("Gastos recurrentes", styles["Section"])])
-    recurrente_data = [["Concepto", "Categoria", "Dia", "Monto mensual"]]
-    for item in recurrentes_gasto:
-        categoria = str(item.categoria) if item.categoria else "Sin categoria"
-        recurrente_data.append([
-            Paragraph(escape(item.concepto), styles["SmallMuted"]),
-            Paragraph(escape(categoria), styles["SmallMuted"]),
-            str(item.dia_mes),
-            f"{item.monto:.2f}",
-        ])
-    if len(recurrente_data) == 1:
-        recurrente_data.append(["No hay gastos recurrentes activos", "", "", "0.00"])
-    tabla_recurrentes = Table(recurrente_data, colWidths=[60 * mm, 55 * mm, 18 * mm, 34 * mm], repeatRows=1)
-    tabla_recurrentes.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f1f5f9")), ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("GRID", (0, 0), (-1, -1), .3, colors.HexColor("#d9e2e8")), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("FONTSIZE", (0, 0), (-1, -1), 8), ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
-    story.extend([tabla_recurrentes, Paragraph("Donde reducir", styles["Section"])])
-    categoria_data = [["Categoria", "Gasto", "% del total"]]
+    summary_table = report_table(resumen, [44.5 * mm] * 4, aligns=["CENTER"] * 4)
+    summary_table.setStyle(TableStyle([("FONTSIZE", (0, 1), (-1, 1), 12), ("FONTNAME", (0, 1), (-1, 1), "Helvetica-Bold")]))
+    story.append(summary_table)
+
+    change = margen - resultado_anterior
+    direction = "mejoró" if change >= 0 else "disminuyó"
+    top_text = f" La categoría con mayor gasto fue {gastos_categoria[0]['categoria']} ({Decimal(str(gastos_categoria[0]['total'])):.2f})." if gastos_categoria else ""
+    story.extend([
+        Paragraph("Lectura ejecutiva", styles["Section"]),
+        Paragraph(
+            escape(
+                f"El resultado del periodo fue {margen:.2f}, equivalente al {tasa_resultado:.1f}% de los ingresos. "
+                f"Frente al periodo anterior ({fecha_inicio_anterior:%d/%m/%Y} a {fecha_fin_anterior:%d/%m/%Y}), "
+                f"el resultado {direction} en {abs(change):.2f}.{top_text}"
+            ),
+            styles["Callout"],
+        ),
+    ])
+
+    chart_values = [
+        [float(ingresos), float(gastos), float(pagos_deuda), float(margen)],
+        [float(ingresos_anteriores), float(gastos_anteriores), float(pagos_anteriores), float(resultado_anterior)],
+    ]
+    drawing = Drawing(178 * mm, 58 * mm)
+    chart = VerticalBarChart()
+    chart.x, chart.y, chart.width, chart.height = 14 * mm, 12 * mm, 158 * mm, 39 * mm
+    chart.data = chart_values
+    chart.categoryAxis.categoryNames = ["Ingresos", "Gastos", "Deudas", "Resultado"]
+    flat_values = [value for series in chart_values for value in series]
+    chart.valueAxis.valueMin = float(min(Decimal("0"), Decimal(str(min(flat_values or [0])))) * Decimal("1.15"))
+    chart.valueAxis.valueMax = float(max(Decimal("1"), Decimal(str(max(flat_values or [1])))) * Decimal("1.15"))
+    chart.bars[0].fillColor = colors.HexColor("#25a194")
+    chart.bars[1].fillColor = colors.HexColor("#cbd5e1")
+    chart.categoryAxis.labels.fontSize = 7
+    chart.valueAxis.labels.fontSize = 6.5
+    chart.barSpacing = 2
+    drawing.add(chart)
+    story.extend([
+        drawing,
+        Paragraph("Verde: periodo seleccionado. Gris: periodo anterior de igual duración.", styles["SmallMuted"]),
+        Paragraph("Posición actual", styles["Section"]),
+    ])
+    position_data = [
+        ["Dinero disponible", "Deuda activa", "Patrimonio neto", "Próximas cuotas (30 días)"],
+        [f"{saldo_disponible:.2f}", f"{saldo_deudas:.2f}", f"{patrimonio_neto:.2f}", f"{cuotas_proximas:.2f}"],
+    ]
+    story.append(report_table(position_data, [44.5 * mm] * 4, aligns=["CENTER"] * 4))
+
+    account_data = [["Cuenta", "Saldo actual"]]
+    for account in cuentas_reporte:
+        account_data.append([Paragraph(escape(account["nombre"]), styles["SmallMuted"]), f"{account['saldo']:.2f}"])
+    if len(account_data) == 1:
+        account_data.append(["Sin cuentas activas", "0.00"])
+    story.extend([Paragraph("Saldos por cuenta", styles["Section"]), report_table(account_data, [120 * mm, 58 * mm], aligns=["LEFT", "RIGHT"])])
+
+    story.append(PageBreak())
+    story.append(Paragraph("Presupuestos y composición del gasto", styles["Section"]))
+    if presupuesto_resumen is not None:
+        budget_intro = (
+            f"Planificado: {presupuesto_resumen['total_presupuesto']:.2f}. Gastado: {presupuesto_resumen['total_usado']:.2f}. "
+            f"Disponible: {presupuesto_resumen['total_restante']:.2f}. Sin cobertura: {presupuesto_resumen['gasto_sin_presupuesto']:.2f}."
+        )
+        story.append(Paragraph(escape(budget_intro), styles["BodyCompact"]))
+        budget_data = [["Categoría", "Límite", "Gastado", "Disponible", "Proyección", "Estado"]]
+        for item in presupuesto_reporte:
+            if item.get("solapado"):
+                continue
+            budget_data.append([
+                Paragraph(escape(item["detalle_categoria"]), styles["SmallMuted"]),
+                f"{item['presupuesto']:.2f}",
+                f"{item['usado']:.2f}",
+                f"{item['restante']:.2f}",
+                f"{item['proyectado']:.2f}",
+                item["estado"].capitalize(),
+            ])
+        if len(budget_data) == 1:
+            budget_data.append(["Sin presupuestos", "0.00", "0.00", "0.00", "0.00", "-"])
+        story.append(report_table(budget_data, [55 * mm, 24 * mm, 24 * mm, 26 * mm, 26 * mm, 23 * mm], aligns=["LEFT", "RIGHT", "RIGHT", "RIGHT", "RIGHT", "CENTER"]))
+    else:
+        story.append(Paragraph("El rango seleccionado abarca más de un mes; el detalle presupuestario se muestra únicamente para periodos mensuales.", styles["BodyCompact"]))
+
+    category_data = [["Categoría", "Gasto", "% del total"]]
     for item in gastos_categoria:
         total = Decimal(str(item["total"]))
-        porcentaje = total / gastos * Decimal("100") if gastos else Decimal("0")
-        categoria_data.append([Paragraph(escape(item["categoria"]), styles["SmallMuted"]), f"{total:.2f}", f"{porcentaje:.1f}%"])
-    if len(categoria_data) == 1:
-        categoria_data.append(["Sin gastos en el periodo", "0.00", "0.0%"])
-    tabla_categorias = Table(categoria_data, colWidths=[95 * mm, 36 * mm, 36 * mm], repeatRows=1)
-    tabla_categorias.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#fef3e2")), ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("GRID", (0, 0), (-1, -1), .3, colors.HexColor("#d9e2e8")), ("FONTSIZE", (0, 0), (-1, -1), 8), ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
-    story.extend([tabla_categorias, Paragraph("Sugerencias y mejoras", styles["Section"])])
-    for numero, sugerencia in enumerate(sugerencias, 1):
-        impacto = ""
-        if sugerencia["impacto"] is not None:
-            impacto = f' Monto orientativo: {sugerencia["impacto"]:.2f}.'
-        texto = f'{sugerencia["titulo"]}. {sugerencia["detalle"]} Acción: {sugerencia["accion"]}.{impacto}'
-        story.append(Paragraph(f"{numero}. {escape(texto)}", styles["BodyText"]))
-        story.append(Spacer(1, 2 * mm))
-    story.extend([Paragraph("Situacion de deuda", styles["Section"]), Paragraph(f"Saldo activo: {saldo_deudas:.2f}. Pagado durante el periodo: {pagos_deuda:.2f}.", styles["BodyText"]), Spacer(1, 5 * mm), Paragraph("Las sugerencias son orientativas y se basan unicamente en los datos registrados en el sistema.", styles["SmallMuted"])])
+        percentage = total / gastos * Decimal("100") if gastos else Decimal("0")
+        category_data.append([Paragraph(escape(item["categoria"]), styles["SmallMuted"]), f"{total:.2f}", f"{percentage:.1f}%"])
+    if len(category_data) == 1:
+        category_data.append(["Sin gastos en el periodo", "0.00", "0.0%"])
+    story.extend([Paragraph("Gastos por categoría", styles["Section"]), report_table(category_data, [105 * mm, 38 * mm, 35 * mm], aligns=["LEFT", "RIGHT", "RIGHT"])])
+
+    movement_data = [["Fecha", "Tipo", "Concepto", "Categoría", "Monto"]]
+    for movement in movimientos_destacados:
+        category = categoria_grafica(movement.categoria)[0]
+        movement_data.append([
+            movement.fecha.strftime("%d/%m/%Y"),
+            movement.get_tipo_display(),
+            Paragraph(escape(movement.concepto), styles["SmallMuted"]),
+            Paragraph(escape(category), styles["SmallMuted"]),
+            f"{movement.monto:.2f}",
+        ])
+    if len(movement_data) == 1:
+        movement_data.append(["-", "-", "Sin movimientos", "-", "0.00"])
+    story.extend([Paragraph("Movimientos de mayor importe", styles["Section"]), report_table(movement_data, [25 * mm, 23 * mm, 60 * mm, 45 * mm, 25 * mm], aligns=["CENTER", "CENTER", "LEFT", "LEFT", "RIGHT"])])
+
+    story.append(PageBreak())
+    story.append(Paragraph("Deudas y próximos compromisos", styles["Section"]))
+    debt_data = [["Acreedor", "Concepto", "Saldo", "Tasa", "Vencimiento"]]
+    for debt in deudas_reporte:
+        debt_data.append([
+            Paragraph(escape(debt.acreedor), styles["SmallMuted"]),
+            Paragraph(escape(debt.concepto), styles["SmallMuted"]),
+            f"{debt.saldo_actual:.2f}",
+            f"{debt.tasa_interes_anual:.2f}%" if debt.tasa_interes_anual is not None else "Sin tasa",
+            debt.fecha_vencimiento.strftime("%d/%m/%Y") if debt.fecha_vencimiento else "Sin fecha",
+        ])
+    if len(debt_data) == 1:
+        debt_data.append(["Sin deudas activas", "", "0.00", "", ""])
+    story.append(report_table(debt_data, [40 * mm, 62 * mm, 26 * mm, 24 * mm, 26 * mm], aligns=["LEFT", "LEFT", "RIGHT", "RIGHT", "CENTER"]))
+
+    upcoming_data = [["Vence", "Cuota", "Deuda", "Monto"]]
+    for item in cuotas_proximas_detalle[:15]:
+        upcoming_data.append([
+            item["fecha"].strftime("%d/%m/%Y"),
+            str(item["cuota_numero"] or "-") ,
+            Paragraph(escape(item["deuda"].concepto), styles["SmallMuted"]),
+            f"{item['monto']:.2f}",
+        ])
+    if len(upcoming_data) == 1:
+        upcoming_data.append(["-", "-", "Sin cuotas en los próximos 30 días", "0.00"])
+    story.extend([Paragraph("Próximos pagos - 30 días", styles["Section"]), report_table(upcoming_data, [32 * mm, 25 * mm, 91 * mm, 30 * mm], aligns=["CENTER", "CENTER", "LEFT", "RIGHT"])])
+
+    projection_data = [["Mes", "Ingresos recurrentes", "Gastos recurrentes", "Cuotas", "Saldo proyectado"]]
+    for item in proyeccion_reporte:
+        projection_data.append([item["mes"], f"{item['ingresos']:.2f}", f"{item['gastos']:.2f}", f"{item['deudas']:.2f}", f"{item['saldo']:.2f}"])
+    story.extend([Paragraph("Escenario registrado - próximos 3 meses", styles["Section"]), report_table(projection_data, [28 * mm, 40 * mm, 40 * mm, 30 * mm, 40 * mm], aligns=["CENTER", "RIGHT", "RIGHT", "RIGHT", "RIGHT"])])
+
+    recurrent_data = [["Concepto", "Categoría", "Día", "Monto mensual"]]
+    for item in recurrentes_gasto:
+        category = str(item.categoria) if item.categoria else "Sin categoría"
+        recurrent_data.append([Paragraph(escape(item.concepto), styles["SmallMuted"]), Paragraph(escape(category), styles["SmallMuted"]), str(item.dia_mes), f"{item.monto:.2f}"])
+    if len(recurrent_data) == 1:
+        recurrent_data.append(["Sin gastos recurrentes activos", "", "", "0.00"])
+    story.extend([Paragraph("Gastos recurrentes activos", styles["Section"]), report_table(recurrent_data, [65 * mm, 55 * mm, 20 * mm, 38 * mm], aligns=["LEFT", "LEFT", "CENTER", "RIGHT"])])
+
+    story.append(PageBreak())
+    story.append(Paragraph("Recomendaciones prioritarias", styles["Section"]))
+    for number, suggestion in enumerate(sugerencias, 1):
+        impact = f" Monto orientativo: {suggestion['impacto']:.2f}." if suggestion["impacto"] is not None else ""
+        text_value = f"{suggestion['titulo']}. {suggestion['detalle']} Acción: {suggestion['accion']}.{impact}"
+        story.append(Paragraph(f"<b>{number}.</b> {escape(text_value)}", styles["BodyCompact"]))
+        story.append(Spacer(1, 2.5 * mm))
+    story.extend([
+        Paragraph("Alcance del informe", styles["Section"]),
+        Paragraph(
+            "Este informe usa únicamente movimientos confirmados y datos registrados en el sistema. "
+            "La proyección no predice operaciones ocasionales: considera saldos actuales, movimientos recurrentes activos y cuotas pendientes. "
+            "Las recomendaciones son orientativas y no sustituyen asesoría financiera profesional.",
+            styles["SmallMuted"],
+        ),
+    ])
 
     def pie_pagina(canvas, document):
         canvas.saveState()
@@ -1712,9 +2080,9 @@ def dashboard(request):
             "colors": [item["color"] for item in ingresos_categoria],
         },
         "presupuesto": {
-            "labels": [item["categoria"] for item in presupuesto["items"]],
-            "usado": [float(item["usado"]) for item in presupuesto["items"]],
-            "presupuesto": [float(item["presupuesto"]) for item in presupuesto["items"]],
+            "labels": [item["detalle_categoria"] for item in presupuesto["items"] if not item["solapado"]],
+            "usado": [float(item["usado"]) for item in presupuesto["items"] if not item["solapado"]],
+            "presupuesto": [float(item["presupuesto"]) for item in presupuesto["items"] if not item["solapado"]],
         },
         "cuentas": {
             "labels": [item["nombre"] for item in cuentas_resumen],
@@ -2294,6 +2662,11 @@ def analisis_financiero(request):
                 "Resultado de caja" if vista == "caja" else "Resultado de consumo",
             ],
             "values": [float(ingresos), float(gastos), float(pagos_total), float(posicion_neta)],
+        },
+        "comparacion": {
+            "labels": ["Ingresos", "Gastos", "Pagos de deuda", "Resultado"],
+            "actual": [float(ingresos), float(gastos), float(pagos_total), float(posicion_neta)],
+            "anterior": [float(ingresos_anteriores), float(gastos_anteriores), float(pagos_anteriores), float(resultado_anterior)],
         },
         "proyeccion": {
             "labels": [item["mes"] for item in proyeccion],
@@ -3447,8 +3820,31 @@ def actividad_financiera(request):
             entries.append({"fecha": transfer.fecha, "creado": transfer.creado, "tipo": "transferencia", "icono": "swap_horiz", "titulo": "Transferencia", "detalle": f"{transfer.cuenta_origen.nombre} → {transfer.cuenta_destino.nombre}", "estado": "Confirmada", "monto": transfer.monto, "url": reverse("cuenta_transferir")})
     if kind in {"todos", "deuda"}:
         for payment in payments:
-            entries.append({"fecha": payment.fecha, "creado": payment.creado, "tipo": "deuda", "icono": "receipt_long", "titulo": f"Pago · {payment.deuda.acreedor}", "detalle": payment.deuda.concepto, "estado": payment.get_estado_display(), "monto": -payment.monto, "url": reverse("deuda_list")})
-    entries.sort(key=lambda item: (item["fecha"], item["creado"]), reverse=True)
+            pending = payment.estado == PagoDeuda.Estado.PENDIENTE
+            installment = f"Cuota {payment.cuota_numero}" if payment.cuota_numero else "Pago"
+            entries.append({
+                "fecha": payment.fecha,
+                "creado": payment.creado,
+                "tipo": "deuda",
+                "icono": "event_upcoming" if pending else "receipt_long",
+                "titulo": f"{installment} · {payment.deuda.acreedor}",
+                "detalle": payment.deuda.concepto,
+                "estado": "Vencido" if pending and payment.fecha < timezone.localdate() else payment.get_estado_display(),
+                "monto": -payment.monto,
+                "url": reverse("deuda_list"),
+                "es_pago_pendiente": pending,
+                "grupo": "Pagos por realizar" if pending else "Actividad realizada",
+            })
+    for entry in entries:
+        entry.setdefault("es_pago_pendiente", False)
+        entry.setdefault("grupo", "Actividad realizada")
+    entries.sort(
+        key=lambda item: (
+            0 if item["es_pago_pendiente"] else 1,
+            item["fecha"].toordinal() if item["es_pago_pendiente"] else -item["fecha"].toordinal(),
+            item["creado"].timestamp() if item["es_pago_pendiente"] else -item["creado"].timestamp(),
+        )
+    )
     page_obj, querystring = paginate_queryset(request, entries, 25)
     return render(request, "core/actividad_financiera.html", {"page_obj": page_obj, "list_querystring": querystring, "filtros": {"q": search, "tipo": kind, "desde": request.GET.get("desde", ""), "hasta": request.GET.get("hasta", "")}})
 

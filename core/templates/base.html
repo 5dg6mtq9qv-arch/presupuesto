@@ -988,6 +988,37 @@
     }
     .budget-guide > .material-symbols-outlined { color: var(--primary); font-size: 26px; }
     .budget-guide p { margin-top: 3px; color: var(--muted); line-height: 1.45; }
+    .budget-period-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow); padding: 14px 16px; }
+    .budget-period-bar h2 { margin: 1px 0 0; font-size: 20px; text-transform: capitalize; }
+    .budget-period-form { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+    .budget-period-form select { width: 150px; }
+    .budget-period-form input { width: 100px; }
+    .budget-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .budget-actions { justify-content: flex-end; }
+    .budget-layout { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(340px, .8fr); gap: 18px; align-items: start; }
+    .budget-envelope-list { display: grid; gap: 12px; }
+    .budget-envelope { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); padding: 15px; }
+    .budget-envelope.riesgo, .budget-envelope.atencion { border-color: #fed7aa; background: #fffaf3; }
+    .budget-envelope.excedido { border-color: #fecaca; background: #fff7f7; }
+    .budget-envelope.is-overlap { opacity: .72; border-style: dashed; }
+    .budget-envelope-head, .budget-envelope-head > div, .budget-envelope-values, .budget-envelope-foot { display: flex; align-items: center; gap: 9px; }
+    .budget-envelope-head { justify-content: space-between; }
+    .budget-color { width: 11px; height: 11px; flex: 0 0 auto; border-radius: 999px; background: var(--budget-color); }
+    .budget-envelope-values { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 14px; }
+    .budget-envelope-values span { display: grid; gap: 3px; }
+    .budget-envelope-values small, .budget-envelope-foot { color: var(--muted); font-size: 11px; }
+    .budget-progress { overflow: hidden; height: 8px; margin: 13px 0 8px; border-radius: 999px; background: #e8eef2; }
+    .budget-progress span { display: block; height: 100%; border-radius: inherit; background: var(--primary); }
+    .budget-envelope.riesgo .budget-progress span, .budget-envelope.atencion .budget-progress span { background: var(--warning); }
+    .budget-envelope.excedido .budget-progress span { background: var(--danger); }
+    .budget-envelope-foot { justify-content: space-between; flex-wrap: wrap; }
+    .calculation-details > summary { display: flex; align-items: center; justify-content: space-between; gap: 14px; cursor: pointer; list-style: none; }
+    .calculation-details > summary::-webkit-details-marker { display: none; }
+    .calculation-details > summary strong, .calculation-details > summary small { display: block; }
+    .calculation-details > summary small { margin-top: 4px; color: var(--muted); }
+    .calculation-details > summary .material-symbols-outlined { transition: transform .18s ease; }
+    .calculation-details[open] > summary { margin-bottom: 16px; }
+    .calculation-details[open] > summary .material-symbols-outlined { transform: rotate(180deg); }
 
     .btn-icon {
       width: 38px;
@@ -1471,6 +1502,10 @@
       min-height: 70px; border-bottom: 1px solid var(--line); color: var(--text); padding: 12px 4px;
     }
     .activity-item:hover { color: var(--text); background: var(--surface-soft); }
+    .activity-item.is-upcoming { border-left: 3px solid var(--primary); padding-left: 10px; }
+    .activity-group-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 8px 0 2px; padding: 11px 4px 7px; border-bottom: 1px solid var(--line); }
+    .activity-group-heading span { font-size: 12px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+    .activity-group-heading small { color: var(--muted); }
     .activity-icon { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 13px; background: #eef2f7; color: var(--slate); }
     .activity-icon.ingreso { color: #15803d; background: #dcfce7; }
     .activity-icon.gasto, .activity-icon.deuda, .activity-icon.vencimiento { color: #b91c1c; background: #fee2e2; }
@@ -1490,6 +1525,18 @@
     .receipt-upload { max-width: 680px; text-align: center; }
     .receipt-upload .form-grid { text-align: left; }
     .receipt-camera { width: 72px; height: 72px; display: grid; place-items: center; margin: 0 auto 12px; border-radius: 22px; color: var(--primary); background: var(--primary-soft); font-size: 36px; }
+    .receipt-file-input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none; }
+    .receipt-source-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 22px; }
+    .receipt-source-option { min-height: 112px; display: flex; align-items: center; gap: 13px; border: 1px solid var(--line-strong); border-radius: 14px; background: var(--surface); color: var(--text); cursor: pointer; padding: 16px; text-align: left; font: inherit; }
+    .receipt-source-option:hover { border-color: var(--primary); background: var(--primary-soft); }
+    .receipt-source-option > .material-symbols-outlined { width: 44px; height: 44px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 12px; background: var(--primary-soft); color: var(--primary); font-size: 25px; }
+    .receipt-source-option strong, .receipt-source-option small { display: block; }
+    .receipt-source-option small { margin-top: 5px; color: var(--muted); line-height: 1.35; }
+    .receipt-local-preview { display: flex; align-items: center; gap: 13px; margin-top: 18px; border: 1px solid #b8e3de; border-radius: 13px; background: var(--primary-soft); padding: 10px; text-align: left; }
+    .receipt-local-preview[hidden] { display: none; }
+    .receipt-local-preview img { width: 70px; height: 70px; flex: 0 0 auto; border-radius: 9px; object-fit: cover; background: #fff; }
+    .receipt-local-preview strong, .receipt-local-preview small { display: block; overflow-wrap: anywhere; }
+    .receipt-local-preview small { margin-top: 4px; color: var(--muted); }
     .receipt-review { display: grid; grid-template-columns: minmax(260px, .75fr) minmax(420px, 1.25fr); gap: 18px; align-items: start; }
     .receipt-preview { display: block; width: 100%; max-height: 72vh; object-fit: contain; border-radius: 12px; background: #eef2f7; }
     .confirm-card { max-width: 680px; display: flex; align-items: flex-start; gap: 16px; }
@@ -1542,6 +1589,10 @@
       .dashboard-grid, .form-grid, .status-list, .recommendations-grid { grid-template-columns: 1fr; }
       .budget-guide { grid-template-columns: auto minmax(0, 1fr); }
       .budget-guide .btn { grid-column: 1 / -1; }
+      .budget-metrics, .budget-layout { grid-template-columns: 1fr; }
+      .budget-period-bar { flex-wrap: wrap; }
+      .budget-period-form { width: 100%; margin-left: 0; }
+      .budget-period-form select, .budget-period-form input { min-width: 0; flex: 1; }
       .form-panel { padding: 20px; }
       .recurring-mode-selector { grid-template-columns: 1fr; }
       .form-actions .btn { flex: 1 1 150px; }
@@ -1584,6 +1635,11 @@
     }
 
     @media (max-width: 640px) {
+      .budget-period-form { display: grid; grid-template-columns: 1fr 90px auto; }
+      .budget-envelope-values { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .budget-envelope-values strong { font-size: 12px; overflow-wrap: anywhere; }
+      .receipt-source-actions { grid-template-columns: 1fr; }
+      .receipt-source-option { min-height: 82px; }
       .debt-page-actions { align-items: stretch; }
       .debt-page-actions > .btn { width: 100%; }
       .debt-filter-heading, .debt-card-header { flex-direction: column; }

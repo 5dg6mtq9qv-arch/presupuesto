@@ -34,9 +34,9 @@
     <p class="mb-0 text-muted">Patrimonio neto después de todas las deudas activas: <strong>{{ patrimonio_neto }}</strong>.</p>
   </div>
   <div class="wallet-actions">
-    <a class="btn btn-light" href="{% url 'reporte_financiero_csv' %}">
-      <span class="material-symbols-outlined">download</span>
-      <span>Descargar reporte</span>
+    <a class="btn btn-light" href="{% url 'reporte_financiero_pdf' %}?fecha_inicio={{ hoy|date:'Y-m-01' }}&fecha_fin={{ hoy|date:'Y-m-d' }}&vista=caja">
+      <span class="material-symbols-outlined">picture_as_pdf</span>
+      <span>Informe PDF</span>
     </a>
     <a class="btn btn-primary" href="{% url 'movimiento_ingreso_create' %}">
       <span class="material-symbols-outlined">add</span>
@@ -107,13 +107,8 @@
 </section>
 {% endif %}
 
-<section class="panel">
-  <div class="panel-heading">
-    <div>
-      <h2>Cómo se calcula</h2>
-      <p class="muted mb-0">Separa lo que tienes hoy del resultado generado durante el mes.</p>
-    </div>
-  </div>
+<details class="panel calculation-details">
+  <summary><span><strong>Cómo se calculan estos valores</strong><small>Disponible, patrimonio, margen, deudas y resultado proyectado</small></span><span class="material-symbols-outlined">expand_more</span></summary>
   <div class="table-wrap">
     <table class="table table-hover align-middle mb-0">
       <thead>
@@ -157,28 +152,7 @@
       </tbody>
     </table>
   </div>
-</section>
-
-<section class="panel">
-  <div class="panel-heading">
-    <div>
-      <h2>Lectura rápida</h2>
-      <p class="muted mb-0">Indicadores para entender si el mes se mantiene dentro del presupuesto.</p>
-    </div>
-  </div>
-  <div class="status-list">
-    <span><strong>{{ ingresos }}</strong> ingresos registrados</span>
-    <span><strong>{{ gastos }}</strong> gastos reales acumulados</span>
-    <span><strong>{{ margen }}</strong> margen antes de deudas</span>
-    <span><strong>{{ cuotas_deuda_mes }}</strong> cuotas pendientes del mes</span>
-    <span><strong>{{ pagos_mes }}</strong> pagado a deudas este mes</span>
-    <span><strong>{{ saldo_deudas }}</strong> saldo total pendiente</span>
-    <span><strong>{{ saldo_disponible }}</strong> disponible hoy</span>
-    <span><strong>{{ patrimonio_neto }}</strong> patrimonio neto</span>
-    <span><strong>{{ posicion_neta }}</strong> resultado proyectado del mes</span>
-    <span><strong>{{ presupuesto.total_usado }}</strong> usado de presupuesto</span>
-  </div>
-</section>
+</details>
 
 <div class="dashboard-grid">
   <section class="panel chart-panel chart-panel-wide">
@@ -196,44 +170,12 @@
   <section class="panel chart-panel">
     <div class="panel-heading">
       <div>
-        <h2>Balance del mes</h2>
-        <p class="muted mb-0">Ingresos, gastos reales, cuotas y resultado proyectado del mes.</p>
+        <h2>¿En qué se fue el dinero?</h2>
+        <p class="muted mb-0">Gastos confirmados del mes, ordenados de mayor a menor.</p>
       </div>
     </div>
     <div class="chart-box chart-box-small">
-      <canvas id="balanceGeneralChart"></canvas>
-    </div>
-  </section>
-
-  {% if user.is_staff %}
-    <section class="panel chart-panel">
-      <div class="panel-heading">
-        <div>
-          <h2>Tareas</h2>
-          <p class="muted mb-0">Pendientes, trabajando, finalizadas y canceladas.</p>
-        </div>
-      </div>
-      <div class="chart-box chart-box-small">
-        <canvas id="tareasChart"></canvas>
-      </div>
-      <div class="status-list">
-        <span><strong>{{ tarea_resumen.pendiente }}</strong> pendientes</span>
-        <span><strong>{{ tarea_resumen.en_progreso }}</strong> trabajando</span>
-        <span><strong>{{ tarea_resumen.completada }}</strong> finalizadas</span>
-        <span><strong>{{ tarea_resumen.cancelada }}</strong> canceladas</span>
-      </div>
-    </section>
-  {% endif %}
-
-  <section class="panel chart-panel">
-    <div class="panel-heading">
-      <div>
-        <h2>Obligaciones</h2>
-        <p class="muted mb-0">Cuotas del mes, pagos realizados y saldo pendiente.</p>
-      </div>
-    </div>
-    <div class="chart-box chart-box-small">
-      <canvas id="obligacionesChart"></canvas>
+      <canvas id="gastosCategoriaChart"></canvas>
     </div>
   </section>
 
@@ -252,47 +194,11 @@
     </div>
   </section>
 
-  <section class="panel chart-panel">
+  <section class="panel chart-panel chart-panel-wide">
     <div class="panel-heading">
       <div>
-        <h2>Saldos por cuenta</h2>
-        <p class="muted mb-0">Dónde está distribuido tu dinero.</p>
-      </div>
-    </div>
-    <div class="chart-box chart-box-small">
-      <canvas id="cuentasChart"></canvas>
-    </div>
-  </section>
-
-  <section class="panel chart-panel">
-    <div class="panel-heading">
-      <div>
-        <h2>Ingresos por categoría</h2>
-        <p class="muted mb-0">Origen de los ingresos del mes actual.</p>
-      </div>
-    </div>
-    <div class="chart-box chart-box-small">
-      <canvas id="ingresosCategoriaChart"></canvas>
-    </div>
-  </section>
-
-  <section class="panel chart-panel">
-    <div class="panel-heading">
-      <div>
-        <h2>Gastos por categoría</h2>
-        <p class="muted mb-0">Distribución real del mes actual.</p>
-      </div>
-    </div>
-    <div class="chart-box chart-box-small">
-      <canvas id="gastosCategoriaChart"></canvas>
-    </div>
-  </section>
-
-  <section class="panel chart-panel">
-    <div class="panel-heading">
-      <div>
-        <h2>Proyección</h2>
-        <p class="muted mb-0">Saldo estimado con movimientos recurrentes y deudas.</p>
+        <h2>¿Alcanzará el dinero los próximos meses?</h2>
+        <p class="muted mb-0">Saldo estimado usando únicamente ingresos recurrentes, gastos recurrentes y cuotas ya registradas.</p>
       </div>
     </div>
     <div class="chart-box chart-box-small">
@@ -374,12 +280,15 @@
 <script>
   (() => {
     const data = JSON.parse(document.getElementById("dashboard-data").textContent);
+    const money = new Intl.NumberFormat("es-EC", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const tooltipMoney = context => `${context.dataset.label || context.label}: ${money.format(context.parsed.y ?? context.parsed.x ?? 0)}`;
 
     const moneyOptions = {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { position: "bottom" } },
-      scales: { y: { beginAtZero: true } },
+      interaction: { mode: "index", intersect: false },
+      plugins: { legend: { position: "bottom" }, tooltip: { callbacks: { label: tooltipMoney } } },
+      scales: { y: { beginAtZero: true, ticks: { callback: value => money.format(value) } } },
     };
 
     new Chart(document.getElementById("flujoChart"), {
@@ -395,45 +304,13 @@
       options: moneyOptions,
     });
 
-    new Chart(document.getElementById("balanceGeneralChart"), {
-      type: "bar",
-      data: {
-        labels: data.balanceGeneral.labels,
-        datasets: [{
-          label: "Mes actual",
-          data: data.balanceGeneral.values,
-          backgroundColor: ["#22c55e", "#fb8500", "#64748b", "#5e35b1"],
-          borderRadius: 8,
-        }],
-      },
-      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } },
-    });
-
-    new Chart(document.getElementById("obligacionesChart"), {
-      type: "doughnut",
-      data: {
-        labels: data.obligaciones.labels,
-        datasets: [{ data: data.obligaciones.values, backgroundColor: ["#22c55e", "#64748b"] }],
-      },
-      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } },
-    });
-
     new Chart(document.getElementById("gastosCategoriaChart"), {
-      type: "doughnut",
+      type: "bar",
       data: {
         labels: data.gastosCategoria.labels,
         datasets: [{ data: data.gastosCategoria.values, backgroundColor: data.gastosCategoria.colors }],
       },
-      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } },
-    });
-
-    new Chart(document.getElementById("ingresosCategoriaChart"), {
-      type: "doughnut",
-      data: {
-        labels: data.ingresosCategoria.labels,
-        datasets: [{ data: data.ingresosCategoria.values, backgroundColor: data.ingresosCategoria.colors }],
-      },
-      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } },
+      options: { indexAxis: "y", responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: context => money.format(context.parsed.x) } } }, scales: { x: { beginAtZero: true, ticks: { callback: value => money.format(value) } }, y: { ticks: { autoSkip: false } } } },
     });
 
     new Chart(document.getElementById("presupuestoChart"), {
@@ -445,16 +322,7 @@
           { label: "Presupuesto", data: data.presupuesto.presupuesto, backgroundColor: "#5e35b1", borderRadius: 8 },
         ],
       },
-      options: moneyOptions,
-    });
-
-    new Chart(document.getElementById("cuentasChart"), {
-      type: "doughnut",
-      data: {
-        labels: data.cuentas.labels,
-        datasets: [{ data: data.cuentas.values, backgroundColor: data.cuentas.colors }],
-      },
-      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } },
+      options: { ...moneyOptions, indexAxis: "y", scales: { x: { beginAtZero: true, ticks: { callback: value => money.format(value) } }, y: { ticks: { autoSkip: false } } } },
     });
 
     new Chart(document.getElementById("proyeccionChart"), {
@@ -462,26 +330,15 @@
       data: {
         labels: data.proyeccion.labels,
         datasets: [
-          { label: "Ingresos recurrentes", data: data.proyeccion.ingresos, borderColor: "#22c55e", backgroundColor: "#22c55e", tension: .35 },
-          { label: "Gastos recurrentes", data: data.proyeccion.gastos, borderColor: "#fb8500", backgroundColor: "#fb8500", tension: .35 },
-          { label: "Cuotas pendientes", data: data.proyeccion.deudas, borderColor: "#64748b", backgroundColor: "#64748b", tension: .35 },
-          { label: "Saldo proyectado", data: data.proyeccion.saldo, borderColor: "#5e35b1", backgroundColor: "#5e35b1", tension: .35 },
+          { label: "Ingresos recurrentes", data: data.proyeccion.ingresos, type: "bar", borderColor: "#22c55e", backgroundColor: "#22c55e", borderRadius: 7 },
+          { label: "Gastos recurrentes", data: data.proyeccion.gastos, type: "bar", borderColor: "#fb8500", backgroundColor: "#fb8500", borderRadius: 7 },
+          { label: "Cuotas pendientes", data: data.proyeccion.deudas, type: "bar", borderColor: "#64748b", backgroundColor: "#64748b", borderRadius: 7 },
+          { label: "Saldo proyectado", data: data.proyeccion.saldo, type: "line", borderColor: "#5e35b1", backgroundColor: "#5e35b1", tension: .25, borderWidth: 3 },
         ],
       },
       options: moneyOptions,
     });
 
-    const tareasChart = document.getElementById("tareasChart");
-    if (tareasChart && data.tareas) {
-      new Chart(tareasChart, {
-        type: "doughnut",
-        data: {
-          labels: data.tareas.labels,
-          datasets: [{ data: data.tareas.values, backgroundColor: ["#4357f2", "#fb8500", "#22c55e", "#b42318"] }],
-        },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } },
-      });
-    }
   })();
 </script>
 {% endblock %}

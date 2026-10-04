@@ -17,6 +17,7 @@ from .models import (
     Notificacion,
     PagoDeuda,
     Deuda,
+    PresupuestoMensual,
 )
 from .services import ensure_user_finance_setup, generar_notificaciones_usuario
 
@@ -42,6 +43,16 @@ class ProductFeaturesTests(TestCase):
         self.assertEqual(manifest.json()["display"], "standalone")
         self.assertContains(worker, "event.request.mode === 'navigate'")
         self.assertContains(worker, "url.pathname.startsWith('/static/')")
+
+    def test_dashboard_uses_pdf_as_primary_report(self):
+        dashboard = self.client.get(reverse("dashboard"))
+        self.assertContains(dashboard, "Informe PDF")
+        self.assertContains(dashboard, reverse("reporte_financiero_pdf"))
+        report = self.client.get(reverse("reporte_financiero_pdf"))
+        self.assertEqual(report.status_code, 200)
+        self.assertEqual(report["Content-Type"], "application/pdf")
+        self.assertTrue(report.content.startswith(b"%PDF"))
+        self.assertGreater(len(report.content), 5000)
 
     def test_csv_preview_confirmation_and_duplicate_detection(self):
         account = self.user.cuentafinanciera_set.filter(activa=True).first()
@@ -85,6 +96,73 @@ class ProductFeaturesTests(TestCase):
         response = self.client.get(reverse("actividad_financiera"))
         self.assertContains(response, "Visible")
         self.assertNotContains(response, "Privado ajeno")
+
+    def test_activity_orders_pending_payments_from_next_to_last(self):
+        today = timezone.localdate()
+        debt = Deuda.objects.create(
+            usuario=self.user,
+            acreedor="Banco",
+            concepto="Crédito",
+            monto_inicial="300.00",
+            saldo_actual="200.00",
+            numero_cuotas=3,
+            fecha_inicio=today,
+        )
+        PagoDeuda.objects.create(deuda=debt, monto="100", fecha=today + timedelta(days=30), cuota_numero=3, estado=PagoDeuda.Estado.PENDIENTE)
+        PagoDeuda.objects.create(deuda=debt, monto="100", fecha=today + timedelta(days=10), cuota_numero=2, estado=PagoDeuda.Estado.PENDIENTE)
+        PagoDeuda.objects.create(deuda=debt, monto="100", fecha=today - timedelta(days=5), cuota_numero=1, estado=PagoDeuda.Estado.CONFIRMADO)
+
+        response = self.client.get(reverse("actividad_financiera"), {"tipo": "deuda"})
+        dates = [item["fecha"] for item in response.context["page_obj"].object_list]
+        self.assertEqual(dates, [today + timedelta(days=10), today + timedelta(days=30), today - timedelta(days=5)])
+
+    def test_budget_is_actionable_and_prevents_parent_child_overlap(self):
+        today = timezone.localdate()
+        parent = self.user.categoria_set.filter(tipo=Categoria.Tipo.FINANZAS, parent__isnull=True).first()
+        child = parent.subcategorias.first()
+        budget = PresupuestoMensual.objects.create(
+            usuario=self.user,
+            categoria=parent,
+            anio=today.year,
+            mes=today.month,
+            monto="100.00",
+        )
+        MovimientoFinanciero.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+            categoria=child,
+            concepto="Compra presupuestada",
+            monto="80.00",
+            fecha=today,
+        )
+        response = self.client.get(reverse("presupuesto_list"))
+        item = response.context["resumen"]["items"][0]
+        self.assertEqual(item["id"], budget.pk)
+        self.assertEqual(item["usado"], 80)
+        self.assertContains(response, "Puedes usar por día")
+
+        response = self.client.post(
+            reverse("presupuesto_list"),
+            {"categoria": parent.pk, "subcategoria": child.pk, "anio": today.year, "mes": today.month, "monto": "30.00", "nota": ""},
+        )
+        self.assertContains(response, "Ya existe un presupuesto para toda esta categoría")
+        self.assertEqual(PresupuestoMensual.objects.filter(usuario=self.user).count(), 1)
+
+    def test_copy_previous_month_budgets(self):
+        today = timezone.localdate()
+        target_month = today.month
+        target_year = today.year
+        previous_month = target_month - 1
+        previous_year = target_year
+        if previous_month == 0:
+            previous_month = 12
+            previous_year -= 1
+        category = self.user.categoria_set.filter(tipo=Categoria.Tipo.FINANZAS, parent__isnull=True).first()
+        PresupuestoMensual.objects.create(usuario=self.user, categoria=category, anio=previous_year, mes=previous_month, monto="250.00")
+
+        response = self.client.post(reverse("presupuesto_copiar_anterior"), {"anio": target_year, "mes": target_month})
+        self.assertRedirects(response, f"{reverse('presupuesto_list')}?anio={target_year}&mes={target_month}")
+        self.assertTrue(PresupuestoMensual.objects.filter(usuario=self.user, categoria=category, anio=target_year, mes=target_month, monto="250.00").exists())
 
     def test_receipt_requires_review_and_confirmation(self):
         image = BytesIO()

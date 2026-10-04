@@ -10,7 +10,9 @@
   <button class="btn btn-primary" type="submit"><span class="material-symbols-outlined">filter_alt</span>Filtrar</button>
 </form></section>
 <section class="panel activity-list">
-  {% for item in page_obj %}<a class="activity-item" href="{{ item.url }}">
+  {% for item in page_obj %}
+  {% ifchanged item.grupo %}<div class="activity-group-heading"><span>{{ item.grupo }}</span>{% if item.es_pago_pendiente %}<small>Del próximo vencimiento al último</small>{% else %}<small>De lo más reciente hacia atrás</small>{% endif %}</div>{% endifchanged %}
+  <a class="activity-item{% if item.es_pago_pendiente %} is-upcoming{% endif %}" href="{{ item.url }}">
     <span class="activity-icon {{ item.tipo }}"><span class="material-symbols-outlined">{{ item.icono }}</span></span>
     <span class="activity-copy"><strong>{{ item.titulo }}</strong><small>{{ item.detalle }} · {{ item.fecha|date:"d/m/Y" }} · {{ item.estado }}</small></span>
     <strong class="activity-amount {{ item.tipo }}">{% if item.monto > 0 and item.tipo != 'transferencia' %}+{% endif %}{{ item.monto|floatformat:2 }}</strong>

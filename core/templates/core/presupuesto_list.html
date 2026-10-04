@@ -2,16 +2,40 @@
 {% load finance_extras %}
 
 {% block page_title %}Presupuestos{% endblock %}
-{% block page_subtitle %}Define límites por categoría para medir si el mes alcanza{% endblock %}
+{% block page_subtitle %}Decide cuánto puedes gastar y corrige el rumbo antes de excederte{% endblock %}
 
 {% block content %}
-<div class="actions">
-  <div></div>
-  <button class="btn btn-primary btn-icon shadow-sm" type="button" title="Nuevo presupuesto" aria-label="Nuevo presupuesto" data-create-toggle="create-budget-panel"><span class="material-symbols-outlined">add</span></button>
+{{ chart_data|json_script:"budget-data" }}
+<div class="budget-period-bar">
+  <a class="btn btn-light btn-icon" href="?anio={{ previous_period.anio }}&mes={{ previous_period.mes }}" aria-label="Mes anterior"><span class="material-symbols-outlined">chevron_left</span></a>
+  <div><span class="eyebrow">Periodo seleccionado</span><h2>{{ periodo|date:"F Y" }}</h2></div>
+  <a class="btn btn-light btn-icon" href="?anio={{ next_period.anio }}&mes={{ next_period.mes }}" aria-label="Mes siguiente"><span class="material-symbols-outlined">chevron_right</span></a>
+  <form class="budget-period-form" method="get">
+    <select class="form-select" name="mes" aria-label="Mes">
+      <option value="1"{% if filters.mes == 1 %} selected{% endif %}>Enero</option><option value="2"{% if filters.mes == 2 %} selected{% endif %}>Febrero</option><option value="3"{% if filters.mes == 3 %} selected{% endif %}>Marzo</option><option value="4"{% if filters.mes == 4 %} selected{% endif %}>Abril</option><option value="5"{% if filters.mes == 5 %} selected{% endif %}>Mayo</option><option value="6"{% if filters.mes == 6 %} selected{% endif %}>Junio</option><option value="7"{% if filters.mes == 7 %} selected{% endif %}>Julio</option><option value="8"{% if filters.mes == 8 %} selected{% endif %}>Agosto</option><option value="9"{% if filters.mes == 9 %} selected{% endif %}>Septiembre</option><option value="10"{% if filters.mes == 10 %} selected{% endif %}>Octubre</option><option value="11"{% if filters.mes == 11 %} selected{% endif %}>Noviembre</option><option value="12"{% if filters.mes == 12 %} selected{% endif %}>Diciembre</option>
+    </select>
+    <input class="form-control" type="number" name="anio" min="2000" value="{{ filters.anio }}" aria-label="Año">
+    <button class="btn btn-outline-primary" type="submit">Ver</button>
+  </form>
+</div>
+
+<div class="grid budget-metrics">
+  <section class="panel metric blue"><div class="metric-head"><span class="metric-icon"><span class="material-symbols-outlined">account_balance</span></span><div><div class="metric-label">Planificado</div><div class="metric-value">{{ resumen.total_presupuesto }}</div></div></div><p class="metric-help">Límite total asignado para este mes.</p></section>
+  <section class="panel metric orange"><div class="metric-head"><span class="metric-icon"><span class="material-symbols-outlined">payments</span></span><div><div class="metric-label">Gastado</div><div class="metric-value">{{ resumen.total_usado }}</div></div></div><p class="metric-help">Consumo confirmado dentro de categorías presupuestadas.</p></section>
+  <section class="panel metric {% if resumen.total_restante < 0 %}orange{% else %}green{% endif %}"><div class="metric-head"><span class="metric-icon"><span class="material-symbols-outlined">savings</span></span><div><div class="metric-label">Disponible</div><div class="metric-value">{{ resumen.total_restante }}</div></div></div><p class="metric-help">Lo que queda antes de alcanzar tus límites.</p></section>
+  <section class="panel metric gray"><div class="metric-head"><span class="metric-icon"><span class="material-symbols-outlined">today</span></span><div><div class="metric-label">Puedes usar por día</div><div class="metric-value">{{ resumen.disponible_diario }}</div></div></div><p class="metric-help">Repartiendo lo disponible entre {{ resumen.dias_restantes }} días restantes.</p></section>
+</div>
+
+{% if resumen.gasto_sin_presupuesto > 0 %}<div class="alert alert-warning"><strong>{{ resumen.gasto_sin_presupuesto }}</strong> de gastos no están cubiertos por ningún presupuesto. Tu cobertura actual es {{ resumen.cobertura }}%.</div>{% endif %}
+{% if resumen.tiene_solapamientos %}<div class="alert alert-warning">Hay presupuestos antiguos duplicados entre una categoría completa y sus subcategorías. No se sumaron dos veces; edítalos para conservar solo uno de los dos enfoques.</div>{% endif %}
+
+<div class="actions budget-actions">
+  <form method="post" action="{% url 'presupuesto_copiar_anterior' %}">{% csrf_token %}<input type="hidden" name="mes" value="{{ filters.mes }}"><input type="hidden" name="anio" value="{{ filters.anio }}"><button class="btn btn-outline-primary" type="submit"><span class="material-symbols-outlined">content_copy</span>Copiar mes anterior{% if previous_count %} ({{ previous_count }}){% endif %}</button></form>
+  <button class="btn btn-primary" type="button" data-create-toggle="create-budget-panel"><span class="material-symbols-outlined">add</span>Nuevo límite</button>
 </div>
 
 <section class="panel" id="create-budget-panel"{% if not form.errors %} hidden{% endif %}>
-  <h2>Nuevo presupuesto</h2>
+  <div class="panel-heading"><div><h2>Nuevo límite mensual</h2><p class="muted mb-0">Presupuesta una categoría completa o sus subcategorías, pero no ambas a la vez.</p></div></div>
   <form class="form-grid" method="post">
     {% csrf_token %}
     {% include "core/includes/unfold_form_fields.html" %}
@@ -27,47 +51,22 @@
   </form>
 </section>
 
-<section class="panel">
-  <form class="filter-form" method="get">
-    <div><label for="q">Buscar</label><input class="form-control" id="q" name="q" value="{{ filters.q }}" placeholder="Categoría"></div>
-    <button class="btn btn-primary btn-icon" type="submit" title="Filtrar" aria-label="Filtrar"><span class="material-symbols-outlined">filter_alt</span></button>
-  </form>
-</section>
-
-<section class="panel">
-  <div class="table-wrap">
-    <table class="table table-hover align-middle mb-0">
-      <thead><tr><th>Categoría</th><th>Periodo</th><th>Monto</th><th>Nota</th><th></th></tr></thead>
-      <tbody>
-        {% for presupuesto in presupuestos %}
-          <tr>
-            <td>
-              {% if presupuesto.categoria.parent %}
-                {{ presupuesto.categoria.parent.nombre }} > <strong>{{ presupuesto.categoria.nombre }}</strong>
-              {% else %}
-                <strong>{{ presupuesto.categoria.nombre }}</strong>
-                <span class="badge rounded-pill text-bg-light border">Toda la categoría</span>
-              {% endif %}
-            </td>
-            <td>{{ presupuesto.mes|month_name }} {{ presupuesto.anio }}</td>
-            <td class="amount">{{ presupuesto.monto }}</td>
-            <td>{{ presupuesto.nota|default:"" }}</td>
-            <td class="text-nowrap">
-              <span class="action-icons">
-                <a class="btn btn-sm btn-outline-primary btn-icon" href="{% url 'finance_object_update' 'presupuesto' presupuesto.pk %}" title="Editar" aria-label="Editar"><span class="material-symbols-outlined">edit</span></a>
-                <button class="btn btn-sm btn-outline-danger btn-icon" type="button" title="Eliminar" aria-label="Eliminar" data-delete-trigger="delete-presupuesto-{{ presupuesto.pk }}"><span class="material-symbols-outlined">delete</span></button>
-                <form id="delete-presupuesto-{{ presupuesto.pk }}" method="post" action="{% url 'finance_object_delete' 'presupuesto' presupuesto.pk %}" hidden>{% csrf_token %}<input type="hidden" name="motivo_eliminacion" data-delete-reason></form>
-              </span>
-            </td>
-          </tr>
-        {% empty %}
-          <tr><td colspan="5" class="muted">Sin presupuestos.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% include "core/includes/pagination.html" %}
-</section>
+{% if resumen.items %}
+<div class="budget-layout">
+  <section class="panel"><div class="panel-heading"><div><h2>Estado por categoría</h2><p class="muted mb-0">El gasto proyectado estima el cierre manteniendo el ritmo actual.</p></div></div><div class="budget-envelope-list">
+    {% for item in resumen.items %}<article class="budget-envelope {{ item.estado }}{% if item.solapado %} is-overlap{% endif %}">
+      <div class="budget-envelope-head"><div><span class="budget-color" style="--budget-color:{{ item.color }}"></span><strong>{{ item.detalle_categoria }}</strong>{% if item.solapado %}<span class="badge text-bg-warning">Duplicado</span>{% endif %}</div><div class="action-icons"><a class="btn btn-sm btn-outline-primary btn-icon" href="{% url 'finance_object_update' 'presupuesto' item.id %}" aria-label="Editar"><span class="material-symbols-outlined">edit</span></a><button class="btn btn-sm btn-outline-danger btn-icon" type="button" aria-label="Eliminar" data-delete-trigger="delete-presupuesto-{{ item.id }}"><span class="material-symbols-outlined">delete</span></button><form id="delete-presupuesto-{{ item.id }}" method="post" action="{% url 'finance_object_delete' 'presupuesto' item.id %}" hidden>{% csrf_token %}<input type="hidden" name="motivo_eliminacion" data-delete-reason></form></div></div>
+      <div class="budget-envelope-values"><span><small>Gastado</small><strong>{{ item.usado }}</strong></span><span><small>Límite</small><strong>{{ item.presupuesto }}</strong></span><span><small>{% if item.restante < 0 %}Exceso{% else %}Disponible{% endif %}</small><strong>{{ item.restante }}</strong></span></div>
+      <div class="budget-progress"><span style="width:{{ item.porcentaje_visual|stringformat:'f' }}%"></span></div>
+      <div class="budget-envelope-foot"><span>{{ item.porcentaje }}% utilizado</span><span>Proyección: <strong>{{ item.proyectado }}</strong></span><span>Por día: <strong>{{ item.disponible_diario }}</strong></span></div>
+      {% if item.nota %}<p class="muted mb-0">{{ item.nota }}</p>{% endif %}
+    </article>{% endfor %}
+  </div></section>
+  <section class="panel chart-panel"><div class="panel-heading"><div><h2>Gasto, límite y proyección</h2><p class="muted mb-0">Si la proyección supera el límite, conviene ajustar desde ahora.</p></div></div><div class="chart-box chart-box-balance"><canvas id="budgetProgressChart"></canvas></div></section>
+</div>
+{% else %}
+<section class="panel debt-empty-list"><span class="material-symbols-outlined">donut_large</span><h2>Aún no planificaste {{ periodo|date:"F" }}</h2><p class="muted">Copia el mes anterior o crea límites para las categorías que realmente quieres controlar.</p></section>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}
@@ -147,6 +146,24 @@
       amount.focus();
     });
     refreshSubcategories();
+  })();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script>
+  (() => {
+    const canvas = document.getElementById("budgetProgressChart");
+    if (!canvas) return;
+    const data = JSON.parse(document.getElementById("budget-data").textContent);
+    const money = new Intl.NumberFormat("es-EC", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    new Chart(canvas, {
+      type: "bar",
+      data: { labels: data.labels, datasets: [
+        { label: "Gastado", data: data.usado, backgroundColor: "#f4941e", borderRadius: 7 },
+        { label: "Límite", data: data.limite, backgroundColor: "#25a194", borderRadius: 7 },
+        { label: "Proyección al cierre", data: data.proyectado, backgroundColor: "#64748b", borderRadius: 7 },
+      ]},
+      options: { indexAxis: "y", responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" }, tooltip: { callbacks: { label: context => `${context.dataset.label}: ${money.format(context.parsed.x)}` } } }, scales: { x: { beginAtZero: true, ticks: { callback: value => money.format(value) } }, y: { ticks: { autoSkip: false } } } },
+    });
   })();
 </script>
 {% endblock %}

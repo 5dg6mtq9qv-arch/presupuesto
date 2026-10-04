@@ -1,4 +1,64 @@
 {% extends "base.html" %}
-{% block page_title %}Capturar comprobante{% endblock %}
-{% block page_subtitle %}Toma una foto y revisa los datos antes de guardar{% endblock %}
-{% block content %}<section class="panel form-panel receipt-upload"><span class="receipt-camera material-symbols-outlined">photo_camera</span><h2>Foto clara y completa</h2><p class="muted">Incluye comercio, fecha y total. La IA solo sugerirá datos; tú tendrás la última palabra.</p><form class="form-grid" method="post" enctype="multipart/form-data">{% csrf_token %}{% include "core/includes/unfold_form_fields.html" %}<div class="form-actions"><a class="btn btn-outline-secondary" href="{% url 'actividad_financiera' %}">Cancelar</a><button class="btn btn-primary" type="submit"><span class="material-symbols-outlined">document_scanner</span>Analizar y revisar</button></div></form></section>{% endblock %}
+{% block page_title %}Agregar comprobante{% endblock %}
+{% block page_subtitle %}Usa la cámara o una imagen que ya tengas en el teléfono{% endblock %}
+{% block content %}
+<section class="panel form-panel receipt-upload">
+  <span class="receipt-camera material-symbols-outlined">add_photo_alternate</span>
+  <h2>¿Dónde está tu comprobante?</h2>
+  <p class="muted">Puedes tomar una foto nueva o buscar una imagen en Galería, Fotos o Descargas.</p>
+  <form method="post" enctype="multipart/form-data" data-receipt-form>
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+    {{ form.archivo }}
+    <div class="receipt-source-actions">
+      <button class="receipt-source-option" type="button" data-receipt-camera>
+        <span class="material-symbols-outlined">photo_camera</span>
+        <span><strong>Tomar foto</strong><small>Abrir la cámara del teléfono</small></span>
+      </button>
+      <button class="receipt-source-option" type="button" data-receipt-library>
+        <span class="material-symbols-outlined">folder_open</span>
+        <span><strong>Elegir archivo</strong><small>Galería, Fotos o Descargas</small></span>
+      </button>
+    </div>
+    {% if form.archivo.errors %}<div class="field-error"><span class="material-symbols-outlined">error</span>{{ form.archivo.errors|striptags }}</div>{% endif %}
+    <p class="form-text">{{ form.archivo.help_text }}</p>
+    <div class="receipt-local-preview" data-receipt-preview hidden>
+      <img alt="Vista previa del comprobante" data-receipt-image>
+      <div><strong data-receipt-name></strong><small>Esta es la imagen que se analizará.</small></div>
+    </div>
+    <div class="form-actions">
+      <a class="btn btn-outline-secondary" href="{% url 'actividad_financiera' %}">Cancelar</a>
+      <button class="btn btn-primary" type="submit"><span class="material-symbols-outlined">document_scanner</span>Analizar y revisar</button>
+    </div>
+  </form>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+  (() => {
+    const input = document.querySelector("[data-receipt-file]");
+    const camera = document.querySelector("[data-receipt-camera]");
+    const library = document.querySelector("[data-receipt-library]");
+    const preview = document.querySelector("[data-receipt-preview]");
+    const image = document.querySelector("[data-receipt-image]");
+    const name = document.querySelector("[data-receipt-name]");
+    if (!input) return;
+
+    camera?.addEventListener("click", () => {
+      input.setAttribute("capture", "environment");
+      input.click();
+    });
+    library?.addEventListener("click", () => {
+      input.removeAttribute("capture");
+      input.click();
+    });
+    input.addEventListener("change", () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      if (name) name.textContent = file.name;
+      if (image) image.src = URL.createObjectURL(file);
+      if (preview) preview.hidden = false;
+    });
+  })();
+</script>
+{% endblock %}

@@ -73,13 +73,13 @@
       </button>
     </div>
     <div class="col-md-1">
-      <a class="btn btn-outline-primary btn-icon" href="{% url 'reporte_financiero_csv' %}?fecha_inicio={{ fecha_inicio|date:'Y-m-d' }}&fecha_fin={{ fecha_fin|date:'Y-m-d' }}" title="Descargar reporte CSV" aria-label="Descargar reporte CSV">
-        <span class="material-symbols-outlined">download</span>
+      <a class="btn btn-primary btn-icon" href="{% url 'reporte_financiero_pdf' %}?fecha_inicio={{ fecha_inicio|date:'Y-m-d' }}&fecha_fin={{ fecha_fin|date:'Y-m-d' }}&vista={{ vista }}" title="Descargar informe PDF completo" aria-label="Descargar informe PDF completo">
+        <span class="material-symbols-outlined">picture_as_pdf</span>
       </a>
     </div>
     <div class="col-md-1">
-      <a class="btn btn-outline-danger btn-icon" href="{% url 'reporte_financiero_pdf' %}?fecha_inicio={{ fecha_inicio|date:'Y-m-d' }}&fecha_fin={{ fecha_fin|date:'Y-m-d' }}&vista={{ vista }}" title="Descargar informe PDF con sugerencias" aria-label="Descargar informe PDF">
-        <span class="material-symbols-outlined">picture_as_pdf</span>
+      <a class="btn btn-light btn-icon" href="{% url 'reporte_financiero_csv' %}?fecha_inicio={{ fecha_inicio|date:'Y-m-d' }}&fecha_fin={{ fecha_fin|date:'Y-m-d' }}" title="Exportar datos CSV" aria-label="Exportar datos CSV">
+        <span class="material-symbols-outlined">table_view</span>
       </a>
     </div>
   </form>
@@ -283,12 +283,12 @@
 <section class="panel chart-panel">
   <div class="panel-heading">
     <div>
-      <h2>Resultado del periodo</h2>
-      <p class="muted mb-0">Comparación de movimientos y pagos confirmados dentro del rango seleccionado.</p>
+      <h2>¿Mejoraste frente al periodo anterior?</h2>
+      <p class="muted mb-0">Compara ingresos, gastos, pagos de deuda y resultado usando un rango anterior de la misma duración.</p>
     </div>
   </div>
   <div class="chart-box chart-box-balance">
-    <canvas id="balanceChart"></canvas>
+    <canvas id="comparisonChart"></canvas>
   </div>
 </section>
 
@@ -415,39 +415,36 @@
       options: moneyOptions,
     });
 
-    new Chart(document.getElementById("balanceChart"), {
+    new Chart(document.getElementById("comparisonChart"), {
       type: "bar",
       data: {
-        labels: data.balance.labels,
-        datasets: [{
-          label: "Periodo",
-          data: data.balance.values,
-          backgroundColor: ["#22c55e", "#fb8500", "#64748b", "#5e35b1"],
-          borderRadius: 8,
-        }],
+        labels: data.comparacion.labels,
+        datasets: [
+          { label: "Periodo actual", data: data.comparacion.actual, backgroundColor: "#25a194", borderRadius: 8 },
+          { label: "Periodo anterior", data: data.comparacion.anterior, backgroundColor: "#cbd5e1", borderRadius: 8 },
+        ],
       },
       options: {
-        indexAxis: "y",
         responsive: true,
         maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
         plugins: {
-          legend: { display: false },
-          tooltip: { callbacks: { label: (context) => `${context.label}: ${moneyFormatter.format(context.parsed.x)}` } },
+          legend: { position: "bottom" },
+          tooltip: { callbacks: { label: moneyTooltip } },
         },
         scales: {
-          x: { beginAtZero: true, ticks: { callback: (value) => moneyFormatter.format(value) } },
-          y: { ticks: { autoSkip: false } },
+          y: { beginAtZero: true, ticks: { callback: (value) => moneyFormatter.format(value) } },
         },
       },
     });
 
     new Chart(document.getElementById("categoryChart"), {
-      type: "doughnut",
+      type: "bar",
       data: {
         labels: data.categorias.labels,
         datasets: [{ data: data.categorias.values, backgroundColor: data.categorias.colors }],
       },
-      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } },
+      options: { indexAxis: "y", responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: context => moneyFormatter.format(context.parsed.x) } } }, scales: { x: { beginAtZero: true, ticks: { callback: value => moneyFormatter.format(value) } }, y: { ticks: { autoSkip: false } } } },
     });
 
     new Chart(document.getElementById("projectionChart"), {
@@ -455,10 +452,10 @@
       data: {
         labels: data.proyeccion.labels,
         datasets: [
-          { label: "Ingresos", data: data.proyeccion.ingresos, borderColor: "#22c55e", backgroundColor: "#22c55e", tension: .35 },
-          { label: "Gastos", data: data.proyeccion.gastos, borderColor: "#fb8500", backgroundColor: "#fb8500", tension: .35 },
-          { label: "Cuotas pendientes", data: data.proyeccion.deudas, borderColor: "#64748b", backgroundColor: "#64748b", tension: .2 },
-          { label: "Resultado previsto", data: data.proyeccion.margen, borderColor: "#5e35b1", backgroundColor: "#5e35b1", tension: .2 },
+          { label: "Ingresos", data: data.proyeccion.ingresos, type: "bar", borderColor: "#22c55e", backgroundColor: "#22c55e", borderRadius: 7 },
+          { label: "Gastos", data: data.proyeccion.gastos, type: "bar", borderColor: "#fb8500", backgroundColor: "#fb8500", borderRadius: 7 },
+          { label: "Cuotas pendientes", data: data.proyeccion.deudas, type: "bar", borderColor: "#64748b", backgroundColor: "#64748b", borderRadius: 7 },
+          { label: "Resultado previsto", data: data.proyeccion.margen, type: "line", borderColor: "#5e35b1", backgroundColor: "#5e35b1", tension: .2, borderWidth: 3 },
         ],
       },
       options: moneyOptions,

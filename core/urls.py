@@ -39,6 +39,7 @@ urlpatterns = [
     path("metodos-pago/", views.metodo_pago_list, name="metodo_pago_list"),
     path("etiquetas/", views.etiqueta_list, name="etiqueta_list"),
     path("presupuestos/", views.presupuesto_list, name="presupuesto_list"),
+    path("presupuestos/copiar-anterior/", views.presupuesto_copiar_anterior, name="presupuesto_copiar_anterior"),
     path("presupuestos/sugerencia/", views.presupuesto_sugerencia, name="presupuesto_sugerencia"),
     path("recurrentes/", views.recurrente_list, name="recurrente_list"),
     path("finanzas/<str:kind>/<int:pk>/editar/", views.finance_object_update, name="finance_object_update"),
