@@ -26,6 +26,7 @@ from .ai_config import AIRuntimeConfig, get_ai_runtime_config
 from .admin import ConfiguracionIAAdminForm
 from .models import (
     Acreedor,
+    AjusteSaldo,
     Categoria,
     CuentaFinanciera,
     ConfiguracionIA,
@@ -47,6 +48,7 @@ from .services import (
     generar_movimientos_recurrentes,
     generar_pagos_deudas,
     reprogramar_fechas_cuotas,
+    saldo_actual_cuenta,
     sincronizar_cuotas_pendientes_deuda,
     sincronizar_deuda_compra_credito,
     sumar_meses,
@@ -426,6 +428,92 @@ class TransferenciaCuentaTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("monto", response.context["form"].errors)
         self.assertEqual(TransferenciaCuenta.objects.count(), 0)
+
+
+class AjusteSaldoCuentaTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="conciliacion", password="test")
+        self.cuenta = CuentaFinanciera.objects.create(
+            usuario=self.user,
+            nombre="Banco principal",
+            tipo=CuentaFinanciera.Tipo.BANCO,
+            saldo_inicial="100.00",
+        )
+        self.client.force_login(self.user)
+
+    def ajustar(self, saldo_nuevo, motivo="Conciliación con estado bancario"):
+        return self.client.post(
+            reverse("cuenta_ajustar_saldo", args=[self.cuenta.pk]),
+            {"saldo_nuevo": saldo_nuevo, "motivo": motivo},
+        )
+
+    def test_aumento_crea_ingreso_confirmado_sin_reescribir_saldo_inicial(self):
+        response = self.ajustar("125.50")
+
+        self.assertRedirects(response, reverse("cuenta_list"))
+        ajuste = AjusteSaldo.objects.get(cuenta=self.cuenta)
+        movimiento = ajuste.movimiento
+        self.cuenta.refresh_from_db()
+        self.assertEqual(self.cuenta.saldo_inicial, Decimal("100.00"))
+        self.assertEqual(movimiento.tipo, MovimientoFinanciero.Tipo.INGRESO)
+        self.assertEqual(movimiento.estado, MovimientoFinanciero.Estado.CONFIRMADO)
+        self.assertEqual(movimiento.monto, Decimal("25.50"))
+        self.assertEqual(movimiento.cuenta, self.cuenta)
+        self.assertEqual(movimiento.categoria.parent.nombre, "Ajustes de saldo")
+        self.assertIn("Conciliación con estado bancario", movimiento.nota)
+        self.assertEqual(saldo_actual_cuenta(self.cuenta), Decimal("125.50"))
+
+    def test_disminucion_crea_gasto_confirmado_visible_en_historial(self):
+        self.ajustar("72.25", motivo="Faltante detectado en arqueo")
+
+        ajuste = AjusteSaldo.objects.get(cuenta=self.cuenta)
+        movimiento = ajuste.movimiento
+        self.assertEqual(movimiento.tipo, MovimientoFinanciero.Tipo.GASTO)
+        self.assertEqual(movimiento.monto, Decimal("27.75"))
+        self.assertEqual(saldo_actual_cuenta(self.cuenta), Decimal("72.25"))
+
+        response = self.client.get(reverse("movimiento_list"), {"tipo": "gasto"})
+        self.assertContains(response, "Ajuste de saldo (disminución)")
+        self.assertContains(response, "Faltante detectado en arqueo")
+        self.assertContains(response, "Conciliación de saldo")
+
+    def test_rechaza_conciliacion_sin_diferencia(self):
+        response = self.ajustar("100.00")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("saldo_nuevo", response.context["form"].errors)
+        self.assertFalse(AjusteSaldo.objects.exists())
+        self.assertFalse(MovimientoFinanciero.objects.exists())
+
+    def test_movimiento_de_conciliacion_no_se_edita_ni_elimina_por_separado(self):
+        self.ajustar("80.00")
+        movimiento = AjusteSaldo.objects.get(cuenta=self.cuenta).movimiento
+
+        update_response = self.client.get(reverse("movimiento_update", args=[movimiento.pk]))
+        delete_response = self.client.post(reverse("movimiento_delete", args=[movimiento.pk]))
+
+        self.assertRedirects(update_response, f"{reverse('movimiento_list')}?tipo=gasto")
+        self.assertRedirects(delete_response, f"{reverse('movimiento_list')}?tipo=gasto")
+        movimiento.refresh_from_db()
+        self.assertEqual(movimiento.estado, MovimientoFinanciero.Estado.CONFIRMADO)
+
+    def test_cuenta_con_historial_no_se_elimina(self):
+        MovimientoFinanciero.objects.create(
+            usuario=self.user,
+            cuenta=self.cuenta,
+            tipo=MovimientoFinanciero.Tipo.INGRESO,
+            concepto="Depósito",
+            monto="10.00",
+            fecha=timezone.localdate(),
+        )
+
+        response = self.client.post(
+            reverse("finance_object_delete", args=["cuenta", self.cuenta.pk]),
+            {"motivo_eliminacion": "Ya no se usa"},
+        )
+
+        self.assertRedirects(response, reverse("cuenta_list"))
+        self.assertTrue(CuentaFinanciera.objects.filter(pk=self.cuenta.pk).exists())
 
 
 class PasswordPermissionTests(TestCase):

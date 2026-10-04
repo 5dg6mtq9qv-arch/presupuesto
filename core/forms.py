@@ -1090,6 +1090,16 @@ class AjusteSaldoForm(forms.Form):
         widget=forms.Textarea(attrs={"class": "form-control", "rows": 3, "placeholder": "Ej.: conciliacion con estado bancario"}),
     )
 
+    def __init__(self, *args, saldo_actual=None, **kwargs):
+        self.saldo_actual = saldo_actual
+        super().__init__(*args, **kwargs)
+
+    def clean_saldo_nuevo(self):
+        saldo_nuevo = self.cleaned_data["saldo_nuevo"]
+        if self.saldo_actual is not None and saldo_nuevo == self.saldo_actual:
+            raise forms.ValidationError("El saldo real ya coincide con el saldo calculado.")
+        return saldo_nuevo
+
 
 class TransferenciaCuentaForm(UserScopedModelForm):
     class Meta:

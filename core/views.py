@@ -96,6 +96,7 @@ from .services import (
     generar_pagos_deudas,
     movimientos_recurrentes_programados,
     reprogramar_fechas_cuotas,
+    saldo_actual_cuenta,
     sincronizar_cuotas_pendientes_deuda,
     sincronizar_deuda_compra_credito,
 )
@@ -324,35 +325,6 @@ def registrar_auditoria(request, accion, instance, cambios=None, motivo=""):
     )
 
 
-def saldo_actual_cuenta(cuenta):
-    movimientos = MovimientoFinanciero.objects.filter(
-        usuario=cuenta.usuario,
-        cuenta=cuenta,
-        estado=MovimientoFinanciero.Estado.CONFIRMADO,
-    )
-    ingresos = movimientos.filter(tipo=MovimientoFinanciero.Tipo.INGRESO).aggregate(total=Sum("monto"))["total"] or Decimal("0")
-    gastos = movimientos.filter(tipo=MovimientoFinanciero.Tipo.GASTO).exclude(
-        metodo_pago__tipo=MetodoPago.Tipo.CREDITO,
-    ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
-    pagos_deuda = PagoDeuda.objects.filter(
-        deuda__usuario=cuenta.usuario,
-        cuenta=cuenta,
-        estado=PagoDeuda.Estado.CONFIRMADO,
-    ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
-    transferencias_entrantes = TransferenciaCuenta.objects.filter(
-        usuario=cuenta.usuario,
-        cuenta_destino=cuenta,
-    ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
-    transferencias_salientes = TransferenciaCuenta.objects.filter(
-        usuario=cuenta.usuario,
-        cuenta_origen=cuenta,
-    ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
-    return (
-        cuenta.saldo_inicial + ingresos - gastos - pagos_deuda
-        + transferencias_entrantes - transferencias_salientes
-    )
-
-
 def get_or_create_category_by_name(user, tipo, parent, nombre, defaults=None):
     defaults = defaults or {}
     category = Categoria.objects.filter(
@@ -378,6 +350,24 @@ def get_or_create_category_by_name(user, tipo, parent, nombre, defaults=None):
         nombre=nombre,
         defaults=defaults,
     )
+
+
+def get_or_create_balance_adjustment_category(user):
+    parent, _ = get_or_create_category_by_name(
+        user=user,
+        tipo=Categoria.Tipo.FINANZAS,
+        parent=None,
+        nombre="Ajustes de saldo",
+        defaults={"color": "#64748b"},
+    )
+    category, _ = get_or_create_category_by_name(
+        user=user,
+        tipo=Categoria.Tipo.FINANZAS,
+        parent=parent,
+        nombre="Conciliación",
+        defaults={"color": parent.color or "#64748b"},
+    )
+    return category
 
 
 def merge_category_into(source, target):
@@ -958,31 +948,61 @@ def cuenta_ajustar_saldo(request, pk):
     cuenta = get_object_or_404(CuentaFinanciera.objects.select_for_update(), pk=pk, usuario=request.user)
     saldo_anterior = saldo_actual_cuenta(cuenta)
     if request.method == "POST":
-        form = AjusteSaldoForm(request.POST)
+        form = AjusteSaldoForm(request.POST, saldo_actual=saldo_anterior)
         if form.is_valid():
             saldo_nuevo = form.cleaned_data["saldo_nuevo"]
             diferencia = saldo_nuevo - saldo_anterior
-            cuenta.saldo_inicial += diferencia
-            cuenta.save(update_fields=["saldo_inicial"])
+            tipo = (
+                MovimientoFinanciero.Tipo.INGRESO
+                if diferencia > 0
+                else MovimientoFinanciero.Tipo.GASTO
+            )
+            sentido = "aumento" if diferencia > 0 else "disminución"
+            motivo = form.cleaned_data["motivo"].strip()
+            movimiento = MovimientoFinanciero.objects.create(
+                usuario=request.user,
+                tipo=tipo,
+                estado=MovimientoFinanciero.Estado.CONFIRMADO,
+                categoria=get_or_create_balance_adjustment_category(request.user),
+                cuenta=cuenta,
+                concepto=f"Ajuste de saldo ({sentido}) · {cuenta.nombre}",
+                monto=abs(diferencia),
+                fecha=timezone.localdate(),
+                nota=(
+                    f"Conciliación desde {saldo_anterior:.2f} hasta {saldo_nuevo:.2f}. "
+                    f"Motivo: {motivo}"
+                ),
+            )
             ajuste = AjusteSaldo.objects.create(
                 usuario=request.user,
                 cuenta=cuenta,
+                movimiento=movimiento,
                 saldo_anterior=saldo_anterior,
                 saldo_nuevo=saldo_nuevo,
                 diferencia=diferencia,
-                motivo=form.cleaned_data["motivo"],
+                motivo=motivo,
             )
             registrar_auditoria(
                 request,
                 RegistroAuditoria.Accion.AJUSTAR_SALDO,
                 ajuste,
-                cambios={"saldo_anterior": str(saldo_anterior), "saldo_nuevo": str(saldo_nuevo), "diferencia": str(diferencia)},
+                cambios={
+                    "saldo_anterior": str(saldo_anterior),
+                    "saldo_nuevo": str(saldo_nuevo),
+                    "diferencia": str(diferencia),
+                    "movimiento_id": movimiento.pk,
+                    "tipo_movimiento": tipo,
+                },
                 motivo=ajuste.motivo,
             )
-            messages.success(request, "Saldo conciliado. El ajuste quedo registrado en auditoria.")
+            messages.success(
+                request,
+                f"Saldo conciliado. Se registró un {movimiento.get_tipo_display().lower()} "
+                f"por {movimiento.monto:.2f} para justificar el ajuste.",
+            )
             return redirect("cuenta_list")
     else:
-        form = AjusteSaldoForm(initial={"saldo_nuevo": saldo_anterior})
+        form = AjusteSaldoForm(initial={"saldo_nuevo": saldo_anterior}, saldo_actual=saldo_anterior)
     return render(request, "core/ajuste_saldo_form.html", {"form": form, "cuenta": cuenta, "saldo_anterior": saldo_anterior})
 
 
@@ -1174,6 +1194,19 @@ def finance_object_delete(request, kind, pk):
     model, back_url, success_message = config[kind]
     instance = get_object_or_404(model, pk=pk, usuario=request.user)
     if request.method != "POST":
+        return redirect(back_url)
+    if kind == "cuenta" and (
+        MovimientoFinanciero.objects.filter(cuenta=instance).exists()
+        or PagoDeuda.objects.filter(cuenta=instance).exists()
+        or TransferenciaCuenta.objects.filter(
+            Q(cuenta_origen=instance) | Q(cuenta_destino=instance)
+        ).exists()
+        or AjusteSaldo.objects.filter(cuenta=instance).exists()
+    ):
+        messages.error(
+            request,
+            "No se puede eliminar una cuenta con historial financiero. Desactívala para conservar la trazabilidad.",
+        )
         return redirect(back_url)
     registrar_eliminacion(request, instance)
     instance.delete()
@@ -2612,7 +2645,7 @@ def movimiento_list(request):
     movimientos = MovimientoFinanciero.objects.filter(
         usuario=request.user,
         tipo=active_tipo,
-    ).select_related("categoria__parent", "cuenta", "metodo_pago").prefetch_related("etiquetas")
+    ).select_related("categoria__parent", "cuenta", "metodo_pago", "ajuste_saldo").prefetch_related("etiquetas")
     q = request.GET.get("q", "").strip()
     estado = request.GET.get("estado", "")
     categoria_id = request.GET.get("categoria", "")
@@ -2761,6 +2794,12 @@ def movimiento_gasto_create(request):
 @login_required
 def movimiento_update(request, pk):
     movimiento = get_object_or_404(MovimientoFinanciero, pk=pk, usuario=request.user)
+    if AjusteSaldo.objects.filter(movimiento=movimiento).exists():
+        messages.error(
+            request,
+            "Este movimiento fue generado por una conciliación de saldo y no puede editarse por separado.",
+        )
+        return redirect(f"{reverse('movimiento_list')}?tipo={movimiento.tipo}")
     if movimiento.estado == MovimientoFinanciero.Estado.ELIMINADO:
         messages.error(request, "No puedes editar un movimiento eliminado.")
         return redirect(f"{reverse('movimiento_list')}?tipo={movimiento.tipo}")
@@ -2944,6 +2983,12 @@ def movimiento_delete(request, pk):
     tipo = movimiento.tipo
     if request.method != "POST":
         return redirect(f"{reverse('movimiento_list')}?tipo={tipo}")
+    if AjusteSaldo.objects.filter(movimiento=movimiento).exists():
+        messages.error(
+            request,
+            "Este movimiento respalda una conciliación de saldo y no puede eliminarse por separado.",
+        )
+        return redirect(f"{reverse('movimiento_list')}?tipo={tipo}")
     if movimiento.estado == MovimientoFinanciero.Estado.ELIMINADO:
         messages.info(request, "El movimiento ya estaba eliminado.")
         return redirect(f"{reverse('movimiento_list')}?tipo={tipo}")
@@ -2998,8 +3043,25 @@ def deuda_list(request):
                 .order_by("fecha", "cuota_numero", "creado")
             )
         deuda.pagos_ordenados = pagos
-        deuda.pagos_confirmados_count = sum(pago.estado == PagoDeuda.Estado.CONFIRMADO for pago in pagos)
-        deuda.cuotas_pendientes_count = sum(pago.estado == PagoDeuda.Estado.PENDIENTE for pago in pagos)
+        deuda.pagos_confirmados = [
+            pago for pago in pagos if pago.estado == PagoDeuda.Estado.CONFIRMADO
+        ]
+        deuda.cuotas_confirmadas = [
+            pago for pago in deuda.pagos_confirmados if pago.cuota_numero is not None
+        ]
+        deuda.cuotas_pendientes = [
+            pago
+            for pago in pagos
+            if pago.estado == PagoDeuda.Estado.PENDIENTE and pago.cuota_numero is not None
+        ]
+        deuda.pagos_confirmados_count = len(deuda.cuotas_confirmadas)
+        deuda.cuotas_pendientes_count = len(deuda.cuotas_pendientes)
+        deuda.proximo_pago = deuda.cuotas_pendientes[0] if deuda.cuotas_pendientes else None
+        deuda.otros_pagos_pendientes = deuda.cuotas_pendientes[1:]
+        deuda.progreso_cuotas = min(
+            100,
+            round((deuda.pagos_confirmados_count / max(1, deuda.numero_cuotas)) * 100),
+        )
     categorias = Categoria.objects.filter(
         usuario=request.user,
         tipo=Categoria.Tipo.FINANZAS,

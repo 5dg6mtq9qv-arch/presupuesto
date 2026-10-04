@@ -106,6 +106,10 @@
             </td>
             <td>
               <strong>{{ movimiento.concepto }}</strong>
+              {% if movimiento.ajuste_saldo %}
+                <div class="small text-muted">{{ movimiento.nota }}</div>
+                <span class="badge rounded-pill text-bg-light border">Conciliación de saldo</span>
+              {% endif %}
               {% if movimiento.etiquetas.all %}
                 <div class="small text-muted">
                   {% for etiqueta in movimiento.etiquetas.all %}
@@ -155,7 +159,7 @@
                     <input type="hidden" name="motivo_eliminacion" data-delete-reason>
                   </form>
                 </span>
-              {% elif movimiento.estado == "confirmado" %}
+              {% elif movimiento.estado == "confirmado" and not movimiento.ajuste_saldo %}
                 <span class="action-icons">
                   <a class="btn btn-sm btn-outline-primary btn-icon" href="{% url 'movimiento_update' movimiento.pk %}" title="Editar" aria-label="Editar">
                     <span class="material-symbols-outlined">edit</span>

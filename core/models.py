@@ -371,6 +371,13 @@ class CuentaFinanciera(models.Model):
 class AjusteSaldo(models.Model):
     usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     cuenta = models.ForeignKey(CuentaFinanciera, on_delete=models.PROTECT, related_name="ajustes_saldo")
+    movimiento = models.OneToOneField(
+        "MovimientoFinanciero",
+        on_delete=models.PROTECT,
+        related_name="ajuste_saldo",
+        null=True,
+        blank=True,
+    )
     saldo_anterior = models.DecimalField(max_digits=12, decimal_places=2)
     saldo_nuevo = models.DecimalField(max_digits=12, decimal_places=2)
     diferencia = models.DecimalField(max_digits=12, decimal_places=2)
@@ -528,7 +535,7 @@ class MovimientoFinanciero(models.Model):
     )
     cuenta = models.ForeignKey(
         CuentaFinanciera,
-        on_delete=models.SET_NULL,
+        on_delete=models.PROTECT,
         null=True,
         blank=True,
     )

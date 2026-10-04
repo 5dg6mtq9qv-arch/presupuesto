@@ -1,136 +1,180 @@
 {% extends "base.html" %}
 
 {% block page_title %}Deudas{% endblock %}
-{% block page_subtitle %}Control de saldos, pagos y vencimientos{% endblock %}
+{% block page_subtitle %}Controla lo pendiente y actúa sobre tu próximo pago{% endblock %}
 
 {% block content %}
-<div class="actions">
-  <div></div>
+<div class="actions debt-page-actions">
+  <div>
+    <span class="eyebrow">Plan de pagos</span>
+    <p class="muted mb-0">Cada deuda muestra primero lo que necesitas atender ahora.</p>
+  </div>
   <a class="btn btn-primary shadow-sm" href="{% url 'deuda_create' %}">
     <span class="material-symbols-outlined">add</span>
     <span>Nueva deuda</span>
   </a>
 </div>
 
-<section class="panel">
-  <form class="filter-form" method="get">
+<section class="panel debt-filter-panel" aria-labelledby="debt-filter-title">
+  <div class="debt-filter-heading">
     <div>
+      <h2 id="debt-filter-title">Buscar y filtrar</h2>
+      <p class="muted mb-0">Encuentra una deuda por acreedor, concepto o categoría.</p>
+    </div>
+    {% if filters.q or filters.categoria or filters.estado %}
+      <a class="btn btn-sm btn-light" href="{% url 'deuda_list' %}">
+        <span class="material-symbols-outlined">filter_alt_off</span><span>Limpiar filtros</span>
+      </a>
+    {% endif %}
+  </div>
+  <form class="filter-form debt-filter-form" method="get">
+    <div class="debt-search-field">
       <label for="q">Buscar</label>
-      <input class="form-control" id="q" name="q" value="{{ filters.q }}" placeholder="Acreedor, concepto o categoría">
+      <div class="input-with-icon">
+        <span class="material-symbols-outlined">search</span>
+        <input class="form-control" id="q" name="q" value="{{ filters.q }}" placeholder="Ej.: Pichincha o plan de internet">
+      </div>
     </div>
     <div>
       <label for="categoria">Categoría</label>
       <select class="form-select" id="categoria" name="categoria">
-        <option value="">Todas</option>
+        <option value="">Todas las categorías</option>
         {% for categoria in categorias %}
-          <option value="{{ categoria.pk }}"{% if filters.categoria == categoria.pk|stringformat:"s" %} selected{% endif %}>{% if categoria.parent %}{{ categoria.parent.nombre }} > {% endif %}{{ categoria.nombre }}</option>
+          <option value="{{ categoria.pk }}"{% if filters.categoria == categoria.pk|stringformat:"s" %} selected{% endif %}>{% if categoria.parent %}{{ categoria.parent.nombre }} › {% endif %}{{ categoria.nombre }}</option>
         {% endfor %}
       </select>
     </div>
     <div>
       <label for="estado">Estado</label>
       <select class="form-select" id="estado" name="estado">
-        <option value="">Todos</option>
+        <option value="">Todos los estados</option>
         <option value="activa"{% if filters.estado == "activa" %} selected{% endif %}>Activa</option>
         <option value="pagada"{% if filters.estado == "pagada" %} selected{% endif %}>Pagada</option>
         <option value="cancelada"{% if filters.estado == "cancelada" %} selected{% endif %}>Cancelada</option>
       </select>
     </div>
-    <button class="btn btn-primary btn-icon" type="submit" title="Filtrar" aria-label="Filtrar">
-      <span class="material-symbols-outlined">filter_alt</span>
+    <button class="btn btn-primary debt-filter-submit" type="submit">
+      <span class="material-symbols-outlined">filter_alt</span><span>Aplicar</span>
     </button>
   </form>
 </section>
 
-<section class="panel">
-  <div class="table-wrap">
-    <table class="table table-hover align-middle mb-0 debt-table">
-      <thead><tr><th>Acreedor</th><th>Categoría</th><th>Concepto</th><th>Saldo</th><th>Cuotas</th><th>Estado</th><th>Cuotas y pagos</th><th><span class="visually-hidden">Acciones</span></th></tr></thead>
-      <tbody>
-        {% for deuda in deudas %}
-          <tr>
-            <td><strong>{{ deuda.acreedor }}</strong></td>
-            <td>
+<section class="debt-list" aria-label="Listado de deudas">
+  {% for deuda in deudas %}
+    <article class="debt-card">
+      <header class="debt-card-header">
+        <div class="debt-identity">
+          <span class="debt-card-icon" aria-hidden="true"><span class="material-symbols-outlined">account_balance</span></span>
+          <div>
+            <span class="eyebrow">{{ deuda.acreedor }}</span>
+            <h2>{{ deuda.concepto }}</h2>
+            <div class="debt-meta-row">
               {% if deuda.categoria %}
-                <span class="badge rounded-pill text-bg-light border">
-                  {% if deuda.categoria.color %}
-                    <span class="color-swatch" style="background-color: {{ deuda.categoria.color }};"></span>
-                  {% endif %}
-                  {% if deuda.categoria.parent %}{{ deuda.categoria.parent.nombre }} > {% endif %}{{ deuda.categoria.nombre }}
+                <span class="debt-category">
+                  <span class="color-swatch" style="background-color: {{ deuda.categoria.color|default:'#64748b' }};"></span>
+                  {% if deuda.categoria.parent %}{{ deuda.categoria.parent.nombre }} › {% endif %}{{ deuda.categoria.nombre }}
                 </span>
               {% else %}
-                <span class="muted">Sin categoria</span>
+                <span class="muted">Sin categoría</span>
               {% endif %}
-            </td>
-            <td>{{ deuda.concepto }}</td>
-            <td class="amount">
-              <strong>{{ deuda.saldo_actual }}</strong>
-              {% if deuda.tasa_interes_anual is not None %}<div class="small text-muted">Interés {{ deuda.tasa_interes_anual }}% anual</div>{% endif %}
-              {% if deuda.pago_minimo is not None %}<div class="small text-muted">Mínimo {{ deuda.pago_minimo }}</div>{% endif %}
-            </td>
-            <td>
-              <div class="installment-summary">
-                <span class="badge rounded-pill text-bg-light border"><strong>{{ deuda.pagos_confirmados_count }}</strong> de {{ deuda.numero_cuotas }} pagadas</span>
-                {% if deuda.cuotas_pendientes_count %}<span class="badge rounded-pill text-bg-warning">{{ deuda.cuotas_pendientes_count }} pendiente{{ deuda.cuotas_pendientes_count|pluralize:"s" }}</span>{% endif %}
+            </div>
+          </div>
+        </div>
+        <div class="debt-card-tools">
+          <span class="badge rounded-pill {% if deuda.estado == 'pagada' %}text-bg-success{% elif deuda.estado == 'cancelada' %}text-bg-danger{% else %}text-bg-warning{% endif %}">
+            {{ deuda.get_estado_display }}
+          </span>
+          <div class="debt-actions">
+            <a class="btn btn-sm btn-outline-primary btn-icon" href="{% url 'deuda_update' deuda.pk %}" title="Editar deuda" aria-label="Editar deuda">
+              <span class="material-symbols-outlined">edit</span>
+            </a>
+            <button class="btn btn-sm btn-outline-danger btn-icon" type="button" title="Eliminar toda la deuda" aria-label="Eliminar toda la deuda" data-delete-trigger="delete-deuda-{{ deuda.pk }}">
+              <span class="material-symbols-outlined">delete</span>
+            </button>
+            <form id="delete-deuda-{{ deuda.pk }}" method="post" action="{% url 'deuda_delete' deuda.pk %}" hidden>
+              {% csrf_token %}
+              <input type="hidden" name="motivo_eliminacion" data-delete-reason>
+            </form>
+          </div>
+        </div>
+      </header>
+
+      <div class="debt-card-body">
+        <section class="debt-balance" aria-label="Resumen de saldo">
+          <span>Saldo pendiente</span>
+          <strong class="amount">{{ deuda.saldo_actual }}</strong>
+          <small>De un monto inicial de <strong class="amount">{{ deuda.monto_inicial }}</strong></small>
+          <div class="debt-financial-tags">
+            {% if deuda.tasa_interes_anual is not None %}<span><span class="material-symbols-outlined">percent</span>{{ deuda.tasa_interes_anual }}% anual</span>{% endif %}
+            {% if deuda.pago_minimo is not None %}<span><span class="material-symbols-outlined">payments</span>Mínimo {{ deuda.pago_minimo }}</span>{% endif %}
+          </div>
+        </section>
+
+        <section class="debt-plan" aria-label="Avance del plan de pagos">
+          <div class="debt-plan-heading">
+            <div>
+              <span class="eyebrow">Avance del plan</span>
+              <strong>{{ deuda.pagos_confirmados_count }} de {{ deuda.numero_cuotas }} cuotas pagadas</strong>
+            </div>
+            {% if deuda.cuotas_pendientes_count %}
+              <span class="debt-pending-count">{{ deuda.cuotas_pendientes_count }} pendiente{{ deuda.cuotas_pendientes_count|pluralize:"s" }}</span>
+            {% endif %}
+          </div>
+          <div class="debt-progress" role="progressbar" aria-label="Progreso de cuotas" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ deuda.progreso_cuotas }}">
+            <span style="width: {{ deuda.progreso_cuotas }}%"></span>
+          </div>
+
+          <div class="debt-next-payment">
+            {% if deuda.proximo_pago %}
+              <span class="eyebrow">Próximo pago</span>
+              {% with pago=deuda.proximo_pago %}{% include "core/includes/debt_payment.html" %}{% endwith %}
+            {% elif deuda.estado == "pagada" %}
+              <div class="debt-empty-state is-success">
+                <span class="material-symbols-outlined">check_circle</span>
+                <div><strong>Plan completado</strong><small>No tienes cuotas pendientes.</small></div>
               </div>
-            </td>
-            <td>
-              <span class="badge rounded-pill {% if deuda.estado == 'pagada' %}text-bg-success{% elif deuda.estado == 'cancelada' %}text-bg-danger{% else %}text-bg-warning{% endif %}">
-                {{ deuda.get_estado_display }}
-              </span>
-            </td>
-            <td class="payments-cell">
-              <div class="debt-payments">
-                {% for pago in deuda.pagos_ordenados %}
-                  {% if pago.estado == "pendiente" %}
+            {% else %}
+              <div class="debt-empty-state">
+                <span class="material-symbols-outlined">event_available</span>
+                <div><strong>Sin próxima cuota</strong><small>Puedes registrar un pago manual cuando lo necesites.</small></div>
+              </div>
+            {% endif %}
+          </div>
+
+          <div class="debt-card-footer">
+            {% if deuda.otros_pagos_pendientes or deuda.pagos_confirmados %}
+              <details class="paid-installments debt-schedule">
+                <summary>
+                  <span class="material-symbols-outlined">calendar_month</span>
+                  <span>Ver plan completo</span>
+                  <span class="material-symbols-outlined collapse-icon">expand_more</span>
+                </summary>
+                <div class="paid-installments-list">
+                  {% for pago in deuda.otros_pagos_pendientes %}
                     {% include "core/includes/debt_payment.html" %}
-                  {% endif %}
-                {% endfor %}
-                {% if deuda.pagos_confirmados_count %}
-                  <details class="paid-installments">
-                    <summary>
-                      <span class="material-symbols-outlined">history</span>
-                      <span>Ver {{ deuda.pagos_confirmados_count }} cuota{{ deuda.pagos_confirmados_count|pluralize:"s" }} pagada{{ deuda.pagos_confirmados_count|pluralize:"s" }}</span>
-                      <span class="material-symbols-outlined collapse-icon">expand_more</span>
-                    </summary>
-                    <div class="paid-installments-list">
-                      {% for pago in deuda.pagos_ordenados %}
-                        {% if pago.estado == "confirmado" %}
-                          {% include "core/includes/debt_payment.html" %}
-                        {% endif %}
-                      {% endfor %}
-                    </div>
-                  </details>
-                {% endif %}
-                {% if not deuda.pagos_confirmados_count and not deuda.cuotas_pendientes_count %}
-                  <span class="muted small">Todavía no hay cuotas registradas.</span>
-                {% endif %}
-                <a class="btn btn-sm btn-outline-primary" href="{% url 'pago_create' deuda.pk %}">
-                  <span class="material-symbols-outlined">payments</span><span>Registrar otro pago</span>
-                </a>
-              </div>
-            </td>
-            <td class="debt-actions-cell">
-              <span class="debt-actions">
-                <a class="btn btn-sm btn-outline-primary btn-icon" href="{% url 'deuda_update' deuda.pk %}" title="Editar" aria-label="Editar">
-                  <span class="material-symbols-outlined">edit</span>
-                </a>
-                <button class="btn btn-sm btn-outline-danger btn-icon" type="button" title="Eliminar toda la deuda" aria-label="Eliminar toda la deuda" data-delete-trigger="delete-deuda-{{ deuda.pk }}">
-                  <span class="material-symbols-outlined">delete</span>
-                </button>
-                <form id="delete-deuda-{{ deuda.pk }}" method="post" action="{% url 'deuda_delete' deuda.pk %}" hidden>
-                  {% csrf_token %}
-                  <input type="hidden" name="motivo_eliminacion" data-delete-reason>
-                </form>
-              </span>
-            </td>
-          </tr>
-        {% empty %}
-          <tr><td colspan="8" class="muted">Sin deudas.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% include "core/includes/pagination.html" %}
+                  {% endfor %}
+                  {% for pago in deuda.pagos_confirmados %}
+                    {% include "core/includes/debt_payment.html" %}
+                  {% endfor %}
+                </div>
+              </details>
+            {% endif %}
+            <a class="btn btn-sm btn-outline-primary" href="{% url 'pago_create' deuda.pk %}">
+              <span class="material-symbols-outlined">add_card</span><span>Registrar pago adicional</span>
+            </a>
+          </div>
+        </section>
+      </div>
+    </article>
+  {% empty %}
+    <section class="panel debt-empty-list">
+      <span class="debt-card-icon"><span class="material-symbols-outlined">receipt_long</span></span>
+      <h2>No encontramos deudas</h2>
+      <p class="muted">Prueba otros filtros o registra una nueva deuda para comenzar.</p>
+      <a class="btn btn-primary" href="{% url 'deuda_create' %}"><span class="material-symbols-outlined">add</span><span>Nueva deuda</span></a>
+    </section>
+  {% endfor %}
 </section>
+
+{% include "core/includes/pagination.html" %}
 {% endblock %}

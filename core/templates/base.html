@@ -1092,29 +1092,112 @@
     .gap-2 { gap: 8px; }
     .amount { font-variant-numeric: tabular-nums; }
 
-    .debt-table { min-width: 1120px; }
-    .debt-table .payments-cell { min-width: 390px; width: 390px; }
-    .debt-table .debt-actions-cell,
-    .debt-table th:last-child {
-      position: sticky;
-      right: 0;
-      width: 92px;
-      background: var(--surface);
-      box-shadow: -8px 0 12px rgba(26, 42, 68, .04);
-      z-index: 2;
+    .debt-page-actions { align-items: flex-end; }
+    .debt-filter-panel { padding: 18px 20px; }
+    .debt-filter-heading {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 16px;
     }
-    .debt-table th:last-child { background: #fbfcfd; z-index: 3; }
-    .installment-summary { display: flex; flex-wrap: wrap; gap: 6px; }
+    .debt-filter-heading h2 { margin-bottom: 4px; }
+    .debt-filter-form { grid-template-columns: minmax(240px, 2fr) minmax(190px, 1.25fr) minmax(170px, 1fr) auto; }
+    .debt-filter-submit { min-width: 112px; }
+    .input-with-icon { position: relative; }
+    .input-with-icon > .material-symbols-outlined {
+      position: absolute;
+      left: 13px;
+      top: 50%;
+      color: var(--muted);
+      transform: translateY(-50%);
+      pointer-events: none;
+    }
+    .input-with-icon .form-control { padding-left: 42px; }
+
+    .debt-list { display: grid; gap: 14px; }
+    .debt-card {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+    }
+    .debt-card:hover { border-color: #cfe3e0; box-shadow: var(--shadow-lg); transform: translateY(-1px); }
+    .debt-card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(135deg, #fff, #fbfefd);
+    }
+    .debt-identity { display: flex; align-items: flex-start; gap: 13px; min-width: 0; }
+    .debt-card-icon {
+      width: 42px;
+      height: 42px;
+      flex: 0 0 42px;
+      display: grid;
+      place-items: center;
+      border-radius: 12px;
+      color: var(--primary);
+      background: var(--primary-soft);
+    }
+    .debt-identity h2 { margin: 0 0 8px; font-size: 18px; line-height: 1.3; }
+    .debt-identity .eyebrow { margin-bottom: 3px; }
+    .debt-meta-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+    .debt-category {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 650;
+    }
+    .debt-card-tools { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }
+    .debt-card-body { display: grid; grid-template-columns: minmax(220px, 270px) minmax(0, 1fr); gap: 24px; padding: 20px; }
+    .debt-balance {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      min-width: 0;
+      padding: 18px;
+      border: 1px solid #d8efec;
+      border-radius: 14px;
+      background: linear-gradient(145deg, #f8fffe, var(--primary-soft));
+    }
+    .debt-balance > span:first-child {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+    .debt-balance > strong { margin: 5px 0 2px; font-size: 30px; line-height: 1.1; }
+    .debt-balance > small { color: var(--muted); line-height: 1.45; }
+    .debt-financial-tags { display: grid; gap: 7px; width: 100%; margin-top: 16px; padding-top: 14px; border-top: 1px solid #cce8e4; }
+    .debt-financial-tags > span { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; font-weight: 650; }
+    .debt-financial-tags .material-symbols-outlined { color: var(--primary); font-size: 17px; }
+    .debt-plan { min-width: 0; }
+    .debt-plan-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
+    .debt-plan-heading .eyebrow { margin-bottom: 3px; }
+    .debt-plan-heading strong { font-size: 15px; }
+    .debt-pending-count { color: #854d0e; border-radius: 999px; background: #fef3c7; padding: 5px 10px; font-size: 12px; font-weight: 750; }
+    .debt-progress { overflow: hidden; height: 7px; margin: 11px 0 18px; border-radius: 999px; background: #e8eef2; }
+    .debt-progress span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--primary), #45b8aa); }
+    .debt-next-payment > .eyebrow { margin-bottom: 7px; }
     .debt-payments { display: grid; gap: 8px; }
     .debt-payment {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
       align-items: center;
       gap: 10px;
-      border: 1px solid var(--line);
-      border-radius: 10px;
+      border: 1px solid #dfe6ec;
+      border-radius: 12px;
       background: var(--surface-soft);
-      padding: 9px 10px;
+      padding: 11px 12px;
     }
     .debt-payment-main { min-width: 0; }
     .debt-payment-title { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; color: var(--text); }
@@ -1143,6 +1226,19 @@
     .paid-installments summary .collapse-icon { transition: transform .18s ease; }
     .paid-installments[open] summary .collapse-icon { transform: rotate(180deg); }
     .paid-installments-list { display: grid; gap: 8px; }
+    .debt-schedule { min-width: min(100%, 250px); flex: 1 1 280px; }
+    .debt-schedule[open] { flex-basis: 100%; }
+    .debt-schedule .paid-installments-list { grid-template-columns: repeat(2, minmax(260px, 1fr)); margin-top: 8px; }
+    .debt-card-footer { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .debt-card-footer > .btn { min-height: 38px; }
+    .debt-empty-state { display: flex; align-items: center; gap: 10px; border: 1px dashed var(--line-strong); border-radius: 12px; padding: 12px; color: var(--muted); }
+    .debt-empty-state > .material-symbols-outlined { color: var(--primary); }
+    .debt-empty-state strong, .debt-empty-state small { display: block; }
+    .debt-empty-state small { margin-top: 2px; }
+    .debt-empty-state.is-success { border-color: #bbf7d0; color: #166534; background: #f0fdf4; }
+    .debt-empty-state.is-success > .material-symbols-outlined { color: var(--success); }
+    .debt-empty-list { display: grid; justify-items: center; padding: 44px 20px; text-align: center; }
+    .debt-empty-list h2 { margin: 14px 0 0; }
     .debt-actions { display: flex; justify-content: flex-end; gap: 6px; }
 
     .row {
@@ -1346,7 +1442,7 @@
     .ai-drawer-head strong, .ai-drawer-head small { display: block; }
     .ai-drawer-head small { margin-top: 2px; opacity: .82; font-size: 11px; }
     .ai-drawer-head .btn { color: #fff; border-color: rgba(255,255,255,.35); background: transparent; }
-    .ai-drawer-messages { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 16px 14px; background: var(--surface-soft); }
+    .ai-drawer-messages { min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 12px; padding: 16px 14px; background: var(--surface-soft); }
     .ai-drawer-message { max-width: 92%; padding: 11px 13px; border-radius: 16px; font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
     .ai-drawer-message.user { align-self: flex-end; color: #fff; background: var(--primary); border-bottom-right-radius: 4px; }
     .ai-drawer-message.assistant { align-self: flex-start; border: 0; background: var(--surface); border-bottom-left-radius: 4px; box-shadow: 0 1px 2px rgba(15, 23, 42, .08); }
@@ -1354,9 +1450,16 @@
     .ai-drawer-warning { margin-top: 8px; color: #92400e; font-size: 11px; }
     .ai-drawer-suggestions { display: flex; gap: 6px; overflow-x: auto; padding: 0 14px 10px; background: var(--surface-soft); }
     .ai-drawer-suggestions button { flex: 0 0 auto; border: 1px solid #b8e3de; border-radius: 999px; background: var(--primary-soft); color: var(--primary-hover); padding: 6px 9px; font: inherit; font-size: 11px; cursor: pointer; }
-    .ai-drawer-form { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 12px; border-top: 1px solid var(--line); background: var(--surface); }
-    .ai-drawer-form textarea { min-height: 46px; max-height: 100px; resize: none; border-radius: 14px; font-size: 13px; }
-    .ai-drawer-form .btn { align-self: end; width: 46px; height: 46px; padding: 0; }
+    .ai-drawer-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 12px; border-top: 1px solid var(--line); background: var(--surface); }
+    .ai-drawer-form textarea { min-width: 0; min-height: 46px; max-height: 100px; resize: none; border-radius: 14px; font-size: 16px; line-height: 1.35; }
+    .ai-drawer-form .btn { align-self: end; flex: 0 0 46px; width: 46px; height: 46px; padding: 0; }
+
+    @media (max-width: 1200px) {
+      .debt-filter-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .debt-search-field { grid-column: 1 / -1; }
+      .debt-filter-submit { width: 100%; }
+      .debt-card-body { grid-template-columns: 1fr; }
+    }
 
     @media (max-width: 980px) {
       .app-shell { grid-template-columns: 1fr; }
@@ -1406,13 +1509,43 @@
       .row { grid-template-columns: 1fr; }
       .col-md-1, .col-md-2, .col-md-3, .col-md-12 { grid-column: auto; }
       .wallet-hero { flex-direction: column; align-items: flex-start; }
-      .debt-table .payments-cell { min-width: 340px; width: 340px; }
+      .debt-filter-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .debt-search-field { grid-column: 1 / -1; }
+      .debt-filter-submit { width: 100%; }
+      .debt-card-body { grid-template-columns: 1fr; }
       .debt-payment { grid-template-columns: 1fr; }
       .debt-payment-actions { justify-content: flex-start; }
+      .debt-schedule .paid-installments-list { grid-template-columns: 1fr; }
       .quick-action-label { display: none; }
       .topbar-username { display: none; }
       .ai-fab { right: 16px; bottom: 16px; }
       .ai-drawer { right: 16px; bottom: 82px; height: min(580px, calc(100dvh - 105px)); }
+    }
+
+    @media (max-width: 640px) {
+      .debt-page-actions { align-items: stretch; }
+      .debt-page-actions > .btn { width: 100%; }
+      .debt-filter-heading, .debt-card-header { flex-direction: column; }
+      .debt-filter-heading > .btn { width: 100%; }
+      .debt-filter-form { grid-template-columns: 1fr; }
+      .debt-search-field { grid-column: auto; }
+      .debt-card-tools { width: 100%; justify-content: space-between; }
+      .debt-card-body { padding: 15px; gap: 16px; }
+      .debt-plan-heading { align-items: flex-start; flex-direction: column; gap: 8px; }
+      .debt-card-footer > .btn, .debt-schedule { width: 100%; }
+      .debt-identity h2 { font-size: 16px; }
+      .ai-drawer {
+        top: calc(var(--ai-viewport-top, 0px) + 8px);
+        right: 8px;
+        bottom: auto;
+        left: 8px;
+        width: auto;
+        height: calc(var(--ai-viewport-height, 100dvh) - 16px);
+        max-height: none;
+        border-radius: 14px;
+      }
+      .ai-drawer-head { padding-top: max(12px, env(safe-area-inset-top)); }
+      .ai-drawer-form { padding: 10px max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); }
     }
   </style>
 </head>
@@ -1557,7 +1690,7 @@
           </div>
           <form class="ai-drawer-form" id="ai-drawer-form">
             {% csrf_token %}
-            <textarea id="ai-drawer-question" maxlength="600" aria-label="Pregunta para el asistente" placeholder="Escribe una pregunta…"></textarea>
+            <textarea id="ai-drawer-question" rows="1" maxlength="600" enterkeyhint="send" autocomplete="off" aria-label="Pregunta para el asistente" placeholder="Escribe una pregunta…"></textarea>
             <button class="btn btn-primary btn-icon" type="submit" aria-label="Enviar pregunta" title="Enviar"><span class="material-symbols-outlined">send</span></button>
           </form>
         </div>
@@ -1596,12 +1729,24 @@
       const submit = form.querySelector('button[type="submit"]');
       const csrfToken = form.querySelector('input[name="csrfmiddlewaretoken"]').value;
       const history = [];
+      const compactScreen = () => window.matchMedia("(max-width: 640px)").matches;
+      const syncVisibleViewport = () => {
+        if (!window.visualViewport) return;
+        drawer.style.setProperty("--ai-viewport-height", `${window.visualViewport.height}px`);
+        drawer.style.setProperty("--ai-viewport-top", `${window.visualViewport.offsetTop}px`);
+        if (!drawer.hidden) messages.scrollTop = messages.scrollHeight;
+      };
 
       const setOpen = open => {
         drawer.hidden = !open;
         trigger.hidden = open;
         trigger.setAttribute("aria-expanded", String(open));
-        if (open) window.setTimeout(() => question.focus(), 0);
+        if (open) {
+          syncVisibleViewport();
+          if (!compactScreen()) window.setTimeout(() => question.focus({preventScroll: true}), 0);
+        } else {
+          question.blur();
+        }
       };
       const addMessage = (text, type, evidence = [], warning = "") => {
         const node = document.createElement("div");
@@ -1632,6 +1777,9 @@
 
       trigger.addEventListener("click", () => setOpen(drawer.hidden));
       drawer.querySelector("[data-ai-close]").addEventListener("click", () => setOpen(false));
+      window.visualViewport?.addEventListener("resize", syncVisibleViewport);
+      window.visualViewport?.addEventListener("scroll", syncVisibleViewport);
+      question.addEventListener("focus", syncVisibleViewport);
       document.addEventListener("keydown", event => { if (event.key === "Escape" && !drawer.hidden) setOpen(false); });
       document.querySelectorAll("[data-ai-question]").forEach(button => {
         button.addEventListener("click", () => {
@@ -1690,7 +1838,7 @@
           addMessage(message, "assistant");
         } finally {
           submit.disabled = false;
-          question.focus();
+          if (!compactScreen()) question.focus({preventScroll: true});
         }
       });
     })();

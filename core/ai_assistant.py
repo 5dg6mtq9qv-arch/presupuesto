@@ -37,7 +37,12 @@ from .models import (
     RegistroAuditoria,
     TransferenciaCuenta,
 )
-from .services import crear_historial_inicial_deuda, sincronizar_cuotas_pendientes_deuda, sincronizar_deuda_compra_credito
+from .services import (
+    crear_historial_inicial_deuda,
+    detalle_saldo_cuenta,
+    sincronizar_cuotas_pendientes_deuda,
+    sincronizar_deuda_compra_credito,
+)
 
 MAX_UPCOMING_PAYMENT_DETAILS = 25
 MAX_QUERY_DETAILS = 50
@@ -99,38 +104,7 @@ def _percentage_change(current, previous):
 
 def _account_balance_details(account):
     """Calculate an account balance using the same confirmed operations as the UI."""
-    movements = MovimientoFinanciero.objects.filter(
-        usuario=account.usuario,
-        cuenta=account,
-        estado=MovimientoFinanciero.Estado.CONFIRMADO,
-    )
-    incomes = movements.filter(tipo=MovimientoFinanciero.Tipo.INGRESO).aggregate(total=Sum("monto"))["total"] or Decimal("0")
-    expenses = movements.filter(tipo=MovimientoFinanciero.Tipo.GASTO).exclude(
-        metodo_pago__tipo=MetodoPago.Tipo.CREDITO,
-    ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
-    debt_payments = PagoDeuda.objects.filter(
-        deuda__usuario=account.usuario,
-        cuenta=account,
-        estado=PagoDeuda.Estado.CONFIRMADO,
-    ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
-    incoming_transfers = TransferenciaCuenta.objects.filter(
-        usuario=account.usuario,
-        cuenta_destino=account,
-    ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
-    outgoing_transfers = TransferenciaCuenta.objects.filter(
-        usuario=account.usuario,
-        cuenta_origen=account,
-    ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
-    balance = account.saldo_inicial + incomes - expenses - debt_payments + incoming_transfers - outgoing_transfers
-    return {
-        "saldo_inicial": account.saldo_inicial,
-        "ingresos_confirmados": incomes,
-        "gastos_confirmados": expenses,
-        "pagos_deuda_confirmados": debt_payments,
-        "transferencias_entrantes": incoming_transfers,
-        "transferencias_salientes": outgoing_transfers,
-        "saldo_actual": balance,
-    }
+    return detalle_saldo_cuenta(account)
 
 
 def _account_result(account, *, include_breakdown=False):

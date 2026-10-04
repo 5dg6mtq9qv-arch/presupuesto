@@ -15,7 +15,60 @@ from .models import (
     MovimientoFinanciero,
     MovimientoRecurrente,
     PagoDeuda,
+    TransferenciaCuenta,
 )
+
+
+def detalle_saldo_cuenta(cuenta):
+    """Calcula el saldo de una cuenta desde una unica fuente de verdad."""
+    saldo_inicial = Decimal(cuenta.saldo_inicial)
+    movimientos = MovimientoFinanciero.objects.filter(
+        usuario=cuenta.usuario,
+        cuenta=cuenta,
+        estado=MovimientoFinanciero.Estado.CONFIRMADO,
+    )
+    ingresos = movimientos.filter(
+        tipo=MovimientoFinanciero.Tipo.INGRESO,
+    ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    gastos = movimientos.filter(
+        tipo=MovimientoFinanciero.Tipo.GASTO,
+    ).exclude(
+        metodo_pago__tipo=MetodoPago.Tipo.CREDITO,
+    ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    pagos_deuda = PagoDeuda.objects.filter(
+        deuda__usuario=cuenta.usuario,
+        cuenta=cuenta,
+        estado=PagoDeuda.Estado.CONFIRMADO,
+    ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    transferencias_entrantes = TransferenciaCuenta.objects.filter(
+        usuario=cuenta.usuario,
+        cuenta_destino=cuenta,
+    ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    transferencias_salientes = TransferenciaCuenta.objects.filter(
+        usuario=cuenta.usuario,
+        cuenta_origen=cuenta,
+    ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    saldo_actual = (
+        saldo_inicial
+        + ingresos
+        - gastos
+        - pagos_deuda
+        + transferencias_entrantes
+        - transferencias_salientes
+    )
+    return {
+        "saldo_inicial": saldo_inicial,
+        "ingresos_confirmados": ingresos,
+        "gastos_confirmados": gastos,
+        "pagos_deuda_confirmados": pagos_deuda,
+        "transferencias_entrantes": transferencias_entrantes,
+        "transferencias_salientes": transferencias_salientes,
+        "saldo_actual": saldo_actual,
+    }
+
+
+def saldo_actual_cuenta(cuenta):
+    return detalle_saldo_cuenta(cuenta)["saldo_actual"]
 
 
 @transaction.atomic
