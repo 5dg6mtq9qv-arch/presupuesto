@@ -13,6 +13,9 @@
       {% if borrador.cuenta %} · {{ borrador.cuenta }}{% endif %}
       · {{ borrador.fecha|date:"d/m/Y" }}
     </p>
+    {% if borrador.etiquetas.all %}
+      <p class="muted">Etiquetas: {% for etiqueta in borrador.etiquetas.all %}{{ etiqueta.nombre }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>
+    {% endif %}
     {% if borrador.fecha_pago %}
       <p class="muted">
         Crédito con {{ borrador.acreedor }} · {{ borrador.numero_cuotas }} cuota{{ borrador.numero_cuotas|pluralize:"s" }} · primera fecha de pago {{ borrador.fecha_pago|date:"d/m/Y" }}

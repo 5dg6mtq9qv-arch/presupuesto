@@ -722,6 +722,7 @@ class BorradorMovimientoIA(models.Model):
         blank=True,
         related_name="borradores_ia",
     )
+    etiquetas = models.ManyToManyField(Etiqueta, blank=True, related_name="borradores_movimiento_ia")
     acreedor = models.CharField(max_length=120, blank=True)
     numero_cuotas = models.PositiveIntegerField(default=1)
     fecha_pago = models.DateField(null=True, blank=True)

@@ -30,11 +30,10 @@
     const fechaCompra = document.getElementById("id_fecha");
     const fechaPago = document.getElementById("id_fecha_pago");
     const acreedor = document.getElementById("id_acreedor_credito");
-    const nuevoAcreedor = document.getElementById("id_nuevo_acreedor_credito");
     const numeroCuotas = document.getElementById("id_numero_cuotas_credito");
     if (!form || !tipo || !metodo) return;
 
-    const camposCredito = [fechaPago, acreedor, nuevoAcreedor, numeroCuotas].filter(Boolean);
+    const camposCredito = [fechaPago, acreedor, numeroCuotas].filter(Boolean);
     const esCredito = () => tipo.value === "gasto" && metodo.selectedOptions[0]?.dataset.tipo === "credito";
     const sumarUnMes = value => {
       const [anio, mes, dia] = value.split("-").map(Number);

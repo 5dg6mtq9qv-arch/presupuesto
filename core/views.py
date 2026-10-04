@@ -4042,12 +4042,13 @@ def comprobante_revisar(request, pk):
             categoria=form.cleaned_data["categoria"],
             cuenta=form.cleaned_data["cuenta"],
             metodo_pago=form.cleaned_data["metodo_pago"],
-            acreedor=acreedor.nombre if acreedor else form.cleaned_data["nuevo_acreedor_credito"],
+            acreedor=acreedor.nombre if acreedor else "",
             numero_cuotas=form.cleaned_data["numero_cuotas_credito"] or 1,
             fecha_pago=form.cleaned_data["fecha_pago"],
             inferencias=["comprobante"],
             expira_en=timezone.now() + timedelta(minutes=30),
         )
+        draft.etiquetas.set(form.cleaned_data["etiquetas"])
         capture.borrador = draft
         capture.estado = CapturaComprobante.Estado.BORRADOR
         capture.save(update_fields=("borrador", "estado", "actualizado"))

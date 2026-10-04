@@ -10,8 +10,10 @@ from django.urls import reverse
 from django.utils import timezone
 
 from .models import (
+    Acreedor,
     CapturaComprobante,
     Categoria,
+    Etiqueta,
     ImportacionBancaria,
     MetodoPago,
     MovimientoFinanciero,
@@ -198,6 +200,8 @@ class ProductFeaturesTests(TestCase):
         capture = CapturaComprobante.objects.get(usuario=self.user)
         category = self.user.categoria_set.filter(tipo=Categoria.Tipo.FINANZAS, parent__isnull=False).first()
         credit_method = self.user.metodopago_set.get(tipo=MetodoPago.Tipo.CREDITO)
+        creditor = Acreedor.objects.create(usuario=self.user, nombre="Visa comprobante")
+        tag = Etiqueta.objects.create(usuario=self.user, nombre="Trabajo")
         purchase_date = timezone.localdate()
         payment_date = purchase_date + timedelta(days=35)
 
@@ -205,6 +209,10 @@ class ProductFeaturesTests(TestCase):
         self.assertContains(review, "Fecha máxima de pago de la primera cuota")
         self.assertContains(review, "Número de cuotas")
         self.assertContains(review, 'data-tipo="credito"')
+        self.assertContains(review, "Etiquetas")
+        self.assertContains(review, "Visa comprobante")
+        self.assertNotContains(review, "Nuevo acreedor")
+        self.assertContains(self.client.get(reverse("movimiento_gasto_create")), "Nuevo acreedor")
 
         response = self.client.post(
             reverse("comprobante_revisar", args=[capture.pk]),
@@ -214,10 +222,10 @@ class ProductFeaturesTests(TestCase):
                 "concepto": "Compra fotografiada a crédito",
                 "fecha": purchase_date.isoformat(),
                 "categoria": category.pk,
+                "etiquetas": [tag.pk],
                 "cuenta": "",
                 "metodo_pago": credit_method.pk,
-                "acreedor_credito": "",
-                "nuevo_acreedor_credito": "Visa comprobante",
+                "acreedor_credito": creditor.pk,
                 "numero_cuotas_credito": "3",
                 "fecha_pago": payment_date.isoformat(),
             },
@@ -238,6 +246,7 @@ class ProductFeaturesTests(TestCase):
         self.assertIsNone(movement.cuenta)
         self.assertEqual(movement.metodo_pago, credit_method)
         self.assertEqual(movement.acreedor_credito.nombre, "Visa comprobante")
+        self.assertEqual(list(movement.etiquetas.values_list("nombre", flat=True)), ["Trabajo"])
         self.assertEqual(movement.fecha_pago, payment_date)
         self.assertTrue(movement.comprobante.name.endswith("credito.jpg"))
         debt = Deuda.objects.get(movimiento_origen=movement)

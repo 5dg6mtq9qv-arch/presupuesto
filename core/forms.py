@@ -1170,6 +1170,12 @@ class RevisionComprobanteForm(forms.Form):
     concepto = forms.CharField(label="Concepto", max_length=160)
     fecha = forms.DateField(label="Fecha", widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}))
     categoria = forms.ModelChoiceField(queryset=Categoria.objects.none(), label="Categoría")
+    etiquetas = forms.ModelMultipleChoiceField(
+        queryset=Etiqueta.objects.none(),
+        label="Etiquetas",
+        required=False,
+        widget=EtiquetaSelectMultiple(attrs={"size": "1", "data-compact-multiple": "true"}),
+    )
     metodo_pago = forms.ModelChoiceField(
         queryset=MetodoPago.objects.none(),
         label="Método de pago",
@@ -1180,11 +1186,6 @@ class RevisionComprobanteForm(forms.Form):
     acreedor_credito = forms.ModelChoiceField(
         queryset=Acreedor.objects.none(),
         label="Acreedor",
-        required=False,
-    )
-    nuevo_acreedor_credito = forms.CharField(
-        label="Nuevo acreedor (si no está en la lista)",
-        max_length=120,
         required=False,
     )
     numero_cuotas_credito = forms.IntegerField(
@@ -1207,6 +1208,7 @@ class RevisionComprobanteForm(forms.Form):
             usuario=user, tipo=Categoria.Tipo.FINANZAS, parent__isnull=False
         ).select_related("parent").order_by("parent__nombre", "nombre")
         self.fields["categoria"].label_from_instance = lambda obj: f"{obj.parent.nombre} > {obj.nombre}"
+        self.fields["etiquetas"].queryset = Etiqueta.objects.filter(usuario=user).order_by("nombre")
         self.fields["cuenta"].queryset = CuentaFinanciera.objects.filter(usuario=user, activa=True).order_by("nombre")
         self.fields["metodo_pago"].queryset = MetodoPago.objects.filter(usuario=user, activo=True).order_by("nombre")
         self.fields["acreedor_credito"].queryset = Acreedor.objects.filter(usuario=user, activo=True).order_by("nombre")
@@ -1220,7 +1222,6 @@ class RevisionComprobanteForm(forms.Form):
         metodo_pago = cleaned_data.get("metodo_pago")
         cuenta = cleaned_data.get("cuenta")
         acreedor = cleaned_data.get("acreedor_credito")
-        nuevo_acreedor = (cleaned_data.get("nuevo_acreedor_credito") or "").strip()
         numero_cuotas = cleaned_data.get("numero_cuotas_credito")
         fecha = cleaned_data.get("fecha")
         fecha_pago = cleaned_data.get("fecha_pago")
@@ -1231,10 +1232,8 @@ class RevisionComprobanteForm(forms.Form):
         )
 
         if es_credito:
-            if acreedor and nuevo_acreedor:
-                self.add_error("nuevo_acreedor_credito", "Selecciona un acreedor o crea uno nuevo, no ambos.")
-            elif not acreedor and not nuevo_acreedor:
-                self.add_error("acreedor_credito", "Selecciona un acreedor o escribe uno nuevo para la compra a crédito.")
+            if not acreedor:
+                self.add_error("acreedor_credito", "Selecciona uno de los acreedores disponibles para la compra a crédito.")
             if not numero_cuotas:
                 self.add_error("numero_cuotas_credito", "Indica al menos una cuota.")
             if not fecha_pago:
@@ -1246,7 +1245,6 @@ class RevisionComprobanteForm(forms.Form):
             if not cuenta:
                 self.add_error("cuenta", "Selecciona la cuenta donde ocurrió el movimiento.")
             cleaned_data["acreedor_credito"] = None
-            cleaned_data["nuevo_acreedor_credito"] = ""
             cleaned_data["numero_cuotas_credito"] = 1
             cleaned_data["fecha_pago"] = None
 

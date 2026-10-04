@@ -815,7 +815,13 @@ def _pending_draft(user, *, lock=False):
     if lock:
         queryset = queryset.select_for_update()
     else:
-        queryset = queryset.select_related("categoria", "categoria__parent", "cuenta", "metodo_pago")
+        queryset = queryset.select_related(
+            "categoria",
+            "categoria__parent",
+            "cuenta",
+            "metodo_pago",
+        )
+    queryset = queryset.prefetch_related("etiquetas")
     draft = queryset.order_by("-creado").first()
     if draft and draft.expira_en <= timezone.now():
         draft.estado = BorradorMovimientoIA.Estado.EXPIRADO
@@ -836,6 +842,7 @@ def _draft_payload(draft):
         "categoria": _category_label(draft.categoria),
         "cuenta": draft.cuenta.nombre if draft.cuenta_id else None,
         "metodo_pago": draft.metodo_pago.nombre if draft.metodo_pago_id else None,
+        "etiquetas": list(draft.etiquetas.values_list("nombre", flat=True)),
         "acreedor": draft.acreedor or None,
         "numero_cuotas": draft.numero_cuotas,
         "fecha_pago": draft.fecha_pago.isoformat() if draft.fecha_pago else None,
@@ -1051,6 +1058,7 @@ def confirm_quick_movement(user, arguments):
             "categoria": _category_label(draft.categoria),
             "cuenta": draft.cuenta.nombre if draft.cuenta_id else "",
             "metodo_pago": draft.metodo_pago.nombre if draft.metodo_pago_id else "",
+            "etiquetas": list(draft.etiquetas.values_list("pk", flat=True)),
             "acreedor": draft.acreedor,
             "numero_cuotas": draft.numero_cuotas,
             "fecha_pago": draft.fecha_pago.isoformat() if draft.fecha_pago else "",
@@ -1130,6 +1138,7 @@ def create_movement(user, arguments):
         "categoria": category.pk,
         "cuenta": account.pk if account else "",
         "metodo_pago": payment_method.pk if payment_method else "",
+        "etiquetas": arguments.get("etiquetas") or [],
         "acreedor_credito": creditor.pk if creditor else "",
         "nuevo_acreedor_credito": new_creditor,
         "numero_cuotas_credito": arguments.get("numero_cuotas", 1),
