@@ -1,0 +1,4 @@
+{% extends "base.html" %}
+{% block page_title %}Revisar comprobante{% endblock %}
+{% block page_subtitle %}Corrige cualquier dato antes de preparar el movimiento{% endblock %}
+{% block content %}<div class="receipt-review"><section class="panel"><img class="receipt-preview" src="{{ captura.archivo.url }}" alt="Comprobante cargado"></section><section class="panel form-panel">{% if captura.error_analisis %}<div class="alert alert-warning">{{ captura.error_analisis }}</div>{% endif %}<form class="form-grid" method="post">{% csrf_token %}{% include "core/includes/unfold_form_fields.html" %}<div class="form-actions"><a class="btn btn-outline-secondary" href="{% url 'comprobante_nuevo' %}">Otra foto</a><button class="btn btn-primary" type="submit"><span class="material-symbols-outlined">arrow_forward</span>Revisar confirmación</button></div></form></section></div>{% endblock %}

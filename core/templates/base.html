@@ -3,6 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#25a194">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="manifest" href="{% url 'app_manifest' %}">
+  <link rel="icon" href="/static/core/icons/app-icon.svg" type="image/svg+xml">
   <title>{% block title %}Gestor de Finanzas Personales{% endblock %}</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..24,400,0,0">
@@ -1454,6 +1459,44 @@
     .ai-drawer-form textarea { min-width: 0; min-height: 46px; max-height: 100px; resize: none; border-radius: 14px; font-size: 16px; line-height: 1.35; }
     .ai-drawer-form .btn { align-self: end; flex: 0 0 46px; width: 46px; height: 46px; padding: 0; }
 
+    .notification-button { position: relative; }
+    .notification-badge {
+      position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px;
+      display: grid; place-items: center; border: 2px solid var(--surface); border-radius: 999px;
+      background: var(--danger); color: #fff; font-size: 9px; font-weight: 800; padding: 0 3px;
+    }
+    .activity-list { display: grid; gap: 2px; }
+    .activity-item, .notification-item {
+      display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 13px;
+      min-height: 70px; border-bottom: 1px solid var(--line); color: var(--text); padding: 12px 4px;
+    }
+    .activity-item:hover { color: var(--text); background: var(--surface-soft); }
+    .activity-icon { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 13px; background: #eef2f7; color: var(--slate); }
+    .activity-icon.ingreso { color: #15803d; background: #dcfce7; }
+    .activity-icon.gasto, .activity-icon.deuda, .activity-icon.vencimiento { color: #b91c1c; background: #fee2e2; }
+    .activity-icon.transferencia { color: #0369a1; background: #e0f2fe; }
+    .activity-icon.presupuesto { color: #a16207; background: #fef3c7; }
+    .activity-icon.recomendacion { color: #7e22ce; background: #f3e8ff; }
+    .activity-copy { min-width: 0; display: grid; gap: 4px; }
+    .activity-copy strong, .activity-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .activity-copy small, .notification-item p, .notification-item small { color: var(--muted); }
+    .activity-amount { font-variant-numeric: tabular-nums; }
+    .activity-amount.ingreso { color: #15803d; }
+    .activity-amount.gasto, .activity-amount.deuda { color: #b91c1c; }
+    .notification-item p { margin: 5px 0; }
+    .notification-item.is-unread { margin: 0 -8px; padding-inline: 12px; border-radius: 10px; background: #f0fdfa; }
+    .safe-notice { grid-column: 1/-1; display: flex; gap: 12px; margin-bottom: 20px; border: 1px solid #bae6fd; border-radius: 12px; background: #f0f9ff; padding: 14px; }
+    .safe-notice p { margin: 4px 0 0; color: var(--muted); }
+    .receipt-upload { max-width: 680px; text-align: center; }
+    .receipt-upload .form-grid { text-align: left; }
+    .receipt-camera { width: 72px; height: 72px; display: grid; place-items: center; margin: 0 auto 12px; border-radius: 22px; color: var(--primary); background: var(--primary-soft); font-size: 36px; }
+    .receipt-review { display: grid; grid-template-columns: minmax(260px, .75fr) minmax(420px, 1.25fr); gap: 18px; align-items: start; }
+    .receipt-preview { display: block; width: 100%; max-height: 72vh; object-fit: contain; border-radius: 12px; background: #eef2f7; }
+    .confirm-card { max-width: 680px; display: flex; align-items: flex-start; gap: 16px; }
+    .confirm-card h2 { margin: 4px 0; font-size: 22px; }
+    .confirm-amount { display: block; margin-top: 14px; font-size: 30px; }
+    .mobile-bottom-nav, .quick-sheet, .quick-sheet-backdrop { display: none; }
+
     @media (max-width: 1200px) {
       .debt-filter-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .debt-search-field { grid-column: 1 / -1; }
@@ -1494,7 +1537,8 @@
       }
       .topbar, .content, .footer { grid-column: 1; }
       .topbar { padding: 0 14px; }
-      .content { padding: 18px 14px; }
+      .content { padding: 18px 14px 104px; }
+      .footer { padding-bottom: 92px; }
       .dashboard-grid, .form-grid, .status-list, .recommendations-grid { grid-template-columns: 1fr; }
       .budget-guide { grid-template-columns: auto minmax(0, 1fr); }
       .budget-guide .btn { grid-column: 1 / -1; }
@@ -1518,8 +1562,25 @@
       .debt-schedule .paid-installments-list { grid-template-columns: 1fr; }
       .quick-action-label { display: none; }
       .topbar-username { display: none; }
-      .ai-fab { right: 16px; bottom: 16px; }
-      .ai-drawer { right: 16px; bottom: 82px; height: min(580px, calc(100dvh - 105px)); }
+      .ai-fab { right: 16px; bottom: 86px; }
+      .ai-drawer { right: 16px; bottom: 150px; height: min(580px, calc(100dvh - 175px)); }
+      .receipt-review { grid-template-columns: 1fr; }
+      .mobile-bottom-nav {
+        position: fixed; z-index: 70; inset: auto 0 0; min-height: 70px; display: grid;
+        grid-template-columns: repeat(5, 1fr); align-items: end; padding: 7px max(8px, env(safe-area-inset-right)) max(7px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+        border-top: 1px solid var(--line); background: rgba(255,255,255,.96); box-shadow: 0 -10px 30px rgba(15,23,42,.08); backdrop-filter: blur(14px);
+      }
+      .mobile-bottom-nav a, .mobile-bottom-nav button { position: relative; min-width: 0; display: grid; justify-items: center; gap: 3px; border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 10px; font-weight: 700; padding: 4px; }
+      .mobile-bottom-nav .material-symbols-outlined { font-size: 23px; }
+      .mobile-bottom-nav .mobile-create { width: 52px; height: 52px; align-self: start; justify-self: center; margin-top: -25px; border-radius: 18px; color: #fff; background: var(--primary); box-shadow: 0 8px 22px rgba(37,161,148,.35); }
+      .mobile-bottom-nav .mobile-create small { position: absolute; top: 57px; color: var(--muted); white-space: nowrap; }
+      .quick-sheet-backdrop.is-open { display: block; position: fixed; inset: 0; z-index: 78; background: rgba(15,23,42,.42); }
+      .quick-sheet { position: fixed; z-index: 79; inset: auto 10px calc(76px + env(safe-area-inset-bottom)) 10px; display: grid; gap: 8px; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); box-shadow: var(--shadow-lg); padding: 16px; transform: translateY(calc(100% + 120px)); transition: transform .2s ease; }
+      .quick-sheet.is-open { transform: translateY(0); }
+      .quick-sheet h2 { margin: 0 0 5px; font-size: 17px; }
+      .quick-sheet-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 9px; }
+      .quick-sheet-option { display: flex; align-items: center; gap: 9px; min-height: 54px; border: 1px solid var(--line); border-radius: 12px; color: var(--text); padding: 10px; }
+      .quick-sheet-option .material-symbols-outlined { color: var(--primary); }
     }
 
     @media (max-width: 640px) {
@@ -1544,6 +1605,8 @@
         max-height: none;
         border-radius: 14px;
       }
+      .activity-item, .notification-item { grid-template-columns: auto minmax(0,1fr); }
+      .activity-amount, .notification-item form { grid-column: 2; justify-self: start; }
       .ai-drawer-head { padding-top: max(12px, env(safe-area-inset-top)); }
       .ai-drawer-form { padding: 10px max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); }
     }
@@ -1582,6 +1645,8 @@
             <li><a class="nav-link {% if 'tarea' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'tarea_list' %}"><span class="material-symbols-outlined">task_alt</span> Tareas</a></li>
           {% endif %}
           <li><a class="nav-link {% if 'movimiento' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'movimiento_list' %}"><span class="material-symbols-outlined">sync_alt</span> Ingresos y gastos</a></li>
+          <li><a class="nav-link {% if request.resolver_match.url_name == 'actividad_financiera' %}active{% endif %}" href="{% url 'actividad_financiera' %}"><span class="material-symbols-outlined">history</span> Actividad</a></li>
+          <li><a class="nav-link {% if 'importacion_bancaria' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'importacion_bancaria_nueva' %}"><span class="material-symbols-outlined">upload_file</span> Importar banco</a></li>
           <li><a class="nav-link {% if request.resolver_match.url_name == 'cuenta_transferir' %}active{% endif %}" href="{% url 'cuenta_transferir' %}"><span class="material-symbols-outlined">swap_horiz</span> Transferir</a></li>
           <li><a class="nav-link {% if 'deuda' in request.resolver_match.url_name or 'pago' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'deuda_list' %}"><span class="material-symbols-outlined">receipt_long</span> Deudas</a></li>
           <li><a class="nav-link {% if 'presupuesto' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'presupuesto_list' %}"><span class="material-symbols-outlined">price_check</span> Presupuestos</a></li>
@@ -1626,6 +1691,10 @@
               <span class="material-symbols-outlined">remove</span><span class="quick-action-label">Gasto</span>
             </a>
           </div>
+          <a class="btn btn-light btn-icon notification-button" href="{% url 'notificacion_list' %}" title="Avisos" aria-label="Avisos">
+            <span class="material-symbols-outlined">notifications</span>
+            {% if notification_count %}<span class="notification-badge">{{ notification_count }}</span>{% endif %}
+          </a>
           <a class="avatar" href="{% url 'perfil_update' %}" title="Mi perfil" aria-label="Mi perfil">
             {% if user.perfil.imagen %}
               <img src="{{ user.perfil.imagen.url }}" alt="">
@@ -1664,6 +1733,27 @@
       <span class="text-muted">Agenda diaria y finanzas personales</span>
     </footer>
   </div>
+
+  {% if user.is_authenticated %}
+    <nav class="mobile-bottom-nav" aria-label="Navegación principal móvil">
+      <a href="{% url 'dashboard' %}"><span class="material-symbols-outlined">home</span><span>Inicio</span></a>
+      <a href="{% url 'actividad_financiera' %}"><span class="material-symbols-outlined">history</span><span>Actividad</span></a>
+      <button class="mobile-create" type="button" aria-label="Crear o importar" aria-expanded="false" data-quick-sheet-open><span class="material-symbols-outlined">add</span><small>Registrar</small></button>
+      <a href="{% url 'deuda_list' %}"><span class="material-symbols-outlined">receipt_long</span><span>Deudas</span></a>
+      <a href="{% url 'notificacion_list' %}"><span class="material-symbols-outlined">notifications</span><span>Avisos</span>{% if notification_count %}<span class="notification-badge">{{ notification_count }}</span>{% endif %}</a>
+    </nav>
+    <div class="quick-sheet-backdrop" data-quick-sheet-close></div>
+    <aside class="quick-sheet" aria-label="Acciones rápidas" data-quick-sheet>
+      <div class="panel-heading"><div><h2>¿Qué quieres registrar?</h2><small class="muted">Elige una acción para continuar</small></div><button class="btn btn-light btn-icon" type="button" data-quick-sheet-close aria-label="Cerrar"><span class="material-symbols-outlined">close</span></button></div>
+      <div class="quick-sheet-grid">
+        <a class="quick-sheet-option" href="{% url 'movimiento_ingreso_create' %}"><span class="material-symbols-outlined">south_west</span><strong>Ingreso</strong></a>
+        <a class="quick-sheet-option" href="{% url 'movimiento_gasto_create' %}"><span class="material-symbols-outlined">north_east</span><strong>Gasto</strong></a>
+        <a class="quick-sheet-option" href="{% url 'comprobante_nuevo' %}"><span class="material-symbols-outlined">photo_camera</span><strong>Comprobante</strong></a>
+        <a class="quick-sheet-option" href="{% url 'importacion_bancaria_nueva' %}"><span class="material-symbols-outlined">upload_file</span><strong>CSV bancario</strong></a>
+      </div>
+      <button class="btn btn-outline-primary" type="button" data-install-app hidden><span class="material-symbols-outlined">install_mobile</span>Instalar aplicación</button>
+    </aside>
+  {% endif %}
 
   {% if user.is_authenticated and can_use_ai and ai_configured %}
     {% if request.resolver_match.url_name != 'asistente_financiero' %}
@@ -2164,6 +2254,33 @@
           if (!panel) return;
           panel.hidden = !panel.hidden;
         });
+      });
+    })();
+  </script>
+  <script>
+    (() => {
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => navigator.serviceWorker.register("{% url 'service_worker' %}").catch(() => {}));
+      }
+      const sheet = document.querySelector("[data-quick-sheet]");
+      const backdrop = document.querySelector("[data-quick-sheet-close].quick-sheet-backdrop");
+      const openButton = document.querySelector("[data-quick-sheet-open]");
+      const setOpen = open => {
+        sheet?.classList.toggle("is-open", open);
+        backdrop?.classList.toggle("is-open", open);
+        openButton?.setAttribute("aria-expanded", String(open));
+      };
+      openButton?.addEventListener("click", () => setOpen(!sheet?.classList.contains("is-open")));
+      document.querySelectorAll("[data-quick-sheet-close]").forEach(button => button.addEventListener("click", () => setOpen(false)));
+      let installPrompt = null;
+      const installButton = document.querySelector("[data-install-app]");
+      window.addEventListener("beforeinstallprompt", event => {
+        event.preventDefault(); installPrompt = event;
+        if (installButton) installButton.hidden = false;
+      });
+      installButton?.addEventListener("click", async () => {
+        if (!installPrompt) return;
+        installPrompt.prompt(); await installPrompt.userChoice; installPrompt = null; installButton.hidden = true;
       });
     })();
   </script>

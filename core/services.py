@@ -1,9 +1,9 @@
 import calendar
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import IntegrityError, transaction
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.utils import timezone
 
 from .models import (
@@ -14,7 +14,10 @@ from .models import (
     MetodoPago,
     MovimientoFinanciero,
     MovimientoRecurrente,
+    Notificacion,
     PagoDeuda,
+    PresupuestoMensual,
+    RecomendacionFinanciera,
     TransferenciaCuenta,
 )
 
@@ -69,6 +72,103 @@ def detalle_saldo_cuenta(cuenta):
 
 def saldo_actual_cuenta(cuenta):
     return detalle_saldo_cuenta(cuenta)["saldo_actual"]
+
+
+def generar_notificaciones_usuario(user, *, hoy=None):
+    """Materializa alertas accionables sin duplicarlas entre ejecuciones."""
+    hoy = hoy or timezone.localdate()
+    limite = hoy + timedelta(days=7)
+    activas = set()
+
+    pagos = PagoDeuda.objects.filter(
+        deuda__usuario=user,
+        estado=PagoDeuda.Estado.PENDIENTE,
+        fecha__lte=limite,
+    ).select_related("deuda")
+    for pago in pagos:
+        clave = f"pago:{pago.pk}:{pago.fecha.isoformat()}"
+        activas.add(clave)
+        vencida = pago.fecha < hoy
+        Notificacion.objects.update_or_create(
+            usuario=user,
+            clave=clave,
+            defaults={
+                "tipo": Notificacion.Tipo.VENCIMIENTO,
+                "titulo": "Cuota vencida" if vencida else "Cuota próxima",
+                "mensaje": (
+                    f"{pago.deuda.acreedor} · {pago.deuda.concepto}: "
+                    f"{pago.monto:.2f} para el {pago.fecha:%d/%m/%Y}."
+                ),
+                "url": "/deudas/",
+            },
+        )
+
+    movimientos_mes = MovimientoFinanciero.objects.filter(
+        usuario=user,
+        tipo=MovimientoFinanciero.Tipo.GASTO,
+        estado=MovimientoFinanciero.Estado.CONFIRMADO,
+        fecha__year=hoy.year,
+        fecha__month=hoy.month,
+    )
+    presupuestos = PresupuestoMensual.objects.filter(
+        usuario=user,
+        anio=hoy.year,
+        mes=hoy.month,
+    ).select_related("categoria")
+    for presupuesto in presupuestos:
+        categoria_ids = [presupuesto.categoria_id]
+        if not presupuesto.categoria.parent_id:
+            categoria_ids.extend(presupuesto.categoria.subcategorias.values_list("pk", flat=True))
+        usado = movimientos_mes.filter(categoria_id__in=categoria_ids).aggregate(
+            total=Sum("monto")
+        )["total"] or Decimal("0")
+        if presupuesto.monto <= 0 or usado < presupuesto.monto * Decimal("0.80"):
+            continue
+        tramo = "100" if usado >= presupuesto.monto else "80"
+        clave = f"presupuesto:{presupuesto.pk}:{hoy.year}-{hoy.month}:{tramo}"
+        activas.add(clave)
+        porcentaje = (usado / presupuesto.monto * Decimal("100")).quantize(Decimal("0.1"))
+        Notificacion.objects.update_or_create(
+            usuario=user,
+            clave=clave,
+            defaults={
+                "tipo": Notificacion.Tipo.PRESUPUESTO,
+                "titulo": "Presupuesto excedido" if tramo == "100" else "Presupuesto al 80%",
+                "mensaje": f"{presupuesto.categoria.nombre}: has usado {porcentaje}% ({usado:.2f} de {presupuesto.monto:.2f}).",
+                "url": "/presupuestos/",
+            },
+        )
+
+    recomendacion = RecomendacionFinanciera.objects.filter(
+        usuario=user,
+        estado=RecomendacionFinanciera.Estado.NUEVA,
+    ).order_by("-prioridad", "-creado").first()
+    if recomendacion:
+        clave = f"recomendacion:{recomendacion.pk}"
+        activas.add(clave)
+        Notificacion.objects.update_or_create(
+            usuario=user,
+            clave=clave,
+            defaults={
+                "tipo": Notificacion.Tipo.RECOMENDACION,
+                "titulo": recomendacion.titulo,
+                "mensaje": recomendacion.resumen[:300],
+                "url": "/asistente/",
+            },
+        )
+
+    # Las alertas automáticas que dejaron de aplicar no deben seguir pendientes.
+    prefijos = ("pago:", "presupuesto:", "recomendacion:")
+    obsoletas = Notificacion.objects.filter(usuario=user, leida=False).filter(
+        Q(clave__startswith=prefijos[0])
+        | Q(clave__startswith=prefijos[1])
+        | Q(clave__startswith=prefijos[2])
+    )
+    if activas:
+        obsoletas.exclude(clave__in=activas).update(leida=True, leida_en=timezone.now())
+    else:
+        obsoletas.update(leida=True, leida_en=timezone.now())
+    return Notificacion.objects.filter(usuario=user, leida=False).count()
 
 
 @transaction.atomic

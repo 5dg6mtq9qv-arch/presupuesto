@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block page_title %}Revisar importación{% endblock %}
+{% block page_subtitle %}{{ importacion.archivo_nombre }} · {{ importacion.cuenta.nombre }}{% endblock %}
+{% block content %}<section class="panel">
+<div class="panel-heading"><div><h2>{{ importacion.total_filas }} filas encontradas</h2><p class="muted">{{ importacion.filas_duplicadas }} posibles duplicados se dejaron desmarcados.</p></div><span class="badge">{{ importacion.get_estado_display }}</span></div>
+{% if importacion.estado == 'previsualizada' %}<form method="post" action="{% url 'importacion_bancaria_confirmar' importacion.pk %}">{% csrf_token %}<div class="table-wrap"><table class="table"><thead><tr><th>Importar</th><th>Fecha</th><th>Concepto</th><th>Monto</th><th>Validación</th></tr></thead><tbody>
+{% for line in importacion.lineas.all %}<tr><td><input class="form-check-input" type="checkbox" name="lineas" value="{{ line.pk }}"{% if not line.duplicada %} checked{% else %} disabled{% endif %}></td><td>{{ line.fecha|date:"d/m/Y" }}</td><td>{{ line.concepto }}</td><td class="amount">{{ line.monto|floatformat:2 }}</td><td>{% if line.duplicada %}<span class="badge text-bg-warning">Posible duplicado</span>{% else %}<span class="badge text-bg-success">Nuevo</span>{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+<div class="form-actions"><a class="btn btn-outline-secondary" href="{% url 'importacion_bancaria_nueva' %}">Volver</a><button class="btn btn-primary" type="submit"><span class="material-symbols-outlined">done</span>Confirmar seleccionados</button></div></form>{% else %}<div class="alert alert-success">Esta importación creó {{ importacion.movimientos_creados }} movimientos.</div>{% endif %}
+</section>{% endblock %}

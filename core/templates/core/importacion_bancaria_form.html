@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block page_title %}Importar estado bancario{% endblock %}
+{% block page_subtitle %}Previsualiza un CSV y decide qué movimientos registrar{% endblock %}
+{% block content %}<section class="panel form-panel">
+<div class="safe-notice"><span class="material-symbols-outlined">verified_user</span><div><strong>Nada se registra todavía</strong><p>Primero revisaremos las filas y detectaremos posibles duplicados.</p></div></div>
+<form class="form-grid" method="post" enctype="multipart/form-data">{% csrf_token %}{% include "core/includes/unfold_form_fields.html" %}<div class="form-actions"><a class="btn btn-outline-secondary" href="{% url 'actividad_financiera' %}">Cancelar</a><button class="btn btn-primary" type="submit"><span class="material-symbols-outlined">preview</span>Previsualizar</button></div></form>
+</section>{% endblock %}

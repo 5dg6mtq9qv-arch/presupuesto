@@ -13,6 +13,10 @@ def movimiento_comprobante_path(instance, filename):
     return f"usuarios/{instance.usuario_id}/comprobantes/{filename}"
 
 
+def captura_comprobante_path(instance, filename):
+    return f"usuarios/{instance.usuario_id}/capturas/{filename}"
+
+
 class PerfilUsuario(models.Model):
     usuario = models.OneToOneField(
         settings.AUTH_USER_MODEL,
@@ -302,6 +306,43 @@ class RegistroAuditoria(models.Model):
         return f"{self.get_accion_display()}: {self.objeto_repr}"
 
 
+class Notificacion(models.Model):
+    class Tipo(models.TextChoices):
+        VENCIMIENTO = "vencimiento", "Vencimiento"
+        PRESUPUESTO = "presupuesto", "Presupuesto"
+        SALDO = "saldo", "Saldo"
+        RECOMENDACION = "recomendacion", "Recomendación"
+        SISTEMA = "sistema", "Sistema"
+
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="notificaciones",
+    )
+    tipo = models.CharField(max_length=24, choices=Tipo.choices, default=Tipo.SISTEMA)
+    clave = models.CharField(max_length=160, blank=True)
+    titulo = models.CharField(max_length=160)
+    mensaje = models.CharField(max_length=300)
+    url = models.CharField(max_length=300, blank=True)
+    leida = models.BooleanField(default=False)
+    creado = models.DateTimeField(auto_now_add=True)
+    leida_en = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = '"usuarios"."notificacion"'
+        ordering = ["leida", "-creado"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["usuario", "clave"],
+                condition=~models.Q(clave=""),
+                name="notificacion_clave_unica_usuario",
+            ),
+        ]
+
+    def __str__(self):
+        return self.titulo
+
+
 class Categoria(models.Model):
     class Tipo(models.TextChoices):
         TAREA = "tarea", "Tarea"
@@ -583,6 +624,72 @@ class MovimientoFinanciero(models.Model):
         return f"{self.get_tipo_display()}: {self.concepto}"
 
 
+class ImportacionBancaria(models.Model):
+    class Estado(models.TextChoices):
+        PREVISUALIZADA = "previsualizada", "Previsualizada"
+        CONFIRMADA = "confirmada", "Confirmada"
+        CANCELADA = "cancelada", "Cancelada"
+
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="importaciones_bancarias",
+    )
+    cuenta = models.ForeignKey(
+        CuentaFinanciera,
+        on_delete=models.PROTECT,
+        related_name="importaciones_bancarias",
+    )
+    archivo_nombre = models.CharField(max_length=255)
+    estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.PREVISUALIZADA)
+    total_filas = models.PositiveIntegerField(default=0)
+    filas_duplicadas = models.PositiveIntegerField(default=0)
+    movimientos_creados = models.PositiveIntegerField(default=0)
+    creado = models.DateTimeField(auto_now_add=True)
+    confirmado_en = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = '"finanzas"."importacion_bancaria"'
+        ordering = ["-creado"]
+
+    def __str__(self):
+        return f"{self.archivo_nombre} · {self.cuenta}"
+
+
+class LineaImportacionBancaria(models.Model):
+    importacion = models.ForeignKey(
+        ImportacionBancaria,
+        on_delete=models.CASCADE,
+        related_name="lineas",
+    )
+    numero_fila = models.PositiveIntegerField()
+    fecha = models.DateField()
+    concepto = models.CharField(max_length=160)
+    monto = models.DecimalField(max_digits=12, decimal_places=2)
+    huella = models.CharField(max_length=64, db_index=True)
+    duplicada = models.BooleanField(default=False)
+    movimiento = models.OneToOneField(
+        MovimientoFinanciero,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="linea_importacion",
+    )
+
+    class Meta:
+        db_table = '"finanzas"."linea_importacion_bancaria"'
+        ordering = ["numero_fila"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["importacion", "numero_fila"],
+                name="linea_importacion_numero_unico",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.fecha}: {self.concepto} ({self.monto})"
+
+
 class BorradorMovimientoIA(models.Model):
     class Estado(models.TextChoices):
         PENDIENTE = "pendiente", "Pendiente de confirmación"
@@ -641,6 +748,42 @@ class BorradorMovimientoIA(models.Model):
 
     def __str__(self):
         return f"{self.get_tipo_display()} {self.monto}: {self.concepto}"
+
+
+class CapturaComprobante(models.Model):
+    class Estado(models.TextChoices):
+        CARGADA = "cargada", "Cargada"
+        ANALIZADA = "analizada", "Analizada"
+        BORRADOR = "borrador", "Borrador preparado"
+        CONFIRMADA = "confirmada", "Confirmada"
+        CANCELADA = "cancelada", "Cancelada"
+        ERROR = "error", "Revisión manual"
+
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="capturas_comprobantes",
+    )
+    archivo = models.ImageField(upload_to=captura_comprobante_path)
+    estado = models.CharField(max_length=20, choices=Estado.choices, default=Estado.CARGADA)
+    datos_extraidos = models.JSONField(default=dict, blank=True)
+    error_analisis = models.CharField(max_length=300, blank=True)
+    borrador = models.OneToOneField(
+        BorradorMovimientoIA,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="captura_comprobante",
+    )
+    creado = models.DateTimeField(auto_now_add=True)
+    actualizado = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = '"analisis"."captura_comprobante"'
+        ordering = ["-creado"]
+
+    def __str__(self):
+        return f"Comprobante {self.pk} · {self.get_estado_display()}"
 
 
 class PresupuestoMensual(models.Model):

@@ -58,7 +58,10 @@ from .forms import (
     PresupuestoMensualForm,
     RegistroUsuarioForm,
     CategoriaPrincipalForm,
+    CapturaComprobanteForm,
     ConfiguracionIAForm,
+    ImportacionBancariaForm,
+    RevisionComprobanteForm,
     SubcategoriaForm,
     TareaForm,
     TransferenciaCuentaForm,
@@ -69,6 +72,8 @@ from .forms import (
 from .models import (
     Acreedor,
     AjusteSaldo,
+    BorradorMovimientoIA,
+    CapturaComprobante,
     Categoria,
     ConfiguracionIA,
     ConsumoIA,
@@ -76,9 +81,11 @@ from .models import (
     Deuda,
     EliminacionRegistro,
     Etiqueta,
+    ImportacionBancaria,
     MetodoPago,
     MovimientoFinanciero,
     MovimientoRecurrente,
+    Notificacion,
     ObjetivoFinanciero,
     PagoDeuda,
     PerfilUsuario,
@@ -94,12 +101,15 @@ from .services import (
     ensure_user_finance_setup,
     generar_recomendaciones_financieras,
     generar_pagos_deudas,
+    generar_notificaciones_usuario,
     movimientos_recurrentes_programados,
     reprogramar_fechas_cuotas,
     saldo_actual_cuenta,
     sincronizar_cuotas_pendientes_deuda,
     sincronizar_deuda_compra_credito,
 )
+from .bank_import import CSVImportError, confirm_import, create_import_preview
+from .receipt_capture import analyze_receipt
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -3306,3 +3316,262 @@ def pago_delete(request, pk):
         pago.delete()
         messages.success(request, "Pago eliminado.")
         return redirect("deuda_list")
+
+
+def app_manifest(request):
+    return JsonResponse(
+        {
+            "name": "Gestor de Finanzas Personales",
+            "short_name": "Mis Finanzas",
+            "description": "Control personal de ingresos, gastos, cuentas y deudas.",
+            "start_url": "/",
+            "scope": "/",
+            "display": "standalone",
+            "background_color": "#f5f6fa",
+            "theme_color": "#25a194",
+            "lang": "es",
+            "icons": [
+                {"src": "/static/core/icons/app-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"},
+            ],
+        },
+        content_type="application/manifest+json",
+    )
+
+
+def service_worker(request):
+    script = """
+const CACHE = 'taskbudget-shell-v1';
+const SHELL = ['/offline/', '/static/core/icons/app-icon.svg'];
+self.addEventListener('install', event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL))));
+self.addEventListener('activate', event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key))))));
+self.addEventListener('fetch', event => {
+  if (event.request.method !== 'GET') return;
+  const url = new URL(event.request.url);
+  if (url.origin !== self.location.origin) return;
+  if (event.request.mode === 'navigate') {
+    event.respondWith(fetch(event.request).catch(() => caches.match('/offline/')));
+    return;
+  }
+  if (url.pathname.startsWith('/static/')) {
+    event.respondWith(caches.match(event.request).then(hit => hit || fetch(event.request).then(response => {
+      const copy = response.clone(); caches.open(CACHE).then(cache => cache.put(event.request, copy)); return response;
+    })));
+  }
+});
+""".strip()
+    response = HttpResponse(script, content_type="application/javascript")
+    response["Service-Worker-Allowed"] = "/"
+    response["Cache-Control"] = "no-cache"
+    return response
+
+
+def offline_page(request):
+    return render(request, "core/offline.html")
+
+
+@login_required
+def notificacion_list(request):
+    generar_notificaciones_usuario(request.user)
+    cache.delete(f"notificaciones-no-leidas:{request.user.pk}")
+    notifications = Notificacion.objects.filter(usuario=request.user)
+    page_obj, querystring = paginate_queryset(request, notifications, 20)
+    return render(request, "core/notificacion_list.html", {"page_obj": page_obj, "list_querystring": querystring})
+
+
+@login_required
+@require_POST
+def notificacion_leer(request, pk):
+    notification = get_object_or_404(Notificacion, pk=pk, usuario=request.user)
+    if not notification.leida:
+        notification.leida = True
+        notification.leida_en = timezone.now()
+        notification.save(update_fields=("leida", "leida_en"))
+    cache.delete(f"notificaciones-no-leidas:{request.user.pk}")
+    target = notification.url if notification.url.startswith("/") and not notification.url.startswith("//") else reverse("notificacion_list")
+    return redirect(target)
+
+
+@login_required
+@require_POST
+def notificacion_leer_todas(request):
+    Notificacion.objects.filter(usuario=request.user, leida=False).update(leida=True, leida_en=timezone.now())
+    cache.delete(f"notificaciones-no-leidas:{request.user.pk}")
+    messages.success(request, "Todas las notificaciones quedaron marcadas como leídas.")
+    return redirect("notificacion_list")
+
+
+@login_required
+def actividad_financiera(request):
+    search = str(request.GET.get("q") or "").strip()
+    kind = str(request.GET.get("tipo") or "todos")
+    date_from = parse_date(request.GET.get("desde") or "")
+    date_to = parse_date(request.GET.get("hasta") or "")
+    entries = []
+
+    movements = MovimientoFinanciero.objects.filter(usuario=request.user).select_related("cuenta", "categoria")
+    transfers = TransferenciaCuenta.objects.filter(usuario=request.user).select_related("cuenta_origen", "cuenta_destino")
+    payments = PagoDeuda.objects.filter(deuda__usuario=request.user).select_related("deuda", "cuenta")
+    if search:
+        movements = movements.filter(Q(concepto__icontains=search) | Q(nota__icontains=search))
+        transfers = transfers.filter(Q(nota__icontains=search) | Q(cuenta_origen__nombre__icontains=search) | Q(cuenta_destino__nombre__icontains=search))
+        payments = payments.filter(Q(deuda__concepto__icontains=search) | Q(deuda__acreedor__icontains=search) | Q(nota__icontains=search))
+    for queryset in (movements, transfers, payments):
+        if date_from:
+            queryset = queryset.filter(fecha__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(fecha__lte=date_to)
+        if queryset.model is MovimientoFinanciero:
+            movements = queryset
+        elif queryset.model is TransferenciaCuenta:
+            transfers = queryset
+        else:
+            payments = queryset
+
+    if kind in {"todos", "ingreso", "gasto"}:
+        for movement in movements:
+            if kind != "todos" and movement.tipo != kind:
+                continue
+            entries.append({
+                "fecha": movement.fecha,
+                "creado": movement.creado,
+                "tipo": movement.tipo,
+                "icono": "south_west" if movement.tipo == MovimientoFinanciero.Tipo.INGRESO else "north_east",
+                "titulo": movement.concepto,
+                "detalle": movement.cuenta.nombre if movement.cuenta_id else "Sin cuenta",
+                "estado": movement.get_estado_display(),
+                "monto": movement.monto if movement.tipo == MovimientoFinanciero.Tipo.INGRESO else -movement.monto,
+                "url": reverse("movimiento_update", args=[movement.pk]),
+            })
+    if kind in {"todos", "transferencia"}:
+        for transfer in transfers:
+            entries.append({"fecha": transfer.fecha, "creado": transfer.creado, "tipo": "transferencia", "icono": "swap_horiz", "titulo": "Transferencia", "detalle": f"{transfer.cuenta_origen.nombre} → {transfer.cuenta_destino.nombre}", "estado": "Confirmada", "monto": transfer.monto, "url": reverse("cuenta_transferir")})
+    if kind in {"todos", "deuda"}:
+        for payment in payments:
+            entries.append({"fecha": payment.fecha, "creado": payment.creado, "tipo": "deuda", "icono": "receipt_long", "titulo": f"Pago · {payment.deuda.acreedor}", "detalle": payment.deuda.concepto, "estado": payment.get_estado_display(), "monto": -payment.monto, "url": reverse("deuda_list")})
+    entries.sort(key=lambda item: (item["fecha"], item["creado"]), reverse=True)
+    page_obj, querystring = paginate_queryset(request, entries, 25)
+    return render(request, "core/actividad_financiera.html", {"page_obj": page_obj, "list_querystring": querystring, "filtros": {"q": search, "tipo": kind, "desde": request.GET.get("desde", ""), "hasta": request.GET.get("hasta", "")}})
+
+
+@login_required
+def importacion_bancaria_nueva(request):
+    ensure_user_finance_setup(request.user)
+    form = ImportacionBancariaForm(request.POST or None, request.FILES or None, user=request.user)
+    if request.method == "POST" and form.is_valid():
+        try:
+            batch = create_import_preview(request.user, form.cleaned_data["cuenta"], form.cleaned_data["archivo"])
+        except CSVImportError as exc:
+            form.add_error("archivo", str(exc))
+        else:
+            return redirect("importacion_bancaria_preview", pk=batch.pk)
+    return render(request, "core/importacion_bancaria_form.html", {"form": form})
+
+
+@login_required
+def importacion_bancaria_preview(request, pk):
+    batch = get_object_or_404(ImportacionBancaria.objects.prefetch_related("lineas"), pk=pk, usuario=request.user)
+    return render(request, "core/importacion_bancaria_preview.html", {"importacion": batch})
+
+
+@login_required
+@require_POST
+def importacion_bancaria_confirmar(request, pk):
+    try:
+        batch = confirm_import(request.user, pk, request.POST.getlist("lineas"))
+    except (CSVImportError, ValueError):
+        messages.error(request, "La importación no se pudo confirmar o ya fue procesada.")
+        return redirect("importacion_bancaria_preview", pk=pk)
+    registrar_auditoria(request, RegistroAuditoria.Accion.CREAR, batch, cambios={"movimientos_creados": batch.movimientos_creados})
+    messages.success(request, f"Se importaron {batch.movimientos_creados} movimientos. Puedes clasificarlos desde Ingresos y gastos.")
+    return redirect("actividad_financiera")
+
+
+@login_required
+def comprobante_nuevo(request):
+    ensure_user_finance_setup(request.user)
+    form = CapturaComprobanteForm(request.POST or None, request.FILES or None)
+    if request.method == "POST" and form.is_valid():
+        capture = form.save(commit=False)
+        capture.usuario = request.user
+        capture.save()
+        extracted, error = analyze_receipt(request.user, capture.archivo)
+        capture.datos_extraidos = extracted
+        capture.error_analisis = error
+        capture.estado = CapturaComprobante.Estado.ANALIZADA if extracted else CapturaComprobante.Estado.ERROR
+        capture.save(update_fields=("datos_extraidos", "error_analisis", "estado", "actualizado"))
+        return redirect("comprobante_revisar", pk=capture.pk)
+    return render(request, "core/comprobante_form.html", {"form": form})
+
+
+@login_required
+def comprobante_revisar(request, pk):
+    capture = get_object_or_404(CapturaComprobante, pk=pk, usuario=request.user)
+    if capture.estado in {CapturaComprobante.Estado.CONFIRMADA, CapturaComprobante.Estado.CANCELADA}:
+        messages.info(request, "Este comprobante ya fue procesado.")
+        return redirect("actividad_financiera")
+    data = capture.datos_extraidos or {}
+    initial = {"tipo": data.get("tipo", "gasto"), "monto": data.get("monto"), "concepto": data.get("concepto", ""), "fecha": data.get("fecha") or timezone.localdate()}
+    form = RevisionComprobanteForm(request.POST or None, user=request.user, initial=initial)
+    if request.method == "POST" and form.is_valid():
+        BorradorMovimientoIA.objects.filter(usuario=request.user, estado=BorradorMovimientoIA.Estado.PENDIENTE).update(estado=BorradorMovimientoIA.Estado.CANCELADO)
+        draft = BorradorMovimientoIA.objects.create(
+            usuario=request.user,
+            tipo=form.cleaned_data["tipo"],
+            monto=form.cleaned_data["monto"],
+            concepto=form.cleaned_data["concepto"],
+            fecha=form.cleaned_data["fecha"],
+            categoria=form.cleaned_data["categoria"],
+            cuenta=form.cleaned_data["cuenta"],
+            metodo_pago=form.cleaned_data["metodo_pago"],
+            inferencias=["comprobante"],
+            expira_en=timezone.now() + timedelta(minutes=30),
+        )
+        capture.borrador = draft
+        capture.estado = CapturaComprobante.Estado.BORRADOR
+        capture.save(update_fields=("borrador", "estado", "actualizado"))
+        return render(request, "core/comprobante_confirmar.html", {"captura": capture, "borrador": draft})
+    return render(request, "core/comprobante_revisar.html", {"form": form, "captura": capture})
+
+
+@login_required
+@require_POST
+@transaction.atomic
+def comprobante_confirmar(request, pk):
+    capture = get_object_or_404(CapturaComprobante.objects.select_for_update(), pk=pk, usuario=request.user, estado=CapturaComprobante.Estado.BORRADOR)
+    draft = BorradorMovimientoIA.objects.select_for_update().filter(pk=capture.borrador_id, usuario=request.user).first()
+    current_draft = BorradorMovimientoIA.objects.select_for_update().filter(
+        usuario=request.user,
+        estado=BorradorMovimientoIA.Estado.PENDIENTE,
+    ).order_by("-creado").first()
+    if not draft or current_draft != draft or draft.expira_en <= timezone.now():
+        messages.error(request, "Este borrador expiró o fue reemplazado. Revisa nuevamente el comprobante.")
+        return redirect("comprobante_revisar", pk=pk)
+    result = confirm_quick_movement(request.user, {})
+    if not result.get("creado"):
+        messages.error(request, result.get("error", "No se pudo guardar el movimiento."))
+        return redirect("comprobante_revisar", pk=pk)
+    draft.refresh_from_db()
+    movement = draft.movimiento
+    movement.comprobante.name = capture.archivo.name
+    movement.save(update_fields=("comprobante",))
+    capture.estado = CapturaComprobante.Estado.CONFIRMADA
+    capture.save(update_fields=("estado", "actualizado"))
+    registrar_auditoria(request, RegistroAuditoria.Accion.CONFIRMAR, movement, cambios={"origen": "captura_comprobante", "captura_id": capture.pk})
+    messages.success(request, "Movimiento guardado con su comprobante.")
+    return redirect("actividad_financiera")
+
+
+@login_required
+@require_POST
+def comprobante_cancelar(request, pk):
+    capture = get_object_or_404(CapturaComprobante, pk=pk, usuario=request.user)
+    if capture.estado in {CapturaComprobante.Estado.CONFIRMADA, CapturaComprobante.Estado.CANCELADA}:
+        messages.info(request, "Este comprobante ya fue procesado y no se modificó.")
+        return redirect("actividad_financiera")
+    if capture.borrador_id and capture.borrador.estado == BorradorMovimientoIA.Estado.PENDIENTE:
+        capture.borrador.estado = BorradorMovimientoIA.Estado.CANCELADO
+        capture.borrador.save(update_fields=("estado", "actualizado"))
+    capture.estado = CapturaComprobante.Estado.CANCELADA
+    capture.save(update_fields=("estado", "actualizado"))
+    messages.info(request, "Se canceló el borrador; no se creó ningún movimiento.")
+    return redirect("actividad_financiera")

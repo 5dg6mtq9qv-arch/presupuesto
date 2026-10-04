@@ -1,0 +1,4 @@
+{% extends "base.html" %}
+{% block page_title %}Capturar comprobante{% endblock %}
+{% block page_subtitle %}Toma una foto y revisa los datos antes de guardar{% endblock %}
+{% block content %}<section class="panel form-panel receipt-upload"><span class="receipt-camera material-symbols-outlined">photo_camera</span><h2>Foto clara y completa</h2><p class="muted">Incluye comercio, fecha y total. La IA solo sugerirá datos; tú tendrás la última palabra.</p><form class="form-grid" method="post" enctype="multipart/form-data">{% csrf_token %}{% include "core/includes/unfold_form_fields.html" %}<div class="form-actions"><a class="btn btn-outline-secondary" href="{% url 'actividad_financiera' %}">Cancelar</a><button class="btn btn-primary" type="submit"><span class="material-symbols-outlined">document_scanner</span>Analizar y revisar</button></div></form></section>{% endblock %}

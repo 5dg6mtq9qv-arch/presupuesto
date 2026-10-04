@@ -9,11 +9,13 @@ from django.utils import timezone
 
 from .models import (
     Acreedor,
+    CapturaComprobante,
     Categoria,
     ConfiguracionIA,
     CuentaFinanciera,
     Deuda,
     Etiqueta,
+    ImportacionBancaria,
     MetodoPago,
     MovimientoFinanciero,
     MovimientoRecurrente,
@@ -1099,6 +1101,69 @@ class AjusteSaldoForm(forms.Form):
         if self.saldo_actual is not None and saldo_nuevo == self.saldo_actual:
             raise forms.ValidationError("El saldo real ya coincide con el saldo calculado.")
         return saldo_nuevo
+
+
+class ImportacionBancariaForm(forms.ModelForm):
+    archivo = forms.FileField(
+        label="Estado de cuenta CSV",
+        help_text="Hasta 2 MB. Debe contener fecha, descripción y monto; también acepta débito/crédito.",
+        widget=forms.FileInput(attrs={"accept": ".csv,text/csv"}),
+    )
+
+    class Meta:
+        model = ImportacionBancaria
+        fields = ["cuenta"]
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["cuenta"].queryset = CuentaFinanciera.objects.filter(usuario=user, activa=True).order_by("nombre")
+        self.fields["cuenta"].empty_label = "Selecciona la cuenta del archivo"
+        for field in self.fields.values():
+            field.widget.attrs["class"] = "form-select" if isinstance(field.widget, forms.Select) else "form-control"
+
+    def clean_archivo(self):
+        uploaded = self.cleaned_data["archivo"]
+        if uploaded.size > 2 * 1024 * 1024:
+            raise forms.ValidationError("El archivo supera el límite de 2 MB.")
+        if not uploaded.name.lower().endswith(".csv"):
+            raise forms.ValidationError("Selecciona un archivo CSV.")
+        return uploaded
+
+
+class CapturaComprobanteForm(forms.ModelForm):
+    class Meta:
+        model = CapturaComprobante
+        fields = ["archivo"]
+        labels = {"archivo": "Foto del comprobante"}
+        help_texts = {"archivo": "Toma una foto o elige una imagen. Máximo 5 MB."}
+        widgets = {"archivo": forms.FileInput(attrs={"accept": "image/*", "capture": "environment", "class": "form-control"})}
+
+    def clean_archivo(self):
+        uploaded = self.cleaned_data["archivo"]
+        if uploaded.size > 5 * 1024 * 1024:
+            raise forms.ValidationError("La imagen supera el límite de 5 MB.")
+        return uploaded
+
+
+class RevisionComprobanteForm(forms.Form):
+    tipo = forms.ChoiceField(label="Tipo", choices=MovimientoFinanciero.Tipo.choices)
+    monto = forms.DecimalField(label="Monto", max_digits=12, decimal_places=2, min_value=Decimal("0.01"))
+    concepto = forms.CharField(label="Concepto", max_length=160)
+    fecha = forms.DateField(label="Fecha", widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}))
+    categoria = forms.ModelChoiceField(queryset=Categoria.objects.none(), label="Categoría")
+    cuenta = forms.ModelChoiceField(queryset=CuentaFinanciera.objects.none(), label="Cuenta")
+    metodo_pago = forms.ModelChoiceField(queryset=MetodoPago.objects.none(), label="Método de pago", required=False)
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["categoria"].queryset = Categoria.objects.filter(
+            usuario=user, tipo=Categoria.Tipo.FINANZAS, parent__isnull=False
+        ).select_related("parent").order_by("parent__nombre", "nombre")
+        self.fields["categoria"].label_from_instance = lambda obj: f"{obj.parent.nombre} > {obj.nombre}"
+        self.fields["cuenta"].queryset = CuentaFinanciera.objects.filter(usuario=user, activa=True).order_by("nombre")
+        self.fields["metodo_pago"].queryset = MetodoPago.objects.filter(usuario=user, activo=True).order_by("nombre")
+        for field in self.fields.values():
+            field.widget.attrs["class"] = "form-select" if isinstance(field.widget, forms.Select) else "form-control"
 
 
 class TransferenciaCuentaForm(UserScopedModelForm):

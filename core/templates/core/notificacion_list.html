@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block page_title %}Avisos{% endblock %}
+{% block page_subtitle %}Vencimientos, presupuestos y recomendaciones que requieren atención{% endblock %}
+{% block content %}
+<div class="actions"><div></div><form method="post" action="{% url 'notificacion_leer_todas' %}">{% csrf_token %}<button class="btn btn-outline-primary" type="submit"><span class="material-symbols-outlined">done_all</span>Marcar todas como leídas</button></form></div>
+<section class="panel activity-list">
+  {% for item in page_obj %}
+    <article class="notification-item{% if not item.leida %} is-unread{% endif %}">
+      <span class="activity-icon {{ item.tipo }}"><span class="material-symbols-outlined">{% if item.tipo == 'vencimiento' %}event{% elif item.tipo == 'presupuesto' %}speed{% elif item.tipo == 'recomendacion' %}lightbulb{% else %}notifications{% endif %}</span></span>
+      <div><strong>{{ item.titulo }}</strong><p>{{ item.mensaje }}</p><small>{{ item.creado|date:"d/m/Y H:i" }}</small></div>
+      <form method="post" action="{% url 'notificacion_leer' item.pk %}">{% csrf_token %}<button class="btn btn-outline-primary" type="submit">{% if item.leida %}Abrir{% else %}Ver y marcar leída{% endif %}</button></form>
+    </article>
+  {% empty %}<div class="debt-empty-list"><span class="material-symbols-outlined">notifications_none</span><h2>Todo al día</h2><p class="muted">No tienes avisos pendientes.</p></div>{% endfor %}
+  {% include "core/includes/pagination.html" %}
+</section>
+{% endblock %}

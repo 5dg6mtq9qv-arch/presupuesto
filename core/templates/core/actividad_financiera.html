@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block page_title %}Actividad financiera{% endblock %}
+{% block page_subtitle %}Una sola línea de tiempo para movimientos, transferencias y pagos de deuda{% endblock %}
+{% block content %}
+<section class="panel"><form class="filter-form" method="get">
+  <div><label for="q">Buscar</label><input class="form-control" id="q" name="q" value="{{ filtros.q }}" placeholder="Concepto, cuenta o acreedor"></div>
+  <div><label for="tipo">Tipo</label><select class="form-select" id="tipo" name="tipo"><option value="todos">Todos</option><option value="ingreso"{% if filtros.tipo == 'ingreso' %} selected{% endif %}>Ingresos</option><option value="gasto"{% if filtros.tipo == 'gasto' %} selected{% endif %}>Gastos</option><option value="transferencia"{% if filtros.tipo == 'transferencia' %} selected{% endif %}>Transferencias</option><option value="deuda"{% if filtros.tipo == 'deuda' %} selected{% endif %}>Pagos de deuda</option></select></div>
+  <div><label for="desde">Desde</label><input class="form-control" type="date" id="desde" name="desde" value="{{ filtros.desde }}"></div>
+  <div><label for="hasta">Hasta</label><input class="form-control" type="date" id="hasta" name="hasta" value="{{ filtros.hasta }}"></div>
+  <button class="btn btn-primary" type="submit"><span class="material-symbols-outlined">filter_alt</span>Filtrar</button>
+</form></section>
+<section class="panel activity-list">
+  {% for item in page_obj %}<a class="activity-item" href="{{ item.url }}">
+    <span class="activity-icon {{ item.tipo }}"><span class="material-symbols-outlined">{{ item.icono }}</span></span>
+    <span class="activity-copy"><strong>{{ item.titulo }}</strong><small>{{ item.detalle }} · {{ item.fecha|date:"d/m/Y" }} · {{ item.estado }}</small></span>
+    <strong class="activity-amount {{ item.tipo }}">{% if item.monto > 0 and item.tipo != 'transferencia' %}+{% endif %}{{ item.monto|floatformat:2 }}</strong>
+  </a>{% empty %}<div class="debt-empty-list"><span class="material-symbols-outlined">history</span><h2>Sin actividad</h2><p class="muted">Prueba otros filtros o registra tu primer movimiento.</p></div>{% endfor %}
+  {% include "core/includes/pagination.html" %}
+</section>
+{% endblock %}

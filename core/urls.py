@@ -4,6 +4,9 @@ from . import views
 
 
 urlpatterns = [
+    path("manifest.webmanifest", views.app_manifest, name="app_manifest"),
+    path("service-worker.js", views.service_worker, name="service_worker"),
+    path("offline/", views.offline_page, name="offline_page"),
     path("", views.dashboard, name="dashboard"),
     path("registro/", views.registro, name="registro"),
     path("analisis/", views.analisis_financiero, name="analisis_financiero"),
@@ -19,6 +22,17 @@ urlpatterns = [
     path("perfil/contrasenia/", views.mi_password_update, name="mi_password_update"),
     path("reportes/finanzas.csv", views.reporte_financiero_csv, name="reporte_financiero_csv"),
     path("reportes/finanzas.pdf", views.reporte_financiero_pdf, name="reporte_financiero_pdf"),
+    path("actividad/", views.actividad_financiera, name="actividad_financiera"),
+    path("notificaciones/", views.notificacion_list, name="notificacion_list"),
+    path("notificaciones/leer-todas/", views.notificacion_leer_todas, name="notificacion_leer_todas"),
+    path("notificaciones/<int:pk>/leer/", views.notificacion_leer, name="notificacion_leer"),
+    path("importaciones/bancarias/nueva/", views.importacion_bancaria_nueva, name="importacion_bancaria_nueva"),
+    path("importaciones/bancarias/<int:pk>/", views.importacion_bancaria_preview, name="importacion_bancaria_preview"),
+    path("importaciones/bancarias/<int:pk>/confirmar/", views.importacion_bancaria_confirmar, name="importacion_bancaria_confirmar"),
+    path("comprobantes/nuevo/", views.comprobante_nuevo, name="comprobante_nuevo"),
+    path("comprobantes/<int:pk>/revisar/", views.comprobante_revisar, name="comprobante_revisar"),
+    path("comprobantes/<int:pk>/confirmar/", views.comprobante_confirmar, name="comprobante_confirmar"),
+    path("comprobantes/<int:pk>/cancelar/", views.comprobante_cancelar, name="comprobante_cancelar"),
     path("cuentas/", views.cuenta_list, name="cuenta_list"),
     path("cuentas/<int:pk>/ajustar-saldo/", views.cuenta_ajustar_saldo, name="cuenta_ajustar_saldo"),
     path("cuentas/transferir/", views.cuenta_transferir, name="cuenta_transferir"),

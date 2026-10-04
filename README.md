@@ -17,6 +17,13 @@ Gestor web de finanzas personales construido con Django y PostgreSQL.
 
 La pantalla `/registro/` crea el primer usuario y prepara automáticamente sus categorías, cuentas y métodos de pago.
 
+## Experiencia móvil y captura de datos
+
+- La aplicación incluye manifiesto PWA, navegación inferior móvil y una pantalla segura sin conexión. En producción debe servirse por HTTPS para poder instalarla desde el navegador.
+- La actividad financiera reúne ingresos, gastos, transferencias y pagos de deuda, con filtros por texto, tipo y fecha.
+- Los estados bancarios se importan desde CSV mediante una previsualización. Se aceptan columnas `fecha`, `concepto`/`descripcion` y `monto`, o columnas separadas de `debito` y `credito`. Ninguna fila se registra antes de confirmarla.
+- La captura de comprobantes acepta una foto, sugiere datos con el proveedor de IA configurado y siempre exige revisión y confirmación manual. Sin IA disponible, el mismo flujo funciona con ingreso manual.
+
 ## Automatización
 
 El script `scripts/generar_recurrentes.sh` genera movimientos recurrentes y cuotas vencidas de forma idempotente. Puede ejecutarse desde `cron`; usa `flock` para impedir dos ejecuciones simultáneas y escribe el resultado en `logs/recurrentes.log`.
