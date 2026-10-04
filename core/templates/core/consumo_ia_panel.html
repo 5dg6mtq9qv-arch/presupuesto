@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
-{% block page_title %}Consumo de IA{% endblock %}
-{% block page_subtitle %}Uso de tokens por usuario dentro de la plataforma{% endblock %}
+{% block page_title %}Control de IA{% endblock %}
+{% block page_subtitle %}Acceso y consumo privado por usuario{% endblock %}
 
 {% block content %}
 <style>
@@ -13,6 +13,9 @@
   .usage-grid .panel { min-width: 0; }
   .usage-secondary { color: var(--muted); font-size: 12px; }
   .usage-error { color: var(--danger); font-weight: 750; }
+  .usage-access { min-width: 110px; }
+  .usage-user-name { min-width: 170px; }
+  .usage-toggle-form { display: inline-flex; margin: 0; }
   @media (max-width: 900px) { .usage-grid { grid-template-columns: 1fr; } }
 </style>
 
@@ -49,6 +52,7 @@
 </section>
 
 <div class="usage-metrics">
+  <section class="panel usage-metric"><small>Usuarios con IA</small><strong>{{ usuarios_autorizados }} <span class="usage-secondary">de {{ usuarios_totales }}</span></strong></section>
   <section class="panel usage-metric"><small>Peticiones</small><strong>{{ resumen.peticiones }}</strong></section>
   <section class="panel usage-metric"><small>Tokens totales</small><strong>{{ resumen.tokens_totales }}</strong></section>
   <section class="panel usage-metric"><small>Entrada</small><strong>{{ resumen.tokens_entrada }}</strong></section>
@@ -62,18 +66,38 @@
 
 <div class="usage-grid">
   <section class="panel">
-    <div class="panel-heading"><div><h2>Consumo por usuario</h2><p class="muted mb-0">Máximo 50 usuarios, ordenados por consumo</p></div></div>
+    <div class="panel-heading"><div><h2>Acceso y consumo por usuario</h2><p class="muted mb-0">Solo los administradores pueden consultar y modificar esta información</p></div></div>
     <div class="table-wrap">
       <table class="table table-hover align-middle mb-0">
-        <thead><tr><th>Usuario</th><th>Peticiones</th><th>Entrada</th><th>Salida</th><th>Total</th><th>Errores</th></tr></thead>
+        <thead><tr><th>Usuario</th><th>Acceso IA</th><th>Consultas</th><th>Tokens</th><th>Costo est.</th><th>Último uso</th><th></th></tr></thead>
         <tbody>
           {% for item in por_usuario %}
             <tr>
-              <td><strong>{{ item.usuario__username|default:"Usuario eliminado" }}</strong>{% if item.usuario__first_name or item.usuario__last_name %}<div class="usage-secondary">{{ item.usuario__first_name }} {{ item.usuario__last_name }}</div>{% endif %}</td>
-              <td>{{ item.peticiones }}</td><td>{{ item.tokens_entrada }}</td><td>{{ item.tokens_salida }}</td><td><strong>{{ item.tokens_totales }}</strong></td>
-              <td{% if item.errores %} class="usage-error"{% endif %}>{{ item.errores }}</td>
+              <td class="usage-user-name"><strong>{{ item.usuario.username }}</strong>{% if item.usuario.get_full_name %}<div class="usage-secondary">{{ item.usuario.get_full_name }}</div>{% endif %}{% if not item.usuario.is_active %}<div class="usage-secondary">Usuario inactivo</div>{% endif %}</td>
+              <td class="usage-access">{% if item.ia_habilitada %}<span class="badge rounded-pill text-bg-success">Habilitada</span>{% else %}<span class="badge rounded-pill text-bg-light border">Deshabilitada</span>{% endif %}</td>
+              <td>{{ item.peticiones }}{% if item.errores %}<div class="usage-error">{{ item.errores }} error{{ item.errores|pluralize:"es" }}</div>{% endif %}</td>
+              <td><strong>{{ item.tokens_totales }}</strong><div class="usage-secondary">{{ item.tokens_entrada }} entrada · {{ item.tokens_salida }} salida</div></td>
+              <td>${{ item.costo_estimado_usd|floatformat:6 }}{% if item.costo_incompleto %}<div class="usage-secondary">Costo parcial</div>{% endif %}</td>
+              <td>{% if item.ultima_peticion %}{{ item.ultima_peticion|date:"d/m/Y H:i" }}{% else %}<span class="usage-secondary">Sin uso</span>{% endif %}</td>
+              <td class="text-nowrap">
+                {% if item.controlable %}
+                  <form class="usage-toggle-form" method="post" action="{% url 'usuario_ia_toggle' item.usuario.pk %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    {% if item.ia_habilitada %}
+                      <input type="hidden" name="accion" value="desactivar">
+                      <button class="btn btn-sm btn-outline-danger" type="submit">Desactivar</button>
+                    {% else %}
+                      <input type="hidden" name="accion" value="activar">
+                      <button class="btn btn-sm btn-outline-primary" type="submit">Activar</button>
+                    {% endif %}
+                  </form>
+                {% else %}
+                  <span class="usage-secondary">Acceso permanente</span>
+                {% endif %}
+              </td>
             </tr>
-          {% empty %}<tr><td colspan="6" class="muted">No hay consumo en el período seleccionado.</td></tr>{% endfor %}
+          {% empty %}<tr><td colspan="7" class="muted">No hay usuarios que coincidan con el filtro.</td></tr>{% endfor %}
         </tbody>
       </table>
     </div>

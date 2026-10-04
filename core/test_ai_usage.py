@@ -10,7 +10,7 @@ from django.urls import reverse
 from .ai_assistant import _provider_message
 from .ai_config import AIRuntimeConfig
 from .ai_pricing import estimate_ai_cost_usd
-from .models import ConsumoIA
+from .models import ConsumoIA, PerfilUsuario, RegistroAuditoria
 
 
 class AIUsageTrackingTests(TestCase):
@@ -99,8 +99,51 @@ class AIUsagePanelTests(TestCase):
         self.client.force_login(self.staff)
         response = self.client.get(reverse("consumo_ia_panel"))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Consumo de IA")
+        self.assertContains(response, "Control de IA")
         self.assertContains(response, "cliente")
         self.assertEqual(response.context["resumen"]["tokens_totales"], 100)
         self.assertEqual(response.context["resumen"]["costo_estimado_usd"], Decimal("0.000064"))
         self.assertContains(response, "Costo estimado")
+
+    def test_panel_muestra_usuarios_sin_consumo_y_controla_su_acceso(self):
+        sin_consumo = get_user_model().objects.create_user(username="sin-consumo", password="test")
+        self.client.force_login(self.staff)
+
+        panel = self.client.get(reverse("consumo_ia_panel"))
+        self.assertContains(panel, "sin-consumo")
+        self.assertContains(panel, "Deshabilitada")
+
+        activar = self.client.post(
+            reverse("usuario_ia_toggle", args=[sin_consumo.pk]),
+            {"accion": "activar"},
+        )
+        self.assertRedirects(activar, reverse("consumo_ia_panel"))
+        self.assertTrue(PerfilUsuario.objects.get(usuario=sin_consumo).puede_usar_asistente_ia)
+        self.assertTrue(
+            RegistroAuditoria.objects.filter(
+                objeto_id=str(PerfilUsuario.objects.get(usuario=sin_consumo).pk),
+                motivo="Control de acceso individual al asistente de IA",
+            ).exists()
+        )
+
+        desactivar = self.client.post(
+            reverse("usuario_ia_toggle", args=[sin_consumo.pk]),
+            {"accion": "desactivar"},
+        )
+        self.assertRedirects(desactivar, reverse("consumo_ia_panel"))
+        self.assertFalse(PerfilUsuario.objects.get(usuario=sin_consumo).puede_usar_asistente_ia)
+
+    def test_usuario_normal_no_puede_cambiar_acceso_ia(self):
+        self.client.force_login(self.regular)
+        response = self.client.post(
+            reverse("usuario_ia_toggle", args=[self.regular.pk]),
+            {"accion": "activar"},
+        )
+
+        self.assertRedirects(response, reverse("dashboard"))
+        self.assertFalse(
+            PerfilUsuario.objects.filter(
+                usuario=self.regular,
+                puede_usar_asistente_ia=True,
+            ).exists()
+        )

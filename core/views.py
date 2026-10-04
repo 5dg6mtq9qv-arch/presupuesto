@@ -23,6 +23,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.dateparse import parse_date
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
 from .ai_assistant import (
@@ -825,8 +826,9 @@ def consumo_ia_panel(request):
     resumen["costo_estimado_usd"] = sum(costos_conocidos, start=Decimal("0"))
     resumen["costo_incompleto"] = len(costos_conocidos) != len(costos_por_modelo)
 
-    por_usuario = list(
-        consumos.values("usuario_id", "usuario__username", "usuario__first_name", "usuario__last_name")
+    estadisticas_por_usuario = {
+        item["usuario_id"]: item
+        for item in consumos.exclude(usuario_id__isnull=True).values("usuario_id")
         .annotate(
             peticiones=Count("id"),
             tokens_entrada=Sum("tokens_entrada"),
@@ -835,8 +837,56 @@ def consumo_ia_panel(request):
             errores=Count("id", filter=Q(exitoso=False)),
             ultima_peticion=Max("creado"),
         )
-        .order_by("-tokens_totales", "usuario__username")[:50]
-    )
+    }
+    costos_por_usuario = {}
+    costos_incompletos_por_usuario = set()
+    for item in (
+        consumos.exclude(usuario_id__isnull=True)
+        .values("usuario_id", "proveedor", "modelo")
+        .annotate(
+            tokens_entrada=Sum("tokens_entrada"),
+            tokens_salida=Sum("tokens_salida"),
+            tokens_cacheados=Sum("tokens_cacheados"),
+        )
+    ):
+        costo = estimate_ai_cost_usd(
+            item["proveedor"], item["modelo"], item["tokens_entrada"],
+            item["tokens_salida"], item["tokens_cacheados"],
+        )
+        if costo is None:
+            costos_incompletos_por_usuario.add(item["usuario_id"])
+            continue
+        costos_por_usuario[item["usuario_id"]] = costos_por_usuario.get(
+            item["usuario_id"], Decimal("0")
+        ) + costo
+
+    usuarios_control = User.objects.select_related("perfil").order_by("username")
+    if usuario_texto:
+        usuarios_control = usuarios_control.filter(
+            Q(username__icontains=usuario_texto)
+            | Q(first_name__icontains=usuario_texto)
+            | Q(last_name__icontains=usuario_texto)
+            | Q(email__icontains=usuario_texto)
+        )
+    por_usuario = []
+    for usuario in usuarios_control[:100]:
+        estadisticas = estadisticas_por_usuario.get(usuario.pk, {})
+        perfil = getattr(usuario, "perfil", None)
+        por_usuario.append(
+            {
+                "usuario": usuario,
+                "ia_habilitada": usuario.is_superuser or bool(perfil and perfil.puede_usar_asistente_ia),
+                "controlable": not usuario.is_superuser,
+                "peticiones": estadisticas.get("peticiones", 0),
+                "tokens_entrada": estadisticas.get("tokens_entrada", 0),
+                "tokens_salida": estadisticas.get("tokens_salida", 0),
+                "tokens_totales": estadisticas.get("tokens_totales", 0),
+                "errores": estadisticas.get("errores", 0),
+                "ultima_peticion": estadisticas.get("ultima_peticion"),
+                "costo_estimado_usd": costos_por_usuario.get(usuario.pk, Decimal("0")),
+                "costo_incompleto": usuario.pk in costos_incompletos_por_usuario,
+            }
+        )
     por_modelo = list(
         consumos.values("proveedor", "modelo")
         .annotate(
@@ -863,6 +913,10 @@ def consumo_ia_panel(request):
         {
             "resumen": resumen,
             "por_usuario": por_usuario,
+            "usuarios_autorizados": User.objects.filter(
+                Q(is_superuser=True) | Q(perfil__puede_usar_asistente_ia=True)
+            ).distinct().count(),
+            "usuarios_totales": User.objects.count(),
             "por_modelo": por_modelo,
             "consumos": page_obj,
             "page_obj": page_obj,
@@ -878,6 +932,47 @@ def consumo_ia_panel(request):
             },
         },
     )
+
+
+@admin_required
+@require_POST
+def usuario_ia_toggle(request, pk):
+    usuario = get_object_or_404(User, pk=pk)
+    if usuario.is_superuser:
+        messages.warning(request, "El acceso de IA del superadministrador permanece habilitado.")
+    else:
+        accion = request.POST.get("accion")
+        if accion not in {"activar", "desactivar"}:
+            return HttpResponseBadRequest("Acción no válida.")
+        perfil, _ = PerfilUsuario.objects.get_or_create(usuario=usuario)
+        estado_anterior = perfil.puede_usar_asistente_ia
+        estado_nuevo = accion == "activar"
+        if estado_anterior != estado_nuevo:
+            perfil.puede_usar_asistente_ia = estado_nuevo
+            perfil.save(update_fields=("puede_usar_asistente_ia", "actualizado"))
+            registrar_auditoria(
+                request,
+                RegistroAuditoria.Accion.ACTUALIZAR,
+                perfil,
+                cambios={
+                    "puede_usar_asistente_ia": {
+                        "anterior": estado_anterior,
+                        "nuevo": estado_nuevo,
+                    }
+                },
+                motivo="Control de acceso individual al asistente de IA",
+            )
+        estado_texto = "activado" if estado_nuevo else "desactivado"
+        messages.success(request, f"Asistente de IA {estado_texto} para {usuario.username}.")
+
+    next_url = request.POST.get("next", "")
+    if next_url and url_has_allowed_host_and_scheme(
+        next_url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        return redirect(next_url)
+    return redirect("consumo_ia_panel")
 
 
 def registro(request):
