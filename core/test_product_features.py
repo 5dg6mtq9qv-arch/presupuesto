@@ -6,6 +6,7 @@ from PIL import Image
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 
@@ -189,6 +190,33 @@ class ProductFeaturesTests(TestCase):
         response = self.client.post(reverse("comprobante_confirmar", args=[capture.pk]))
         self.assertRedirects(response, reverse("actividad_financiera"))
         self.assertEqual(MovimientoFinanciero.objects.filter(usuario=self.user, concepto="Almuerzo").count(), 1)
+
+    def test_receipt_ajax_keeps_user_in_app_and_returns_review_url(self):
+        image = BytesIO()
+        Image.new("RGB", (24, 24), "white").save(image, "JPEG")
+
+        response = self.client.post(
+            reverse("comprobante_nuevo"),
+            {"archivo": SimpleUploadedFile("ticket.jpg", image.getvalue(), content_type="image/jpeg")},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        capture = CapturaComprobante.objects.get(usuario=self.user)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["ok"])
+        self.assertEqual(response.json()["redirect_url"], reverse("comprobante_revisar", args=[capture.pk]))
+
+    def test_receipt_page_offers_inline_retry_after_server_error(self):
+        response = self.client.get(reverse("comprobante_nuevo"))
+
+        self.assertContains(response, "data-receipt-error")
+        self.assertContains(response, "Reintentar análisis")
+
+    def test_server_error_page_always_offers_retry_and_home(self):
+        html = render_to_string("500.html")
+
+        self.assertIn("Reintentar", html)
+        self.assertIn("Volver al inicio", html)
 
     def test_receipt_credit_creates_debt_and_installments(self):
         image = BytesIO()

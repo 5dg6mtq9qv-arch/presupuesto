@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#25a194">
+  <title>No pudimos completar la solicitud</title>
+  <style>
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f5f6fa; color: #1b2431; font: 16px Inter, system-ui, sans-serif; }
+    .card { max-width: 440px; margin: 24px; padding: 32px; border: 1px solid #e8ebf1; border-radius: 18px; background: #fff; text-align: center; box-shadow: 0 10px 35px #1a2a4417; }
+    .icon { font-size: 48px; }
+    .actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 22px; }
+    a, button { border: 1px solid #25a194; border-radius: 9px; background: #25a194; color: #fff; font: inherit; font-weight: 700; padding: 11px 18px; text-decoration: none; cursor: pointer; }
+    a { background: #fff; color: #197c73; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="icon">↻</div>
+    <h1>Algo salió mal</h1>
+    <p>No pudimos completar la solicitud. Puedes volver a intentarlo o regresar al inicio sin cerrar la aplicación.</p>
+    <div class="actions">
+      <button type="button" onclick="location.reload()">Reintentar</button>
+      <a href="/">Volver al inicio</a>
+    </div>
+  </main>
+</body>
+</html>

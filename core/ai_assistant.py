@@ -47,6 +47,7 @@ from .services import (
 MAX_UPCOMING_PAYMENT_DETAILS = 25
 MAX_QUERY_DETAILS = 50
 MAX_ANOMALY_DETAILS = 10
+TRANSIENT_AI_HTTP_STATUSES = {500, 502, 503, 504}
 logger = logging.getLogger(__name__)
 
 SYSTEM_HELP = """
@@ -1577,7 +1578,15 @@ TOOL_HANDLERS = {
 }
 
 
-def _provider_message(messages, config, *, tools=None, max_tokens=600, usage_context=None):
+def _provider_message(
+    messages,
+    config,
+    *,
+    tools=None,
+    max_tokens=600,
+    usage_context=None,
+    transient_retries=1,
+):
     started_at = time.monotonic()
     provider_data = {}
 
@@ -1649,6 +1658,20 @@ def _provider_message(messages, config, *, tools=None, max_tokens=600, usage_con
             pass
         record_call(successful=False, http_status=exc.code, error_code=error_code)
         logger.warning("AI provider HTTP error provider=%s model=%s status=%s body=%s", config.provider, config.model, exc.code, error_body)
+        if exc.code in TRANSIENT_AI_HTTP_STATUSES and transient_retries > 0:
+            # Algunos proveedores despiertan el modelo en la primera llamada y
+            # responden con un 5xx transitorio. La petición todavía no ha
+            # ejecutado ninguna herramienta local, por lo que repetirla una vez
+            # es seguro y evita trasladar ese arranque en frío al usuario.
+            time.sleep(0.4)
+            return _provider_message(
+                messages,
+                config,
+                tools=tools,
+                max_tokens=max_tokens,
+                usage_context=usage_context,
+                transient_retries=transient_retries - 1,
+            )
         if exc.code == 401:
             raise AIAssistantError("La clave de la IA no es válida.") from exc
         if exc.code == 403:

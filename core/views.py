@@ -3985,7 +3985,19 @@ def comprobante_nuevo(request):
         capture.error_analisis = error
         capture.estado = CapturaComprobante.Estado.ANALIZADA if extracted else CapturaComprobante.Estado.ERROR
         capture.save(update_fields=("datos_extraidos", "error_analisis", "estado", "actualizado"))
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+            return JsonResponse({"ok": True, "redirect_url": reverse("comprobante_revisar", args=[capture.pk])})
         return redirect("comprobante_revisar", pk=capture.pk)
+    if request.method == "POST" and request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        errors = [
+            str(error["message"])
+            for field_errors in form.errors.get_json_data().values()
+            for error in field_errors
+        ]
+        return JsonResponse(
+            {"ok": False, "error": " ".join(errors) or "No se pudo procesar la imagen seleccionada."},
+            status=400,
+        )
     return render(request, "core/comprobante_form.html", {"form": form})
 
 

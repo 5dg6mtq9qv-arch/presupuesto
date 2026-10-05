@@ -1,7 +1,9 @@
 import json
 import uuid
 from decimal import Decimal
+from io import BytesIO
 from unittest.mock import MagicMock, patch
+from urllib.error import HTTPError
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -68,6 +70,34 @@ class AIUsageTrackingTests(TestCase):
         self.assertEqual(consumo.solicitud_proveedor_id, "chatcmpl-prueba")
         self.assertTrue(consumo.exitoso)
         self.assertFalse(any(field.name in {"pregunta", "respuesta", "contenido", "prompt"} for field in ConsumoIA._meta.fields))
+
+    @patch("core.ai_assistant.time.sleep")
+    @patch("core.ai_assistant.urlopen")
+    def test_reintenta_una_vez_si_el_proveedor_falla_temporalmente(self, mocked_urlopen, mocked_sleep):
+        transient_error = HTTPError(
+            "https://api.openai.com/v1/chat/completions",
+            500,
+            "Internal Server Error",
+            {},
+            BytesIO(b'{"error":{"type":"server_error"}}'),
+        )
+        response = MagicMock()
+        response.status = 200
+        response.read.return_value = b'{"choices":[{"message":{"content":"ok"}}]}'
+        response.__enter__.return_value = response
+        mocked_urlopen.side_effect = [transient_error, response]
+
+        message = _provider_message(
+            [{"role": "user", "content": "hola"}],
+            self.config,
+            usage_context={"user": self.user, "interaction_id": uuid.uuid4(), "operation": "consulta"},
+        )
+
+        self.assertEqual(message["content"], "ok")
+        self.assertEqual(mocked_urlopen.call_count, 2)
+        mocked_sleep.assert_called_once_with(0.4)
+        self.assertEqual(ConsumoIA.objects.filter(exitoso=False, http_status=500).count(), 1)
+        self.assertEqual(ConsumoIA.objects.filter(exitoso=True, http_status=200).count(), 1)
 
     def test_calcula_costo_estimado_separando_tokens_cacheados(self):
         costo = estimate_ai_cost_usd("openai", "gpt-4.1-mini", 1000, 200, 400)

@@ -21,6 +21,7 @@
       </button>
     </div>
     {% if form.archivo.errors %}<div class="field-error"><span class="material-symbols-outlined">error</span>{{ form.archivo.errors|striptags }}</div>{% endif %}
+    <div class="alert alert-danger" data-receipt-error role="alert" hidden></div>
     <p class="form-text">{{ form.archivo.help_text }}</p>
     <div class="receipt-local-preview" data-receipt-preview hidden>
       <img alt="Vista previa del comprobante" data-receipt-image>
@@ -42,7 +43,17 @@
     const preview = document.querySelector("[data-receipt-preview]");
     const image = document.querySelector("[data-receipt-image]");
     const name = document.querySelector("[data-receipt-name]");
-    if (!input) return;
+    const form = document.querySelector("[data-receipt-form]");
+    const submit = form?.querySelector('button[type="submit"]');
+    const errorPanel = document.querySelector("[data-receipt-error]");
+    if (!input || !form || !submit) return;
+
+    const setError = message => {
+      if (!errorPanel) return;
+      errorPanel.textContent = message || "No se pudo analizar la imagen. Puedes reintentar sin salir de esta pantalla.";
+      errorPanel.hidden = false;
+      errorPanel.scrollIntoView({behavior: "smooth", block: "nearest"});
+    };
 
     camera?.addEventListener("click", () => {
       input.setAttribute("capture", "environment");
@@ -55,9 +66,44 @@
     input.addEventListener("change", () => {
       const file = input.files?.[0];
       if (!file) return;
+      if (errorPanel) errorPanel.hidden = true;
       if (name) name.textContent = file.name;
       if (image) image.src = URL.createObjectURL(file);
       if (preview) preview.hidden = false;
+    });
+
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      if (!input.files?.length || submit.disabled) return;
+      if (errorPanel) errorPanel.hidden = true;
+      const originalLabel = submit.innerHTML;
+      submit.disabled = true;
+      submit.innerHTML = '<span class="material-symbols-outlined">hourglass_top</span>Analizando…';
+      try {
+        const response = await fetch(form.action || window.location.href, {
+          method: "POST",
+          headers: {"X-Requested-With": "XMLHttpRequest"},
+          body: new FormData(form),
+        });
+        const contentType = response.headers.get("content-type") || "";
+        const data = contentType.includes("application/json") ? await response.json() : null;
+        if (!response.ok || !data?.ok) {
+          if (response.status >= 500) {
+            throw new Error("El servicio tuvo un problema temporal. La foto sigue seleccionada: pulsa Reintentar análisis.");
+          }
+          throw new Error(data?.error || "No se pudo procesar la imagen seleccionada.");
+        }
+        window.location.assign(data.redirect_url);
+      } catch (error) {
+        const message = error instanceof TypeError
+          ? "No se pudo conectar con el servidor. Revisa tu conexión y vuelve a intentarlo; la foto sigue seleccionada."
+          : error.message;
+        setError(message);
+        submit.disabled = false;
+        submit.innerHTML = '<span class="material-symbols-outlined">refresh</span>Reintentar análisis';
+        return;
+      }
+      submit.innerHTML = originalLabel;
     });
   })();
 </script>
