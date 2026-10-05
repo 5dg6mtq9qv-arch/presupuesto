@@ -29,6 +29,10 @@ class PerfilUsuario(models.Model):
         default=False,
         verbose_name="Puede usar el asistente de IA",
     )
+    bienvenida_vista = models.BooleanField(
+        default=False,
+        verbose_name="Ya vio la bienvenida inicial",
+    )
     creado = models.DateTimeField(auto_now_add=True)
     actualizado = models.DateTimeField(auto_now=True)
 

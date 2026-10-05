@@ -99,9 +99,26 @@ class PrimerUsoTests(TestCase):
         self.assertTrue(Categoria.objects.filter(usuario=user, nombre="Ingresos").exists())
 
         dashboard = self.client.get(reverse("dashboard"))
+        self.assertContains(dashboard, "¡Bienvenido, Ana!")
+        self.assertContains(dashboard, "Configurar mis cuentas")
         self.assertContains(dashboard, "Primeros pasos · 0 de 3")
         self.assertContains(dashboard, "Registrar ingreso")
         self.assertContains(dashboard, "Registrar gasto")
+
+        completar = self.client.post(
+            reverse("onboarding_bienvenida_completar"),
+            {"destino": "cuentas"},
+        )
+        self.assertRedirects(completar, reverse("cuenta_list"))
+        self.assertTrue(PerfilUsuario.objects.get(usuario=user).bienvenida_vista)
+
+        dashboard = self.client.get(reverse("dashboard"))
+        self.assertNotContains(dashboard, "¡Bienvenido, Ana!")
+        self.assertContains(dashboard, "Primeros pasos · 0 de 3")
+
+    def test_bienvenida_requiere_autenticacion(self):
+        response = self.client.post(reverse("onboarding_bienvenida_completar"))
+        self.assertEqual(response.status_code, 302)
 
 
 class GastoTarjetaCreditoTests(TestCase):

@@ -30,7 +30,7 @@ Usuario
 | Entidad | Propósito | Reglas destacadas |
 | --- | --- | --- |
 | `User` | Identidad, contraseña y roles Django. | `is_active`, `is_staff` e `is_superuser` controlan acceso. |
-| `PerfilUsuario` | Imagen, teléfono y permiso de IA. | Uno por usuario. |
+| `PerfilUsuario` | Imagen, teléfono, permiso de IA y estado de la bienvenida inicial. | Uno por usuario. |
 | `ConfiguracionIA` | Proveedor global, modelo, URL, timeout y clave cifrada. | Solo una fila mediante campo único. |
 | `ConsumoIA` | Métricas por interacción. | Puede conservarse aunque el usuario sea eliminado. |
 | `Notificacion` | Alertas y avisos. | La clave, cuando existe, es única por usuario. |

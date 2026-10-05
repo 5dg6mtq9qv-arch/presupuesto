@@ -6,6 +6,69 @@
 {% block content %}
 {{ chart_data|json_script:"dashboard-data" }}
 
+{% if mostrar_bienvenida %}
+<div class="welcome-tour-overlay" data-welcome-tour>
+  <section class="welcome-tour-card" role="dialog" aria-modal="true" aria-labelledby="welcome-tour-title">
+    <header class="welcome-tour-head">
+      <div class="welcome-tour-brand"><span class="brand-mark">TB</span><span>TaskBudget</span></div>
+      <form class="welcome-tour-skip" method="post" action="{% url 'onboarding_bienvenida_completar' %}">
+        {% csrf_token %}
+        <button type="submit">Omitir recorrido</button>
+      </form>
+    </header>
+
+    <div class="welcome-tour-progress">
+      <div class="welcome-tour-progress-bar" aria-hidden="true"><span data-tour-progress-bar></span></div>
+      <small data-tour-progress-text>1 de 3</small>
+    </div>
+
+    <div class="welcome-tour-content">
+      <article class="welcome-tour-panel is-active" data-tour-panel>
+        <div class="welcome-tour-icon"><span class="material-symbols-outlined">waving_hand</span></div>
+        <h2 id="welcome-tour-title">¡Bienvenido, {{ user.first_name|default:user.username }}!</h2>
+        <p>Vamos a preparar tu espacio financiero. Son tres pasos rápidos y después el sistema organizará automáticamente tu balance.</p>
+        <div class="welcome-tour-points">
+          <div class="welcome-tour-point"><span class="material-symbols-outlined">account_balance_wallet</span><span><strong>Tus datos son personales</strong><small>Cada usuario consulta únicamente sus propias cuentas, movimientos y deudas.</small></span></div>
+          <div class="welcome-tour-point"><span class="material-symbols-outlined">verified_user</span><span><strong>Tú mantienes el control</strong><small>Los comprobantes y las sugerencias siempre se revisan antes de guardarse.</small></span></div>
+        </div>
+      </article>
+
+      <article class="welcome-tour-panel" data-tour-panel>
+        <div class="welcome-tour-icon"><span class="material-symbols-outlined">currency_exchange</span></div>
+        <h2>Primero, configura dónde está tu dinero</h2>
+        <p>Agrega tus cuentas reales o ajusta las cuentas iniciales. El saldo se actualizará con cada ingreso, gasto, transferencia y pago de deuda.</p>
+        <div class="welcome-tour-points">
+          <div class="welcome-tour-point"><span class="material-symbols-outlined">add_card</span><span><strong>Gasto normal</strong><small>Descuenta el dinero de la cuenta seleccionada al confirmarlo.</small></span></div>
+          <div class="welcome-tour-point"><span class="material-symbols-outlined">credit_card</span><span><strong>Compra a crédito</strong><small>Crea una deuda y sus cuotas; la cuenta disminuye cuando confirmas cada pago.</small></span></div>
+        </div>
+      </article>
+
+      <article class="welcome-tour-panel" data-tour-panel>
+        <div class="welcome-tour-icon"><span class="material-symbols-outlined">route</span></div>
+        <h2>Tu ruta recomendada</h2>
+        <p>Empieza con estos datos mínimos. La lista de primeros pasos seguirá visible en el dashboard hasta que la completes.</p>
+        <div class="welcome-tour-points">
+          <div class="welcome-tour-point"><span class="material-symbols-outlined">looks_one</span><span><strong>Revisa tus cuentas</strong><small>Indica el saldo con el que comienzas.</small></span></div>
+          <div class="welcome-tour-point"><span class="material-symbols-outlined">looks_two</span><span><strong>Registra un ingreso</strong><small>Por ejemplo, salario, venta o dinero recibido.</small></span></div>
+          <div class="welcome-tour-point"><span class="material-symbols-outlined">looks_3</span><span><strong>Registra un gasto</strong><small>Así se activan el análisis y los presupuestos por categoría.</small></span></div>
+        </div>
+      </article>
+    </div>
+
+    <footer class="welcome-tour-actions">
+      <button class="btn btn-light" type="button" data-tour-back hidden>Anterior</button>
+      <span></span>
+      <button class="btn btn-primary" type="button" data-tour-next>Siguiente</button>
+      <form class="welcome-tour-start" data-tour-start method="post" action="{% url 'onboarding_bienvenida_completar' %}">
+        {% csrf_token %}
+        <input type="hidden" name="destino" value="cuentas">
+        <button class="btn btn-primary" type="submit">Configurar mis cuentas</button>
+      </form>
+    </footer>
+  </section>
+</div>
+{% endif %}
+
 {% if onboarding_done < 3 %}
 <section class="panel onboarding-panel" aria-labelledby="onboarding-title">
   <div class="panel-heading">
@@ -277,6 +340,36 @@
 
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script>
+  (() => {
+    const tour = document.querySelector("[data-welcome-tour]");
+    if (!tour) return;
+
+    const panels = [...tour.querySelectorAll("[data-tour-panel]")];
+    const back = tour.querySelector("[data-tour-back]");
+    const next = tour.querySelector("[data-tour-next]");
+    const start = tour.querySelector("[data-tour-start]");
+    const progressBar = tour.querySelector("[data-tour-progress-bar]");
+    const progressText = tour.querySelector("[data-tour-progress-text]");
+    let current = 0;
+
+    document.body.classList.add("welcome-tour-open");
+
+    const render = () => {
+      panels.forEach((panel, index) => panel.classList.toggle("is-active", index === current));
+      back.hidden = current === 0;
+      next.hidden = current === panels.length - 1;
+      start.classList.toggle("is-visible", current === panels.length - 1);
+      progressBar.style.width = `${((current + 1) / panels.length) * 100}%`;
+      progressText.textContent = `${current + 1} de ${panels.length}`;
+      (current === panels.length - 1 ? start.querySelector("button") : next).focus({preventScroll: true});
+    };
+
+    back.addEventListener("click", () => { current = Math.max(0, current - 1); render(); });
+    next.addEventListener("click", () => { current = Math.min(panels.length - 1, current + 1); render(); });
+    render();
+  })();
+</script>
 <script>
   (() => {
     const data = JSON.parse(document.getElementById("dashboard-data").textContent);

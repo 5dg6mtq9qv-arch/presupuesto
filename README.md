@@ -7,6 +7,7 @@ La interfaz está en español, usa la zona horaria `America/Guayaquil` y puede i
 ## Funciones principales
 
 - Dashboard con saldos, resumen financiero y próximos compromisos.
+- Recorrido guiado para nuevos usuarios y lista persistente de primeros pasos.
 - Ingresos y gastos por cuenta, categoría, método de pago y etiquetas.
 - Gastos a crédito que generan automáticamente una deuda y su plan de cuotas.
 - Deudas manuales, acreedores, pagos pendientes y pagos confirmados.

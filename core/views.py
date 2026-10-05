@@ -941,6 +941,22 @@ def registro(request):
 
 
 @login_required
+@require_POST
+def onboarding_bienvenida_completar(request):
+    perfil, _ = PerfilUsuario.objects.get_or_create(usuario=request.user)
+    if not perfil.bienvenida_vista:
+        perfil.bienvenida_vista = True
+        perfil.save(update_fields=("bienvenida_vista", "actualizado"))
+
+    destinos = {
+        "cuentas": "cuenta_list",
+        "ingreso": "movimiento_ingreso_create",
+        "gasto": "movimiento_gasto_create",
+    }
+    return redirect(destinos.get(request.POST.get("destino"), "dashboard"))
+
+
+@login_required
 def perfil_update(request):
     perfil, _ = PerfilUsuario.objects.get_or_create(usuario=request.user)
 
@@ -1928,6 +1944,7 @@ def usuario_password(request, pk):
 @login_required
 def dashboard(request):
     ensure_user_finance_setup(request.user)
+    perfil, _ = PerfilUsuario.objects.get_or_create(usuario=request.user)
     hoy = timezone.localdate()
     inicio_mes = hoy.replace(day=1)
     if hoy.month == 12:
@@ -2220,6 +2237,7 @@ def dashboard(request):
             "ultimos_movimientos": ultimos_movimientos,
             "onboarding_steps": onboarding_steps,
             "onboarding_done": sum(step["done"] for step in onboarding_steps),
+            "mostrar_bienvenida": not perfil.bienvenida_vista,
         },
     )
 

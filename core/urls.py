@@ -9,6 +9,7 @@ urlpatterns = [
     path("offline/", views.offline_page, name="offline_page"),
     path("", views.dashboard, name="dashboard"),
     path("registro/", views.registro, name="registro"),
+    path("bienvenida/completar/", views.onboarding_bienvenida_completar, name="onboarding_bienvenida_completar"),
     path("analisis/", views.analisis_financiero, name="analisis_financiero"),
     path("asistente/", views.asistente_financiero, name="asistente_financiero"),
     path("asistente/preguntar/", views.asistente_financiero_preguntar, name="asistente_financiero_preguntar"),

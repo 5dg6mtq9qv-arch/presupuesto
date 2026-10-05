@@ -320,6 +320,60 @@
     .onboarding-step .step-status { color:var(--primary); margin-top:2px; }
     .onboarding-step.is-done { border-color:#bbf7d0; background:#f0fdf4; }
     .onboarding-step.is-done .step-status { color:var(--success); }
+    body.welcome-tour-open { overflow: hidden; }
+    .welcome-tour-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 120;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      background: rgba(15, 23, 42, .58);
+      backdrop-filter: blur(7px);
+    }
+    .welcome-tour-card {
+      width: min(620px, 100%);
+      max-height: min(760px, calc(100dvh - 40px));
+      overflow-y: auto;
+      border: 1px solid rgba(255, 255, 255, .55);
+      border-radius: 22px;
+      background: var(--surface);
+      box-shadow: 0 28px 90px rgba(15, 23, 42, .28);
+    }
+    .welcome-tour-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 22px;
+      border-bottom: 1px solid var(--line);
+    }
+    .welcome-tour-brand { display: flex; align-items: center; gap: 10px; font-weight: 800; }
+    .welcome-tour-brand .brand-mark { width: 32px; height: 32px; margin: 0; border: 0; border-radius: 10px; }
+    .welcome-tour-skip { margin: 0; }
+    .welcome-tour-skip button { border: 0; background: transparent; color: var(--muted); cursor: pointer; font: inherit; font-weight: 700; padding: 7px; }
+    .welcome-tour-skip button:hover { color: var(--text); }
+    .welcome-tour-progress { display: flex; align-items: center; gap: 8px; padding: 20px 24px 0; }
+    .welcome-tour-progress-bar { height: 6px; flex: 1; overflow: hidden; border-radius: 99px; background: var(--line); }
+    .welcome-tour-progress-bar span { display: block; width: 33.333%; height: 100%; border-radius: inherit; background: var(--primary); transition: width .2s ease; }
+    .welcome-tour-progress small { min-width: 45px; color: var(--muted); font-weight: 750; text-align: right; }
+    .welcome-tour-content { padding: 30px 34px 24px; text-align: center; }
+    .welcome-tour-panel { display: none; }
+    .welcome-tour-panel.is-active { display: block; animation: welcome-tour-enter .2s ease; }
+    .welcome-tour-icon { width: 78px; height: 78px; display: grid; place-items: center; margin: 0 auto 20px; border-radius: 24px; color: var(--primary); background: var(--primary-soft); }
+    .welcome-tour-icon .material-symbols-outlined { font-size: 40px; }
+    .welcome-tour-panel h2 { margin: 0; font-size: 25px; }
+    .welcome-tour-panel > p { max-width: 480px; margin: 12px auto 0; color: var(--muted); font-size: 15px; line-height: 1.6; }
+    .welcome-tour-points { display: grid; gap: 10px; margin: 24px 0 0; text-align: left; }
+    .welcome-tour-point { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 11px; align-items: start; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-soft); padding: 12px 14px; }
+    .welcome-tour-point .material-symbols-outlined { color: var(--primary); margin-top: 1px; }
+    .welcome-tour-point strong, .welcome-tour-point small { display: block; }
+    .welcome-tour-point small { margin-top: 3px; color: var(--muted); line-height: 1.4; }
+    .welcome-tour-actions { display: flex; justify-content: space-between; gap: 10px; padding: 0 24px 24px; }
+    .welcome-tour-actions .btn { min-width: 120px; justify-content: center; }
+    .welcome-tour-start { display: none; margin: 0; }
+    .welcome-tour-start.is-visible { display: block; }
+    @keyframes welcome-tour-enter { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: translateX(0); } }
 
     .actions {
       justify-content: space-between;
@@ -1603,6 +1657,13 @@
       .expense-step-line { margin: 0 6px; }
       .expense-summary { grid-template-columns: 1fr; }
       .onboarding-grid { grid-template-columns: 1fr; }
+      .welcome-tour-overlay { padding: 10px; }
+      .welcome-tour-card { max-height: calc(100dvh - 20px); border-radius: 18px; }
+      .welcome-tour-head { padding: 14px 16px; }
+      .welcome-tour-progress { padding: 16px 18px 0; }
+      .welcome-tour-content { padding: 24px 20px 20px; }
+      .welcome-tour-panel h2 { font-size: 22px; }
+      .welcome-tour-actions { padding: 0 18px 18px; }
       .chart-panel-wide { grid-column: auto; }
       .row { grid-template-columns: 1fr; }
       .col-md-1, .col-md-2, .col-md-3, .col-md-12 { grid-column: auto; }

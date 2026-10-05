@@ -12,6 +12,8 @@ Puedes crear una cuenta desde `/registro/` o pedir a un administrador que la cre
 
 El dashboard muestra pasos de configuración, saldos, resumen del periodo y movimientos recientes. Conviene completar primero las cuentas reales, categorías y métodos de pago.
 
+Durante el primer ingreso aparece un recorrido breve de tres pantallas. Explica cómo se calculan los saldos, la diferencia entre un gasto normal y una compra a crédito, y propone una ruta inicial. Al terminar conduce a **Cuentas**. El recorrido se muestra una sola vez; la lista **Primeros pasos** permanece en el dashboard hasta completar la configuración de cuentas, un ingreso y un gasto.
+
 ## 2. Conceptos esenciales
 
 - **Cuenta:** lugar donde se mantiene dinero, por ejemplo banco, efectivo o ahorro.
