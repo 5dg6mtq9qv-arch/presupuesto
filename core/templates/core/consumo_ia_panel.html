@@ -1,26 +1,31 @@
 {% extends "base.html" %}
 
-{% block page_title %}Control de IA{% endblock %}
-{% block page_subtitle %}Acceso y consumo privado por usuario{% endblock %}
+{% block page_title %}Consumo de IA{% endblock %}
+{% block page_subtitle %}Resumen general y uso consolidado por usuario{% endblock %}
 
 {% block content %}
 <style>
-  .usage-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 18px; }
-  .usage-metric { padding: 18px; }
+  .usage-filter { display: grid; grid-template-columns: repeat(2, minmax(150px, 190px)) minmax(240px, 1fr) auto; gap: 12px; align-items: end; }
+  .usage-metrics { display: grid; grid-template-columns: repeat(5, minmax(150px, 1fr)); gap: 14px; margin: 18px 0; }
+  .usage-metric { min-width: 0; padding: 18px; }
   .usage-metric small { display: block; color: var(--muted); font-weight: 750; text-transform: uppercase; letter-spacing: .03em; }
-  .usage-metric strong { display: block; margin-top: 7px; font-size: 26px; line-height: 1; }
-  .usage-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(300px, .8fr); gap: 18px; margin-bottom: 18px; }
-  .usage-grid .panel { min-width: 0; }
+  .usage-metric strong { display: block; margin-top: 8px; font-size: 25px; line-height: 1.1; overflow-wrap: anywhere; }
   .usage-secondary { color: var(--muted); font-size: 12px; }
+  .usage-user { min-width: 190px; }
+  .usage-date { min-width: 145px; white-space: nowrap; }
+  .usage-number { text-align: right; white-space: nowrap; }
   .usage-error { color: var(--danger); font-weight: 750; }
-  .usage-access { min-width: 110px; }
-  .usage-user-name { min-width: 170px; }
-  .usage-toggle-form { display: inline-flex; margin: 0; }
-  @media (max-width: 900px) { .usage-grid { grid-template-columns: 1fr; } }
+  @media (max-width: 1100px) { .usage-metrics { grid-template-columns: repeat(3, minmax(150px, 1fr)); } }
+  @media (max-width: 760px) {
+    .usage-filter { grid-template-columns: 1fr 1fr; }
+    .usage-filter .usage-search { grid-column: 1 / -1; }
+    .usage-metrics { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 480px) { .usage-metrics { grid-template-columns: 1fr; } }
 </style>
 
 <section class="panel">
-  <form class="filter-form" method="get">
+  <form class="usage-filter" method="get">
     <div>
       <label for="desde">Desde</label>
       <input class="form-control" id="desde" name="desde" type="date" value="{{ filters.desde }}">
@@ -29,116 +34,88 @@
       <label for="hasta">Hasta</label>
       <input class="form-control" id="hasta" name="hasta" type="date" value="{{ filters.hasta }}">
     </div>
-    <div>
-      <label for="usuario">Usuario</label>
+    <div class="usage-search">
+      <label for="usuario">Buscar usuario</label>
       <input class="form-control" id="usuario" name="usuario" value="{{ filters.usuario }}" placeholder="Nombre, usuario o correo">
     </div>
-    <div>
-      <label for="proveedor">Proveedor</label>
-      <select class="form-select" id="proveedor" name="proveedor">
-        <option value="">Todos</option>
-        {% for item in proveedores %}<option value="{{ item }}"{% if filters.proveedor == item %} selected{% endif %}>{{ item|title }}</option>{% endfor %}
-      </select>
-    </div>
-    <div>
-      <label for="modelo">Modelo</label>
-      <select class="form-select" id="modelo" name="modelo">
-        <option value="">Todos</option>
-        {% for item in modelos %}<option value="{{ item }}"{% if filters.modelo == item %} selected{% endif %}>{{ item }}</option>{% endfor %}
-      </select>
-    </div>
-    <button class="btn btn-primary btn-icon" type="submit" title="Filtrar" aria-label="Filtrar"><span class="material-symbols-outlined">filter_alt</span></button>
+    <button class="btn btn-primary btn-icon" type="submit" title="Aplicar filtros" aria-label="Aplicar filtros">
+      <span class="material-symbols-outlined">filter_alt</span>
+    </button>
   </form>
 </section>
 
 <div class="usage-metrics">
-  <section class="panel usage-metric"><small>Usuarios con IA</small><strong>{{ usuarios_autorizados }} <span class="usage-secondary">de {{ usuarios_totales }}</span></strong></section>
-  <section class="panel usage-metric"><small>Peticiones</small><strong>{{ resumen.peticiones }}</strong></section>
-  <section class="panel usage-metric"><small>Tokens totales</small><strong>{{ resumen.tokens_totales }}</strong></section>
-  <section class="panel usage-metric"><small>Entrada</small><strong>{{ resumen.tokens_entrada }}</strong></section>
-  <section class="panel usage-metric"><small>Salida</small><strong>{{ resumen.tokens_salida }}</strong></section>
-  <section class="panel usage-metric"><small>En caché</small><strong>{{ resumen.tokens_cacheados }}</strong></section>
-  <section class="panel usage-metric"><small>Razonamiento</small><strong>{{ resumen.tokens_razonamiento }}</strong></section>
-  <section class="panel usage-metric"><small>Errores</small><strong>{{ resumen.errores }} <span class="usage-secondary">({{ resumen.porcentaje_error }}%)</span></strong></section>
-  <section class="panel usage-metric"><small>Tiempo medio</small><strong>{{ resumen.duracion_media }} <span class="usage-secondary">ms</span></strong></section>
-  <section class="panel usage-metric"><small>Costo estimado</small><strong>${{ resumen.costo_estimado_usd|floatformat:6 }} <span class="usage-secondary">USD{% if resumen.costo_incompleto %} · parcial{% endif %}</span></strong></section>
-</div>
-
-<div class="usage-grid">
-  <section class="panel">
-    <div class="panel-heading"><div><h2>Acceso y consumo por usuario</h2><p class="muted mb-0">Solo los administradores pueden consultar y modificar esta información</p></div></div>
-    <div class="table-wrap">
-      <table class="table table-hover align-middle mb-0">
-        <thead><tr><th>Usuario</th><th>Acceso IA</th><th>Consultas</th><th>Tokens</th><th>Costo est.</th><th>Último uso</th><th></th></tr></thead>
-        <tbody>
-          {% for item in por_usuario %}
-            <tr>
-              <td class="usage-user-name"><strong>{{ item.usuario.username }}</strong>{% if item.usuario.get_full_name %}<div class="usage-secondary">{{ item.usuario.get_full_name }}</div>{% endif %}{% if not item.usuario.is_active %}<div class="usage-secondary">Usuario inactivo</div>{% endif %}</td>
-              <td class="usage-access">{% if item.ia_habilitada %}<span class="badge rounded-pill text-bg-success">Habilitada</span>{% else %}<span class="badge rounded-pill text-bg-light border">Deshabilitada</span>{% endif %}</td>
-              <td>{{ item.peticiones }}{% if item.errores %}<div class="usage-error">{{ item.errores }} error{{ item.errores|pluralize:"es" }}</div>{% endif %}</td>
-              <td><strong>{{ item.tokens_totales }}</strong><div class="usage-secondary">{{ item.tokens_entrada }} entrada · {{ item.tokens_salida }} salida</div></td>
-              <td>${{ item.costo_estimado_usd|floatformat:6 }}{% if item.costo_incompleto %}<div class="usage-secondary">Costo parcial</div>{% endif %}</td>
-              <td>{% if item.ultima_peticion %}{{ item.ultima_peticion|date:"d/m/Y H:i" }}{% else %}<span class="usage-secondary">Sin uso</span>{% endif %}</td>
-              <td class="text-nowrap">
-                {% if item.controlable %}
-                  <form class="usage-toggle-form" method="post" action="{% url 'usuario_ia_toggle' item.usuario.pk %}">
-                    {% csrf_token %}
-                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                    {% if item.ia_habilitada %}
-                      <input type="hidden" name="accion" value="desactivar">
-                      <button class="btn btn-sm btn-outline-danger" type="submit">Desactivar</button>
-                    {% else %}
-                      <input type="hidden" name="accion" value="activar">
-                      <button class="btn btn-sm btn-outline-primary" type="submit">Activar</button>
-                    {% endif %}
-                  </form>
-                {% else %}
-                  <span class="usage-secondary">Acceso permanente</span>
-                {% endif %}
-              </td>
-            </tr>
-          {% empty %}<tr><td colspan="7" class="muted">No hay usuarios que coincidan con el filtro.</td></tr>{% endfor %}
-        </tbody>
-      </table>
-    </div>
+  <section class="panel usage-metric">
+    <small>Usuarios que usaron IA</small>
+    <strong>{{ resumen.usuarios_con_uso }}</strong>
   </section>
-
-  <section class="panel">
-    <div class="panel-heading"><div><h2>Por modelo</h2><p class="muted mb-0">Comparación de volumen y rendimiento</p></div></div>
-    <div class="table-wrap">
-      <table class="table table-hover align-middle mb-0">
-        <thead><tr><th>Modelo</th><th>Peticiones</th><th>Tokens</th><th>Costo est.</th><th>Media</th></tr></thead>
-        <tbody>
-          {% for item in por_modelo %}
-            <tr><td><strong>{{ item.modelo }}</strong><div class="usage-secondary">{{ item.proveedor|title }} · {{ item.errores }} errores</div></td><td>{{ item.peticiones }}</td><td>{{ item.tokens_totales }}</td><td>{% if item.costo_estimado_usd is not None %}${{ item.costo_estimado_usd|floatformat:6 }}{% else %}<span class="usage-secondary">N/D</span>{% endif %}</td><td>{{ item.duracion_media|floatformat:0 }} ms</td></tr>
-          {% empty %}<tr><td colspan="5" class="muted">Sin datos.</td></tr>{% endfor %}
-        </tbody>
-      </table>
-    </div>
+  <section class="panel usage-metric">
+    <small>Interacciones</small>
+    <strong>{{ resumen.interacciones }}</strong>
+    <span class="usage-secondary">{{ resumen.peticiones }} llamadas al proveedor</span>
+  </section>
+  <section class="panel usage-metric">
+    <small>Tokens consumidos</small>
+    <strong>{{ resumen.tokens_totales }}</strong>
+  </section>
+  <section class="panel usage-metric">
+    <small>Costo estimado</small>
+    <strong>${{ resumen.costo_estimado_usd|floatformat:6 }}</strong>
+    <span class="usage-secondary">USD{% if resumen.costo_incompleto %} · cálculo parcial{% endif %}</span>
+  </section>
+  <section class="panel usage-metric">
+    <small>Errores</small>
+    <strong>{{ resumen.errores }}</strong>
+    <span class="usage-secondary">{{ resumen.porcentaje_error }}% de las llamadas</span>
   </section>
 </div>
 
 <section class="panel">
-  <div class="panel-heading"><div><h2>Detalle de peticiones</h2><p class="muted mb-0">No se guardan preguntas, respuestas ni información financiera</p></div></div>
+  <div class="panel-heading">
+    <div>
+      <h2>Usuarios con uso de IA</h2>
+      <p class="muted mb-0">{% if periodo_desde and periodo_hasta %}Datos acumulados del {{ periodo_desde|date:"d/m/Y" }} al {{ periodo_hasta|date:"d/m/Y" }}. {% endif %}Solo aparecen usuarios que utilizaron la IA en ese periodo.</p>
+    </div>
+  </div>
   <div class="table-wrap">
     <table class="table table-hover align-middle mb-0">
-      <thead><tr><th>Fecha</th><th>Usuario</th><th>Proveedor / modelo</th><th>Operación</th><th>Tokens</th><th>Costo est.</th><th>Duración</th><th>Estado</th></tr></thead>
+      <thead>
+        <tr>
+          <th>Usuario</th>
+          <th>Último acceso al sistema</th>
+          <th>Último uso de IA</th>
+          <th class="usage-number">Interacciones</th>
+          <th class="usage-number">Tokens</th>
+          <th class="usage-number">Costo estimado</th>
+        </tr>
+      </thead>
       <tbody>
-        {% for consumo in consumos %}
+        {% for item in por_usuario %}
           <tr>
-            <td class="text-nowrap">{{ consumo.creado|date:"d/m/Y H:i:s" }}</td>
-            <td>{{ consumo.usuario.username|default:"Usuario eliminado" }}</td>
-            <td><strong>{{ consumo.modelo }}</strong><div class="usage-secondary">{{ consumo.proveedor|title }}</div></td>
-            <td>{{ consumo.tipo_operacion|cut:"_"|title }}<div class="usage-secondary">{{ consumo.interaccion_id|stringformat:"s"|truncatechars:13 }}</div></td>
-            <td><strong>{{ consumo.tokens_totales }}</strong><div class="usage-secondary">{{ consumo.tokens_entrada }} entrada · {{ consumo.tokens_salida }} salida</div></td>
-            <td>{% if consumo.costo_estimado_usd is not None %}${{ consumo.costo_estimado_usd|floatformat:6 }}{% else %}<span class="usage-secondary">N/D</span>{% endif %}</td>
-            <td>{{ consumo.duracion_ms }} ms</td>
-            <td>{% if consumo.exitoso %}<span class="badge rounded-pill text-bg-success">Correcta</span>{% else %}<span class="badge rounded-pill text-bg-danger">Error{% if consumo.http_status %} {{ consumo.http_status }}{% endif %}</span>{% endif %}</td>
+            <td class="usage-user">
+              <strong>{{ item.usuario.get_full_name|default:item.usuario.username }}</strong>
+              <div class="usage-secondary">@{{ item.usuario.username }}{% if item.usuario.email %} · {{ item.usuario.email }}{% endif %}</div>
+              {% if not item.usuario.is_active %}<div class="usage-error">Usuario inactivo</div>{% endif %}
+            </td>
+            <td class="usage-date">
+              {% if item.usuario.last_login %}{{ item.usuario.last_login|date:"d/m/Y H:i" }}{% else %}<span class="usage-secondary">Sin acceso registrado</span>{% endif %}
+            </td>
+            <td class="usage-date">{{ item.ultima_peticion|date:"d/m/Y H:i" }}</td>
+            <td class="usage-number">
+              <strong>{{ item.interacciones }}</strong>
+              {% if item.errores %}<div class="usage-error">{{ item.errores }} error{{ item.errores|pluralize:"es" }}</div>{% endif %}
+            </td>
+            <td class="usage-number">{{ item.tokens_totales }}</td>
+            <td class="usage-number">
+              ${{ item.costo_estimado_usd|floatformat:6 }}
+              {% if item.costo_incompleto %}<div class="usage-secondary">Parcial</div>{% endif %}
+            </td>
           </tr>
-        {% empty %}<tr><td colspan="8" class="muted">No hay peticiones para mostrar.</td></tr>{% endfor %}
+        {% empty %}
+          <tr><td colspan="6" class="muted">No hay usuarios con uso de IA para los filtros seleccionados.</td></tr>
+        {% endfor %}
       </tbody>
     </table>
   </div>
-  {% include "core/includes/pagination.html" %}
 </section>
 {% endblock %}

@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from .ai_assistant import _provider_message
 from .ai_config import AIRuntimeConfig
@@ -80,6 +81,8 @@ class AIUsagePanelTests(TestCase):
     def setUp(self):
         self.staff = get_user_model().objects.create_user(username="administrador", password="test", is_staff=True)
         self.regular = get_user_model().objects.create_user(username="cliente", password="test")
+        self.regular.last_login = timezone.now()
+        self.regular.save(update_fields=("last_login",))
         ConsumoIA.objects.create(
             usuario=self.regular,
             proveedor="openai",
@@ -99,19 +102,24 @@ class AIUsagePanelTests(TestCase):
         self.client.force_login(self.staff)
         response = self.client.get(reverse("consumo_ia_panel"))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Control de IA")
+        self.assertContains(response, "Consumo de IA")
         self.assertContains(response, "cliente")
         self.assertEqual(response.context["resumen"]["tokens_totales"], 100)
         self.assertEqual(response.context["resumen"]["costo_estimado_usd"], Decimal("0.000064"))
+        self.assertEqual(response.context["resumen"]["usuarios_con_uso"], 1)
+        self.assertEqual(response.context["resumen"]["interacciones"], 1)
+        self.assertEqual(response.context["por_usuario"][0]["usuario"], self.regular)
         self.assertContains(response, "Costo estimado")
+        self.assertContains(response, "Último acceso al sistema")
+        self.assertNotContains(response, "Detalle de peticiones")
+        self.assertNotContains(response, "Por modelo")
 
-    def test_panel_muestra_usuarios_sin_consumo_y_controla_su_acceso(self):
+    def test_panel_oculta_usuarios_sin_consumo_y_el_acceso_sigue_controlable(self):
         sin_consumo = get_user_model().objects.create_user(username="sin-consumo", password="test")
         self.client.force_login(self.staff)
 
         panel = self.client.get(reverse("consumo_ia_panel"))
-        self.assertContains(panel, "sin-consumo")
-        self.assertContains(panel, "Deshabilitada")
+        self.assertNotContains(panel, "sin-consumo")
 
         activar = self.client.post(
             reverse("usuario_ia_toggle", args=[sin_consumo.pk]),
