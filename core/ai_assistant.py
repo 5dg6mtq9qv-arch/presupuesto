@@ -1693,6 +1693,20 @@ def _provider_message(
         raise AIAssistantError(f"El proveedor de IA no pudo procesar la consulta (HTTP {exc.code}).") from exc
     except (URLError, TimeoutError) as exc:
         record_call(successful=False, error_code="network_error")
+        if transient_retries > 0:
+            # El primer intento también puede fallar antes de recibir una
+            # respuesta HTTP mientras el proveedor abre la conexión o
+            # despierta el modelo. En este punto no se ha ejecutado ninguna
+            # herramienta local, por lo que repetir la llamada es seguro.
+            time.sleep(0.4)
+            return _provider_message(
+                messages,
+                config,
+                tools=tools,
+                max_tokens=max_tokens,
+                usage_context=usage_context,
+                transient_retries=transient_retries - 1,
+            )
         raise AIAssistantError("El proveedor de IA no está disponible en este momento.") from exc
     except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
         record_call(

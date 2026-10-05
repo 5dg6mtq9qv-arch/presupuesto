@@ -243,6 +243,30 @@
       }
     };
 
+    const wait = milliseconds => new Promise(resolve => window.setTimeout(resolve, milliseconds));
+    const sendQuestion = async (payload, retryFirstMessage) => {
+      for (let attempt = 0; attempt < (retryFirstMessage ? 2 : 1); attempt += 1) {
+        try {
+          const response = await fetch("{% url 'asistente_financiero_preguntar' %}", {
+            method: "POST",
+            headers: {"Content-Type": "application/json", "X-CSRFToken": csrfToken, "X-Requested-With": "XMLHttpRequest"},
+            body: JSON.stringify(payload),
+          });
+          if (attempt === 0 && retryFirstMessage && [500, 502, 503, 504].includes(response.status)) {
+            await wait(700);
+            continue;
+          }
+          return response;
+        } catch (error) {
+          if (attempt === 0 && retryFirstMessage && error instanceof TypeError) {
+            await wait(700);
+            continue;
+          }
+          throw error;
+        }
+      }
+    };
+
     form.addEventListener("submit", async event => {
       event.preventDefault();
       const value = question.value.trim();
@@ -254,11 +278,10 @@
       submit.disabled = true;
       const pending = addMessage("Pensando…", "ai");
       try {
-        const response = await fetch("{% url 'asistente_financiero_preguntar' %}", {
-          method: "POST",
-          headers: {"Content-Type": "application/json", "X-CSRFToken": csrfToken, "X-Requested-With": "XMLHttpRequest"},
-          body: JSON.stringify({pregunta: value, historial: requestHistory}),
-        });
+        const response = await sendQuestion(
+          {pregunta: value, historial: requestHistory},
+          requestHistory.length === 0,
+        );
         if (response.redirected && response.url.includes("/login")) throw new Error("Tu sesión expiró. Recarga la página e inicia sesión nuevamente.");
         const raw = await response.text();
         let data;

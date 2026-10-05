@@ -3,7 +3,7 @@ import uuid
 from decimal import Decimal
 from io import BytesIO
 from unittest.mock import MagicMock, patch
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -100,6 +100,27 @@ class AIUsageTrackingTests(TestCase):
         self.assertEqual(mocked_urlopen.call_count, 2)
         mocked_sleep.assert_called_once_with(0.4)
         self.assertEqual(ConsumoIA.objects.filter(exitoso=False, http_status=500).count(), 1)
+        self.assertEqual(ConsumoIA.objects.filter(exitoso=True, http_status=200).count(), 1)
+
+    @patch("core.ai_assistant.time.sleep")
+    @patch("core.ai_assistant.urlopen")
+    def test_reintenta_una_vez_si_falla_la_primera_conexion(self, mocked_urlopen, mocked_sleep):
+        response = MagicMock()
+        response.status = 200
+        response.read.return_value = b'{"choices":[{"message":{"content":"ok"}}]}'
+        response.__enter__.return_value = response
+        mocked_urlopen.side_effect = [URLError("conexion en frio"), response]
+
+        message = _provider_message(
+            [{"role": "user", "content": "hola"}],
+            self.config,
+            usage_context={"user": self.user, "interaction_id": uuid.uuid4(), "operation": "consulta"},
+        )
+
+        self.assertEqual(message["content"], "ok")
+        self.assertEqual(mocked_urlopen.call_count, 2)
+        mocked_sleep.assert_called_once_with(0.4)
+        self.assertEqual(ConsumoIA.objects.filter(exitoso=False, codigo_error="network_error").count(), 1)
         self.assertEqual(ConsumoIA.objects.filter(exitoso=True, http_status=200).count(), 1)
 
     def test_calcula_costo_estimado_separando_tokens_cacheados(self):
