@@ -6,14 +6,17 @@ from unittest.mock import MagicMock, patch
 from urllib.error import HTTPError
 
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
+from PIL import Image
 
 from .ai_assistant import _provider_message
 from .ai_config import AIRuntimeConfig
 from .ai_pricing import estimate_ai_cost_usd
 from .models import ConsumoIA, PerfilUsuario, RegistroAuditoria
+from .receipt_capture import analyze_receipt
 
 
 class AIUsageTrackingTests(TestCase):
@@ -106,6 +109,29 @@ class AIUsageTrackingTests(TestCase):
     def test_modelo_sin_tarifa_no_inventa_un_costo(self):
         self.assertIsNone(estimate_ai_cost_usd("proveedor", "modelo-desconocido", 1000, 200))
 
+    @patch("core.receipt_capture.user_can_use_ai", return_value=True)
+    @patch("core.receipt_capture.get_ai_runtime_config")
+    @patch("core.receipt_capture._provider_message")
+    def test_captura_comprobante_identifica_usuario_e_interaccion(
+        self, mocked_provider, mocked_config, _mocked_can_use_ai
+    ):
+        mocked_config.return_value = self.config
+        mocked_provider.return_value = {
+            "content": '{"monto": 12.5, "concepto": "Compra", "fecha": "2026-10-05", "tipo": "gasto"}'
+        }
+        image_buffer = BytesIO()
+        Image.new("RGB", (4, 4), "white").save(image_buffer, format="PNG")
+        image = SimpleUploadedFile("comprobante.png", image_buffer.getvalue(), content_type="image/png")
+
+        resultado, error = analyze_receipt(self.user, image)
+
+        self.assertEqual(error, "")
+        self.assertEqual(resultado["monto"], 12.5)
+        usage_context = mocked_provider.call_args.kwargs["usage_context"]
+        self.assertEqual(usage_context["user"], self.user)
+        self.assertIsInstance(usage_context["interaction_id"], uuid.UUID)
+        self.assertEqual(usage_context["operation"], "captura_comprobante")
+
 
 class AIUsagePanelTests(TestCase):
     def setUp(self):
@@ -144,12 +170,20 @@ class AIUsagePanelTests(TestCase):
         self.assertNotContains(response, "Detalle de peticiones")
         self.assertNotContains(response, "Por modelo")
 
-    def test_panel_oculta_usuarios_sin_consumo_y_el_acceso_sigue_controlable(self):
+    def test_panel_muestra_usuarios_sin_consumo_y_su_estado_de_acceso(self):
         sin_consumo = get_user_model().objects.create_user(username="sin-consumo", password="test")
         self.client.force_login(self.staff)
 
         panel = self.client.get(reverse("consumo_ia_panel"))
-        self.assertNotContains(panel, "sin-consumo")
+        self.assertContains(panel, "sin-consumo")
+        item_sin_consumo = next(
+            item for item in panel.context["por_usuario"] if item["usuario"] == sin_consumo
+        )
+        self.assertEqual(item_sin_consumo["interacciones"], 0)
+        self.assertEqual(item_sin_consumo["tokens_totales"], 0)
+        self.assertIsNone(item_sin_consumo["ultima_peticion"])
+        self.assertContains(panel, "Sin acceso registrado")
+        self.assertContains(panel, "Sin uso")
 
         activar = self.client.post(
             reverse("usuario_ia_toggle", args=[sin_consumo.pk]),

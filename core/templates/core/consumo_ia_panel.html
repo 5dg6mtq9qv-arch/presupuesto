@@ -73,8 +73,8 @@
 <section class="panel">
   <div class="panel-heading">
     <div>
-      <h2>Usuarios con uso de IA</h2>
-      <p class="muted mb-0">{% if periodo_desde and periodo_hasta %}Datos acumulados del {{ periodo_desde|date:"d/m/Y" }} al {{ periodo_hasta|date:"d/m/Y" }}. {% endif %}Solo aparecen usuarios que utilizaron la IA en ese periodo.</p>
+      <h2>Actividad por usuario</h2>
+      <p class="muted mb-0">{% if periodo_desde and periodo_hasta %}Uso de IA acumulado del {{ periodo_desde|date:"d/m/Y" }} al {{ periodo_hasta|date:"d/m/Y" }}. {% endif %}Se muestran todos los usuarios, incluso si todavía no ingresaron o no usaron la IA.</p>
     </div>
   </div>
   <div class="table-wrap">
@@ -82,8 +82,9 @@
       <thead>
         <tr>
           <th>Usuario</th>
+          <th>Accedió al sistema</th>
           <th>Último acceso al sistema</th>
-          <th>Último uso de IA</th>
+          <th>Uso de IA</th>
           <th class="usage-number">Interacciones</th>
           <th class="usage-number">Tokens</th>
           <th class="usage-number">Costo estimado</th>
@@ -98,9 +99,20 @@
               {% if not item.usuario.is_active %}<div class="usage-error">Usuario inactivo</div>{% endif %}
             </td>
             <td class="usage-date">
+              {% if item.usuario.last_login %}<span class="badge rounded-pill text-bg-success">Sí</span>{% else %}<span class="badge rounded-pill text-bg-light border">No</span>{% endif %}
+            </td>
+            <td class="usage-date">
               {% if item.usuario.last_login %}{{ item.usuario.last_login|date:"d/m/Y H:i" }}{% else %}<span class="usage-secondary">Sin acceso registrado</span>{% endif %}
             </td>
-            <td class="usage-date">{{ item.ultima_peticion|date:"d/m/Y H:i" }}</td>
+            <td class="usage-date">
+              {% if item.ultima_peticion %}
+                <span class="badge rounded-pill text-bg-success">Con uso</span>
+                <div class="usage-secondary">Último: {{ item.ultima_peticion|date:"d/m/Y H:i" }}</div>
+              {% else %}
+                <span class="badge rounded-pill text-bg-light border">Sin uso</span>
+                <div class="usage-secondary">En el período seleccionado</div>
+              {% endif %}
+            </td>
             <td class="usage-number">
               <strong>{{ item.interacciones }}</strong>
               {% if item.errores %}<div class="usage-error">{{ item.errores }} error{{ item.errores|pluralize:"es" }}</div>{% endif %}
@@ -112,7 +124,7 @@
             </td>
           </tr>
         {% empty %}
-          <tr><td colspan="6" class="muted">No hay usuarios con uso de IA para los filtros seleccionados.</td></tr>
+          <tr><td colspan="7" class="muted">No hay usuarios que coincidan con los filtros seleccionados.</td></tr>
         {% endfor %}
       </tbody>
     </table>

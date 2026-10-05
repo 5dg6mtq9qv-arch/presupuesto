@@ -81,7 +81,7 @@ Cada interacción registra, cuando el proveedor los informa:
 - identificador de petición del proveedor;
 - usuario e identificador de interacción.
 
-El panel administrativo presenta un resumen general y una tabla consolidada de los usuarios que utilizaron la IA. Permite filtrar por fechas o usuario y muestra interacciones, tokens, costo estimado, último uso de IA y último acceso al sistema. No muestra el detalle de cada solicitud. La cifra de costo es orientativa: la tarifa real depende del proveedor, plan, impuestos, descuentos y servicios adicionales.
+El panel administrativo presenta un resumen general y una tabla consolidada de todos los usuarios, incluidos quienes todavía no utilizaron la IA. Permite filtrar por fechas o usuario y muestra si cada persona ingresó al sistema, su último acceso, interacciones, tokens, costo estimado y último uso de IA dentro del período elegido. No muestra el detalle de cada solicitud. La cifra de costo es orientativa: la tarifa real depende del proveedor, plan, impuestos, descuentos y servicios adicionales.
 
 ## 7. Recomendaciones programadas
 

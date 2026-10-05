@@ -1,5 +1,6 @@
 import base64
 import json
+import uuid
 from io import BytesIO
 
 from PIL import Image, ImageOps
@@ -43,7 +44,11 @@ def analyze_receipt(user, image_field):
             }],
             config,
             max_tokens=300,
-            usage_context={"user": user, "operation": "captura_comprobante"},
+            usage_context={
+                "user": user,
+                "interaction_id": uuid.uuid4(),
+                "operation": "captura_comprobante",
+            },
         )
         data = json.loads(message.get("content") or "{}")
         result = {

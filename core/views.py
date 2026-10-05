@@ -847,10 +847,17 @@ def consumo_ia_panel(request):
             item["usuario_id"], Decimal("0")
         ) + costo
 
-    usuarios_control = User.objects.filter(pk__in=estadisticas_por_usuario.keys())
+    usuarios_control = User.objects.order_by("username")
+    if usuario_texto:
+        usuarios_control = usuarios_control.filter(
+            Q(username__icontains=usuario_texto)
+            | Q(first_name__icontains=usuario_texto)
+            | Q(last_name__icontains=usuario_texto)
+            | Q(email__icontains=usuario_texto)
+        )
     por_usuario = []
     for usuario in usuarios_control:
-        estadisticas = estadisticas_por_usuario[usuario.pk]
+        estadisticas = estadisticas_por_usuario.get(usuario.pk, {})
         por_usuario.append(
             {
                 "usuario": usuario,
