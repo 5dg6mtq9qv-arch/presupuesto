@@ -276,6 +276,15 @@ def importacion_amortizacion_nueva(request):
             )
         except AmortizationImportError as exc:
             form.add_error("archivo", str(exc))
+        except Exception:
+            logger.exception(
+                "Unexpected amortization import error for user_id=%s",
+                request.user.pk,
+            )
+            form.add_error(
+                "archivo",
+                "No se pudo analizar el archivo en este momento. Intenta nuevamente o usa otra imagen.",
+            )
         else:
             request.session["borrador_amortizacion"] = draft
             request.session.modified = True

@@ -1,18 +1,40 @@
 from datetime import date
 from decimal import Decimal
+from io import BytesIO
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.urls import reverse
+from PIL import Image
 
-from .amortization_import import _result_from_ai_data, parse_amortization_text
+from .amortization_import import (
+    AmortizationImportError,
+    _json_money,
+    _prepare_ai_image,
+    _result_from_ai_data,
+    parse_amortization_text,
+)
 from .forms import DeudaForm
 from .models import Acreedor, Categoria, Deuda, Etiqueta, PagoDeuda
 
 
 class AmortizationParserTests(TestCase):
+    def test_prepares_large_photo_with_bounded_dimensions(self):
+        source = BytesIO()
+        Image.new("RGB", (3200, 1600), "white").save(source, format="JPEG")
+
+        prepared = _prepare_ai_image(source.getvalue())
+
+        with Image.open(BytesIO(prepared)) as image:
+            self.assertEqual(image.format, "JPEG")
+            self.assertLessEqual(max(image.size), 2400)
+
+    def test_rejects_non_finite_ai_amount(self):
+        with self.assertRaisesRegex(AmortizationImportError, "importe no válido"):
+            _json_money(float("nan"))
+
     def test_extracts_paid_and_pending_installments_and_repairs_century_typo(self):
         text = """
         Tabla de amortización informativa
@@ -250,6 +272,21 @@ class AmortizationImportFlowTests(TestCase):
 
         self.assertRedirects(response, reverse("importacion_amortizacion_preview"))
         self.assertEqual(self.client.session["borrador_amortizacion"]["acreedor"], "Banco de prueba")
+
+    @patch("core.views.parse_amortization_pdf")
+    def test_unexpected_analysis_error_is_shown_in_form_instead_of_http_500(self, parser):
+        parser.side_effect = RuntimeError("unexpected decoder failure")
+        upload = SimpleUploadedFile("deuda.jpg", b"fake-image", content_type="image/jpeg")
+
+        with self.assertLogs("core.views", level="ERROR"):
+            response = self.client.post(
+                reverse("importacion_amortizacion_nueva"),
+                {"archivo": upload},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "No se pudo analizar el archivo en este momento")
+        self.assertNotContains(response, "unexpected decoder failure")
 
     @patch("core.views.parse_amortization_pdf")
     def test_creates_and_selects_a_new_category_from_the_review(self, parser):

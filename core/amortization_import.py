@@ -2,6 +2,7 @@ import calendar
 import base64
 import hashlib
 import json
+import logging
 import re
 import uuid
 from collections import Counter
@@ -14,6 +15,9 @@ from pypdf import PdfReader
 
 from .ai_assistant import AIAssistantError, _provider_message, user_can_use_ai
 from .ai_config import get_ai_runtime_config
+
+
+logger = logging.getLogger(__name__)
 
 
 class AmortizationImportError(ValueError):
@@ -279,20 +283,24 @@ def parse_amortization_pdf(uploaded_file, *, today=None):
 def _json_money(value, *, default="0"):
     if value in (None, ""):
         value = default
-    if isinstance(value, (int, float, Decimal)):
-        return Decimal(str(value)).quantize(Decimal("0.01"))
-    cleaned = re.sub(
-        r"(?i)(usd|eur|d[oó]lares?|euros?)",
-        "",
-        str(value),
-    ).strip().replace("$", "").replace("€", "").replace(" ", "")
-    if "," in cleaned and "." in cleaned:
-        cleaned = cleaned.replace(".", "").replace(",", ".") if cleaned.rfind(",") > cleaned.rfind(".") else cleaned.replace(",", "")
-    elif "," in cleaned:
-        cleaned = cleaned.replace(",", ".")
     try:
-        return Decimal(cleaned).quantize(Decimal("0.01"))
-    except InvalidOperation as exc:
+        if isinstance(value, (int, float, Decimal)):
+            amount = Decimal(str(value)).quantize(Decimal("0.01"))
+        else:
+            cleaned = re.sub(
+                r"(?i)(usd|eur|d[oó]lares?|euros?)",
+                "",
+                str(value),
+            ).strip().replace("$", "").replace("€", "").replace(" ", "")
+            if "," in cleaned and "." in cleaned:
+                cleaned = cleaned.replace(".", "").replace(",", ".") if cleaned.rfind(",") > cleaned.rfind(".") else cleaned.replace(",", "")
+            elif "," in cleaned:
+                cleaned = cleaned.replace(",", ".")
+            amount = Decimal(cleaned).quantize(Decimal("0.01"))
+        if not amount.is_finite():
+            raise InvalidOperation
+        return amount
+    except (InvalidOperation, TypeError, ValueError) as exc:
         raise AmortizationImportError(f"La IA devolvió un importe no válido: {value}") from exc
 
 
@@ -384,6 +392,33 @@ def _result_from_ai_data(data, *, document_hash, today, source_text=""):
     )
 
 
+def _prepare_ai_image(raw):
+    """Normalize an image without first expanding a large phone photo in memory."""
+    try:
+        with Image.open(BytesIO(raw)) as source:
+            width, height = source.size
+            if width <= 0 or height <= 0 or width * height > 60_000_000:
+                raise AmortizationImportError(
+                    "La imagen tiene una resolución demasiado grande. Redúcela a menos de 60 megapíxeles."
+                )
+            # JPEG ``draft`` asks the decoder for a reduced version. Applying it
+            # before EXIF rotation avoids allocating the full phone photograph.
+            source.draft("RGB", (2400, 2400))
+            source.thumbnail((2400, 2400))
+            image = ImageOps.exif_transpose(source)
+            if image.mode != "RGB":
+                image = image.convert("RGB")
+            buffer = BytesIO()
+            image.save(buffer, format="JPEG", quality=88, optimize=True)
+            return buffer.getvalue()
+    except AmortizationImportError:
+        raise
+    except (Image.DecompressionBombError, OSError, ValueError) as exc:
+        raise AmortizationImportError(
+            "No se pudo preparar la imagen. Comprueba que sea una foto JPG, PNG o WebP válida."
+        ) from exc
+
+
 def _analyze_with_ai(user, *, image_raws=None, text="", document_hash="", today=None):
     if not user_can_use_ai(user):
         raise AmortizationImportError(
@@ -403,13 +438,7 @@ def _analyze_with_ai(user, *, image_raws=None, text="", document_hash="", today=
     )
     content = [{"type": "text", "text": instruction + (f"\n\nTexto extraído:\n{text[:60000]}" if text else "")}]
     for raw in image_raws or []:
-        image = ImageOps.exif_transpose(Image.open(BytesIO(raw)))
-        image.thumbnail((2400, 2400))
-        if image.mode != "RGB":
-            image = image.convert("RGB")
-        buffer = BytesIO()
-        image.save(buffer, format="JPEG", quality=88, optimize=True)
-        encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+        encoded = base64.b64encode(_prepare_ai_image(raw)).decode("ascii")
         content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{encoded}"}})
     try:
         message = _provider_message(
@@ -432,6 +461,11 @@ def _analyze_with_ai(user, *, image_raws=None, text="", document_hash="", today=
         raise
     except (AIAssistantError, OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
         raise AmortizationImportError(str(exc)[:300] or "No se pudo analizar el archivo con IA.") from exc
+    except Exception as exc:
+        logger.exception("Unexpected amortization AI analysis error")
+        raise AmortizationImportError(
+            "No se pudo analizar el archivo en este momento. Intenta nuevamente o usa otra imagen."
+        ) from exc
 
 
 def parse_amortization_file(uploaded_file, *, user=None, today=None):
