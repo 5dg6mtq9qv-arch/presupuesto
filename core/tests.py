@@ -1618,11 +1618,51 @@ class GuidedFinancialFlowsTests(TestCase):
 
         self.assertContains(deuda, "Define las condiciones")
         self.assertContains(deuda, "Revisa el plan")
-        self.assertContains(deuda, "id_tasa_interes_anual")
+        self.assertContains(deuda, "Cuotas pendientes de pago")
+        self.assertContains(deuda, "Valor de cada cuota")
+        self.assertContains(deuda, "Fecha del próximo pago")
+        self.assertContains(deuda, "Total pendiente calculado")
+        self.assertNotContains(deuda, "Interés anual (%)")
         self.assertContains(deuda, "Nuevo acreedor")
         self.assertContains(deuda, "Nueva categoría o subcategoría")
         self.assertContains(recurrentes, "¿Qué se repite?")
         self.assertContains(recurrentes, "¿Cómo debe aplicarse?")
+
+    def test_crea_deuda_solo_con_cuotas_pendientes(self):
+        acreedor = Acreedor.objects.create(usuario=self.user, nombre="Banco Simple")
+
+        response = self.client.post(
+            reverse("deuda_create"),
+            {
+                "acreedor_existente": acreedor.pk,
+                "nuevo_acreedor": "",
+                "categoria": "",
+                "concepto": "Crédito pendiente",
+                "numero_cuotas": "3",
+                "pago_minimo": "42.50",
+                "fecha_primera_cuota": "2026-11-15",
+                "estado": Deuda.Estado.ACTIVA,
+                "nota": "",
+            },
+        )
+
+        self.assertRedirects(response, reverse("deuda_list"))
+        deuda = Deuda.objects.get(concepto="Crédito pendiente")
+        self.assertEqual(deuda.monto_inicial, Decimal("127.50"))
+        self.assertEqual(deuda.saldo_actual, Decimal("127.50"))
+        self.assertEqual(deuda.numero_cuotas, 3)
+        self.assertEqual(deuda.fecha_vencimiento, datetime(2027, 1, 15).date())
+        cuotas = list(deuda.pagos.order_by("cuota_numero"))
+        self.assertEqual([cuota.monto for cuota in cuotas], [Decimal("42.50")] * 3)
+        self.assertEqual(
+            [cuota.fecha for cuota in cuotas],
+            [
+                datetime(2026, 11, 15).date(),
+                datetime(2026, 12, 15).date(),
+                datetime(2027, 1, 15).date(),
+            ],
+        )
+        self.assertTrue(all(cuota.estado == PagoDeuda.Estado.PENDIENTE for cuota in cuotas))
 
     def test_crea_acreedor_desde_modal_y_rechaza_duplicados(self):
         response = self.client.post(

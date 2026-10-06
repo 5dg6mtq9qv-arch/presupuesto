@@ -6,7 +6,7 @@
 {% block content %}
 {{ categorias_principales|json_script:"debt-category-parents" }}
 <section class="panel form-panel">
-  <form class="expense-flow-form" id="debt-flow-form" method="post">
+  <form class="expense-flow-form" id="debt-flow-form" method="post" data-simple-debt="{{ form.instance.pk|yesno:'false,true' }}">
     {% csrf_token %}
     <nav class="expense-steps" aria-label="Pasos para registrar la deuda">
       <button class="expense-step-tab is-active" type="button" data-debt-go="1"><span>1</span><strong>Origen</strong></button>
@@ -25,14 +25,21 @@
       <div class="form-grid" data-debt-target="1"></div>
     </section>
     <section class="expense-step-panel" data-debt-panel="2" hidden>
-      <div class="expense-step-copy"><span class="material-symbols-outlined">contract</span><div><h2>Define las condiciones</h2><p>Indica saldo, número de cuotas y fecha del primer vencimiento.</p></div></div>
+      <div class="expense-step-copy"><span class="material-symbols-outlined">contract</span><div><h2>Define las condiciones</h2><p>{% if form.instance.pk %}Actualiza el saldo y las fechas del plan.{% else %}Indica cuántas cuotas faltan, su valor y la fecha del próximo pago.{% endif %}</p></div></div>
       <div class="form-grid" data-debt-target="2"></div>
+      {% if not form.instance.pk %}
+        <div class="expense-summary" aria-live="polite">
+          <span><small>Total pendiente calculado</small><strong data-debt-live-total>0.00</strong></span>
+          <span><small>Pagos por generar</small><strong data-debt-live-count>1 cuota</strong></span>
+          <span><small>Último pago</small><strong data-debt-live-last>Sin fecha</strong></span>
+        </div>
+      {% endif %}
     </section>
     <section class="expense-step-panel" data-debt-panel="3" hidden>
       <div class="expense-step-copy"><span class="material-symbols-outlined">fact_check</span><div><h2>Revisa el plan</h2><p>Comprueba el resumen antes de generar las cuotas.</p></div></div>
       <div class="expense-summary" aria-live="polite">
         <span><small>Acreedor</small><strong data-debt-summary-creditor>Sin seleccionar</strong></span>
-        <span><small>Saldo pendiente</small><strong data-debt-summary-balance>0.00</strong></span>
+        <span><small>Total pendiente</small><strong data-debt-summary-balance>0.00</strong></span>
         <span><small>Plan</small><strong data-debt-summary-plan>1 cuota</strong></span>
       </div>
       <div class="form-grid" data-debt-target="3"></div>
@@ -112,6 +119,7 @@
     const form = document.getElementById("debt-flow-form");
     const source = form?.querySelector("[data-debt-source]");
     if (!form || !source) return;
+    const simpleDebt = form.dataset.simpleDebt === "true";
     const fieldSteps = {
       acreedor_existente: 1,
       nuevo_acreedor: 1,
@@ -120,10 +128,10 @@
       monto_inicial: 2,
       saldo_actual: 2,
       tasa_interes_anual: 2,
-      pago_minimo: 2,
       numero_cuotas: 2,
-      fecha_inicio: 2,
+      pago_minimo: 2,
       fecha_primera_cuota: 2,
+      fecha_inicio: 2,
       fecha_vencimiento: 3,
       estado: 3,
       nota: 3,
@@ -150,10 +158,18 @@
     const updateSummary = () => {
       const existing = input("acreedor_existente")?.selectedOptions[0]?.text?.trim();
       form.querySelector("[data-debt-summary-creditor]").textContent = input("nuevo_acreedor")?.value.trim() || existing || "Sin seleccionar";
-      form.querySelector("[data-debt-summary-balance]").textContent = input("saldo_actual")?.value || "0.00";
       const installments = Number(input("numero_cuotas")?.value || 1);
+      const installmentValue = Number(input("pago_minimo")?.value || 0);
+      const pendingTotal = simpleDebt ? installments * installmentValue : Number(input("saldo_actual")?.value || 0);
+      form.querySelector("[data-debt-summary-balance]").textContent = Number.isFinite(pendingTotal) ? pendingTotal.toFixed(2) : "0.00";
       const dueDate = input("fecha_vencimiento")?.value || "sin fecha";
       form.querySelector("[data-debt-summary-plan]").textContent = `${installments} ${installments === 1 ? "cuota" : "cuotas"} · hasta ${dueDate}`;
+      const liveTotal = form.querySelector("[data-debt-live-total]");
+      const liveCount = form.querySelector("[data-debt-live-count]");
+      const liveLast = form.querySelector("[data-debt-live-last]");
+      if (liveTotal) liveTotal.textContent = Number.isFinite(pendingTotal) ? pendingTotal.toFixed(2) : "0.00";
+      if (liveCount) liveCount.textContent = `${installments} ${installments === 1 ? "cuota" : "cuotas"}`;
+      if (liveLast) liveLast.textContent = dueDate;
     };
     const missingField = step => {
       if (step === 1) {
@@ -161,6 +177,12 @@
         if (!input("concepto")?.value.trim()) return ["concepto", "Describe el origen de la deuda."];
       }
       if (step === 2) {
+        if (simpleDebt) {
+          if (Number(input("numero_cuotas")?.value) < 1) return ["numero_cuotas", "Indica al menos una cuota pendiente."];
+          if (Number(input("pago_minimo")?.value) <= 0) return ["pago_minimo", "Indica el valor de cada cuota."];
+          if (!input("fecha_primera_cuota")?.value) return ["fecha_primera_cuota", "Indica la fecha del próximo pago."];
+          return null;
+        }
         if (Number(input("monto_inicial")?.value) <= 0) return ["monto_inicial", "Indica un monto inicial mayor que cero."];
         if (Number(input("saldo_actual")?.value) < 0 || !input("saldo_actual")?.value) return ["saldo_actual", "Indica el saldo pendiente actual."];
         if (Number(input("numero_cuotas")?.value) < 1) return ["numero_cuotas", "Indica al menos una cuota."];

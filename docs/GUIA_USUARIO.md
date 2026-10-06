@@ -75,7 +75,7 @@ Si el gasto cambia antes de haber pagos confirmados, también se actualizan la d
 
 ## 5. Deudas y pagos
 
-Una deuda puede crearse manualmente o generarse desde un gasto a crédito. Contiene acreedor, concepto, categoría, monto inicial, saldo actual, número de cuotas y fechas.
+Una deuda puede crearse manualmente o generarse desde un gasto a crédito. Al crearla manualmente solo debes indicar las cuotas pendientes de pago, el valor de cada cuota y la fecha del próximo pago. El sistema calcula el total pendiente y genera esas cuotas mensuales; no reconstruye pagos anteriores.
 
 ### Filtros del listado
 

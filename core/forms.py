@@ -995,6 +995,7 @@ class DeudaForm(UserScopedModelForm):
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, user=user, **kwargs)
+        self.es_registro_simple = not self.instance.pk
         self.fields["acreedor_existente"].queryset = Acreedor.objects.filter(
             usuario=user,
             activo=True,
@@ -1013,7 +1014,23 @@ class DeudaForm(UserScopedModelForm):
         )
         self.fields["categoria"].label = "Categoría"
         self.fields["categoria"].empty_label = "Sin categoría"
-        if not self.is_bound and not self.instance.pk:
+        if self.es_registro_simple:
+            self.fields["numero_cuotas"].label = "Cuotas pendientes de pago"
+            self.fields["numero_cuotas"].help_text = "Se generará una cuota pendiente por cada mes."
+            self.fields["pago_minimo"].label = "Valor de cada cuota"
+            self.fields["pago_minimo"].required = True
+            self.fields["pago_minimo"].widget.attrs["min"] = "0.01"
+            self.fields["fecha_primera_cuota"].label = "Fecha del próximo pago"
+            for nombre in (
+                "monto_inicial",
+                "saldo_actual",
+                "tasa_interes_anual",
+                "fecha_inicio",
+                "fecha_vencimiento",
+            ):
+                self.fields[nombre].required = False
+                self.fields[nombre].widget = forms.HiddenInput()
+        if not self.is_bound and self.es_registro_simple:
             fecha_inicio = timezone.localdate()
             self.fields["fecha_inicio"].initial = fecha_inicio.isoformat()
             self.fields["fecha_primera_cuota"].initial = add_months(fecha_inicio, 1).isoformat()
@@ -1038,18 +1055,31 @@ class DeudaForm(UserScopedModelForm):
         tasa_interes = cleaned_data.get("tasa_interes_anual")
         pago_minimo = cleaned_data.get("pago_minimo")
 
-        if monto_inicial is not None and monto_inicial <= 0:
-            self.add_error("monto_inicial", "El monto inicial debe ser mayor que cero.")
-        if saldo_actual is not None and saldo_actual < 0:
-            self.add_error("saldo_actual", "El saldo actual no puede ser negativo.")
-        if monto_inicial is not None and saldo_actual is not None and saldo_actual > monto_inicial:
-            self.add_error("saldo_actual", "El saldo actual no puede superar el monto inicial.")
-        if tasa_interes is not None and tasa_interes < 0:
-            self.add_error("tasa_interes_anual", "La tasa no puede ser negativa.")
-        if pago_minimo is not None and pago_minimo < 0:
-            self.add_error("pago_minimo", "El pago mínimo no puede ser negativo.")
-        if saldo_actual is not None and pago_minimo is not None and pago_minimo > saldo_actual:
-            self.add_error("pago_minimo", "El pago mínimo no puede superar el saldo actual.")
+        if self.es_registro_simple:
+            if pago_minimo is not None and pago_minimo <= 0:
+                self.add_error("pago_minimo", "El valor de cada cuota debe ser mayor que cero.")
+            if numero_cuotas and pago_minimo is not None and pago_minimo > 0:
+                total_pendiente = pago_minimo * Decimal(numero_cuotas)
+                cleaned_data["monto_inicial"] = total_pendiente
+                cleaned_data["saldo_actual"] = total_pendiente
+                cleaned_data["fecha_inicio"] = timezone.localdate()
+                cleaned_data["tasa_interes_anual"] = None
+                monto_inicial = total_pendiente
+                saldo_actual = total_pendiente
+                fecha_inicio = cleaned_data["fecha_inicio"]
+        else:
+            if monto_inicial is not None and monto_inicial <= 0:
+                self.add_error("monto_inicial", "El monto inicial debe ser mayor que cero.")
+            if saldo_actual is not None and saldo_actual < 0:
+                self.add_error("saldo_actual", "El saldo actual no puede ser negativo.")
+            if monto_inicial is not None and saldo_actual is not None and saldo_actual > monto_inicial:
+                self.add_error("saldo_actual", "El saldo actual no puede superar el monto inicial.")
+            if tasa_interes is not None and tasa_interes < 0:
+                self.add_error("tasa_interes_anual", "La tasa no puede ser negativa.")
+            if pago_minimo is not None and pago_minimo < 0:
+                self.add_error("pago_minimo", "El pago mínimo no puede ser negativo.")
+            if saldo_actual is not None and pago_minimo is not None and pago_minimo > saldo_actual:
+                self.add_error("pago_minimo", "El pago mínimo no puede superar el saldo actual.")
 
         if fecha_inicio and fecha_primera_cuota and fecha_primera_cuota < fecha_inicio:
             self.add_error("fecha_primera_cuota", "La primera cuota no puede ser anterior al inicio de la deuda.")

@@ -3566,14 +3566,13 @@ def deuda_create(request):
         form = DeudaForm(request.POST, user=request.user)
         if form.is_valid():
             deuda = assign_user_and_save(form, request.user)
-            pagos_historicos = crear_historial_inicial_deuda(deuda)
             cuotas_programadas = sincronizar_cuotas_pendientes_deuda(deuda)
             registrar_auditoria(
                 request,
                 RegistroAuditoria.Accion.CREAR,
                 deuda,
                 cambios={
-                    "cuotas_historicas_reconstruidas": len(pagos_historicos),
+                    "cuotas_historicas_reconstruidas": 0,
                     "cuotas_programadas": len(cuotas_programadas),
                 },
             )
