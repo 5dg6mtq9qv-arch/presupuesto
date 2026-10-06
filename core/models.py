@@ -893,6 +893,7 @@ class Deuda(models.Model):
     tasa_interes_anual = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
     pago_minimo = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     numero_cuotas = models.PositiveIntegerField(default=1)
+    cuotas_pagadas_previas = models.PositiveIntegerField(default=0)
     fecha_inicio = models.DateField()
     fecha_primera_cuota = models.DateField(null=True, blank=True)
     fecha_vencimiento = models.DateField(null=True, blank=True)

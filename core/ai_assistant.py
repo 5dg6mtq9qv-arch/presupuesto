@@ -11,7 +11,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from django.db import transaction
-from django.db.models import Count, Prefetch, Sum, Value
+from django.db.models import Count, Prefetch, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -562,7 +562,12 @@ def query_debts(user, arguments):
         queryset = queryset.filter(fecha_inicio__lte=generation_end)
     count = queryset.count()
     total = queryset.aggregate(total=Sum("saldo_actual"))["total"] or Decimal("0")
-    rows_queryset = queryset.order_by("estado", "fecha_vencimiento", "acreedor")
+    rows_queryset = queryset.annotate(
+        cuotas_confirmadas_count=Count(
+            "pagos",
+            filter=Q(pagos__estado=PagoDeuda.Estado.CONFIRMADO, pagos__cuota_numero__isnull=False),
+        )
+    ).order_by("estado", "fecha_vencimiento", "acreedor")
     if payment_start or payment_end:
         rows_queryset = rows_queryset.prefetch_related(
             Prefetch(
@@ -574,6 +579,7 @@ def query_debts(user, arguments):
     rows = list(rows_queryset[:_query_limit(arguments)])
     records = []
     for item in rows:
+        paid_installments = item.cuotas_pagadas_previas + item.cuotas_confirmadas_count
         record = {
             "acreedor": item.acreedor,
             "concepto": item.concepto,
@@ -581,6 +587,8 @@ def query_debts(user, arguments):
             "monto_inicial": _money(item.monto_inicial),
             "saldo_actual": _money(item.saldo_actual),
             "numero_cuotas": item.numero_cuotas,
+            "cuotas_pagadas": paid_installments,
+            "cuotas_pendientes": max(0, item.numero_cuotas - paid_installments),
             "fecha_inicio": item.fecha_inicio.isoformat(),
             "fecha_generacion": item.fecha_inicio.isoformat(),
             "fecha_primera_cuota": item.fecha_primera_cuota.isoformat() if item.fecha_primera_cuota else None,
@@ -1213,13 +1221,9 @@ def create_debt(user, arguments):
         "nuevo_acreedor": "" if creditor else creditor_name,
         "categoria": category.pk if category else "",
         "concepto": arguments.get("concepto"),
-        "monto_inicial": arguments.get("monto_inicial"),
-        "saldo_actual": arguments.get("saldo_actual", arguments.get("monto_inicial")),
-        "tasa_interes_anual": arguments.get("tasa_interes_anual") or "",
-        "pago_minimo": arguments.get("pago_minimo") or "",
-        "numero_cuotas": arguments.get("numero_cuotas", 1),
-        "fecha_inicio": arguments.get("fecha_inicio"),
-        "fecha_primera_cuota": arguments.get("fecha_primera_cuota") or "",
+        "pago_minimo": arguments.get("valor_cuota"),
+        "numero_cuotas": arguments.get("cuotas_pendientes", 1),
+        "fecha_primera_cuota": arguments.get("fecha_proximo_pago") or "",
         "estado": Deuda.Estado.ACTIVA,
         "nota": arguments.get("nota") or "",
     }
@@ -1230,7 +1234,6 @@ def create_debt(user, arguments):
     debt.usuario = user
     debt.save()
     form.save_m2m()
-    crear_historial_inicial_deuda(debt)
     sincronizar_cuotas_pendientes_deuda(debt)
     _record_ai_creation(user, debt, {"monto_inicial": _money(debt.monto_inicial), "origen": "asistente_ia"})
     return {
@@ -1535,18 +1538,14 @@ AI_TOOLS = [
                 "properties": {
                     "acreedor": {"type": "string"},
                     "concepto": {"type": "string"},
-                    "monto_inicial": {"type": "number", "exclusiveMinimum": 0},
-                    "saldo_actual": {"type": "number", "minimum": 0},
-                    "numero_cuotas": {"type": "integer", "minimum": 1},
-                    "fecha_inicio": {"type": "string", "description": "AAAA-MM-DD"},
-                    "fecha_primera_cuota": {"type": "string", "description": "AAAA-MM-DD; opcional"},
+                    "cuotas_pendientes": {"type": "integer", "minimum": 1},
+                    "valor_cuota": {"type": "number", "exclusiveMinimum": 0},
+                    "fecha_proximo_pago": {"type": "string", "description": "AAAA-MM-DD"},
                     "categoria": {"type": "string"},
-                    "tasa_interes_anual": {"type": "number", "minimum": 0},
-                    "pago_minimo": {"type": "number", "minimum": 0},
                     "nota": {"type": "string"},
                     "confirmado": {"type": "boolean", "description": "Debe ser true solo tras confirmación explícita del usuario"},
                 },
-                "required": ["acreedor", "concepto", "monto_inicial", "numero_cuotas", "fecha_inicio", "confirmado"],
+                "required": ["acreedor", "concepto", "cuotas_pendientes", "valor_cuota", "fecha_proximo_pago", "confirmado"],
                 "additionalProperties": False,
             },
         },

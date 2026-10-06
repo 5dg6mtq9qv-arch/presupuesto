@@ -1087,6 +1087,11 @@ class DeudaForm(UserScopedModelForm):
             cleaned_data["fecha_vencimiento"] = add_months(fecha_primera_cuota, numero_cuotas - 1)
 
         if self.instance.pk and numero_cuotas:
+            if numero_cuotas < self.instance.cuotas_pagadas_previas:
+                self.add_error(
+                    "numero_cuotas",
+                    f"No puede ser menor que las cuotas pagadas previamente ({self.instance.cuotas_pagadas_previas}).",
+                )
             ultima_cuota_confirmada = self.instance.pagos.filter(
                 estado=PagoDeuda.Estado.CONFIRMADO,
                 cuota_numero__isnull=False,

@@ -97,6 +97,12 @@ Todos los campos de fecha pueden quedar vacíos; en ese caso no limitan el lista
 
 La pantalla de deudas genera y muestra el plan pendiente, incluido el próximo mes. Las alertas avisan de cuotas próximas o vencidas.
 
+### Importar una tabla de amortización
+
+Desde el asistente financiero puedes adjuntar una tabla de amortización en PDF. El sistema lee el número de cuotas pagadas, las cuotas totales y cada fila pendiente con su fecha e importe. Antes de guardar muestra un resumen con el total pendiente, el próximo pago, la última cuota y cualquier fecha corregida por una inconsistencia evidente del documento.
+
+La importación solo se realiza al elegir **Generar cuotas pendientes**. Las cuotas anteriores se registran como avance previo, pero no se crean pagos históricos. Los nombres e identificaciones personales impresos en el PDF no se conservan.
+
 ## 6. Presupuestos
 
 Los presupuestos se definen por categoría, mes y año. El sistema compara el límite con los gastos confirmados y puede:

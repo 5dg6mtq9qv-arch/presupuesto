@@ -514,7 +514,8 @@ def sumar_meses(fecha, meses):
 
 def fecha_cuota_deuda(deuda, cuota_numero):
     primera_cuota = deuda.fecha_primera_cuota or sumar_meses(deuda.fecha_inicio, 1)
-    return sumar_meses(primera_cuota, cuota_numero - 1)
+    primera_cuota_numero = deuda.cuotas_pagadas_previas + 1
+    return sumar_meses(primera_cuota, cuota_numero - primera_cuota_numero)
 
 
 @transaction.atomic
@@ -605,7 +606,7 @@ def sincronizar_cuotas_pendientes_deuda(deuda):
     )
     numeros_pendientes = [
         numero
-        for numero in range(1, deuda.numero_cuotas + 1)
+        for numero in range(deuda.cuotas_pagadas_previas + 1, deuda.numero_cuotas + 1)
         if numero not in cuotas_confirmadas
     ]
     if not numeros_pendientes:
@@ -752,7 +753,8 @@ def iter_cuotas_deuda_vencidas(deuda, hasta_fecha):
     )
     pagos_manuales = deuda.pagos.filter(cuota_numero__isnull=True).count()
 
-    for cuota_numero in range(pagos_manuales + 1, deuda.numero_cuotas + 1):
+    primera_cuota_pendiente = max(deuda.cuotas_pagadas_previas + 1, pagos_manuales + 1)
+    for cuota_numero in range(primera_cuota_pendiente, deuda.numero_cuotas + 1):
         if cuota_numero in cuotas_registradas:
             continue
         fecha = fecha_cuota_deuda(deuda, cuota_numero)

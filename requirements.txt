@@ -4,3 +4,4 @@ cryptography>=44,<48
 pillow==12.0.0
 psycopg[binary]==3.3.2
 reportlab==4.4.4
+pypdf==6.19.0

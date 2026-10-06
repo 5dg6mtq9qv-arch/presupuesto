@@ -110,6 +110,7 @@ from .services import (
     sincronizar_deuda_compra_credito,
 )
 from .bank_import import CSVImportError, confirm_import, create_import_preview
+from .amortization_import import AmortizationImportError, parse_amortization_pdf
 from .receipt_capture import analyze_receipt
 
 User = get_user_model()
@@ -257,6 +258,183 @@ def asistente_financiero_preguntar(request):
             status=500,
         )
     return JsonResponse({"ok": True, **answer})
+
+
+@login_required
+@require_POST
+def asistente_amortizacion_analizar(request):
+    if not user_can_use_ai(request.user):
+        return JsonResponse({"ok": False, "error": "No tienes autorización para utilizar el asistente de IA."}, status=403)
+    uploaded = request.FILES.get("archivo")
+    if not uploaded:
+        return JsonResponse({"ok": False, "error": "Selecciona una tabla de amortización en PDF."}, status=400)
+    try:
+        draft = parse_amortization_pdf(uploaded)
+    except AmortizationImportError as exc:
+        return JsonResponse({"ok": False, "error": str(exc)}, status=400)
+
+    request.session["borrador_amortizacion"] = draft
+    request.session.modified = True
+    warning = " ".join(draft["advertencias"])
+    return JsonResponse(
+        {
+            "ok": True,
+            "respuesta": (
+                f"La tabla indica {draft['cuotas_pagadas']} de {draft['cuotas_totales']} cuotas pagadas. "
+                f"Quedan {draft['cuotas_pendientes']} cuotas por {draft['total_pendiente']} USD en total. "
+                "Revisa el resumen y confirma si deseas generar solo las cuotas pendientes."
+            ),
+            "evidencia": [
+                f"Próximo pago: cuota {draft['cuotas'][0]['numero']} el {draft['proximo_pago']} por {draft['cuotas'][0]['monto']} USD",
+                f"Último pago: cuota {draft['cuotas'][-1]['numero']} el {draft['ultimo_pago']} por {draft['cuotas'][-1]['monto']} USD",
+                f"Saldo de capital informado: {draft['saldo_capital']} USD",
+            ],
+            "advertencia": warning,
+            "borrador_amortizacion": {
+                "acreedor": draft["acreedor"],
+                "concepto": draft["concepto"],
+                "cuotas_pagadas": draft["cuotas_pagadas"],
+                "cuotas_pendientes": draft["cuotas_pendientes"],
+                "total_pendiente": draft["total_pendiente"],
+            },
+        }
+    )
+
+
+@login_required
+@require_POST
+@transaction.atomic
+def asistente_amortizacion_accion(request, accion):
+    if not user_can_use_ai(request.user):
+        return JsonResponse({"ok": False, "error": "No tienes autorización para utilizar el asistente de IA."}, status=403)
+    draft = request.session.get("borrador_amortizacion")
+    if not draft:
+        return JsonResponse({"ok": False, "error": "El borrador ya no está disponible. Vuelve a subir el PDF."}, status=400)
+    if accion == "cancelar":
+        request.session.pop("borrador_amortizacion", None)
+        request.session.modified = True
+        return JsonResponse(
+            {
+                "ok": True,
+                "respuesta": "Importación cancelada; no se creó la deuda ni ninguna cuota.",
+                "evidencia": [],
+                "advertencia": "",
+                "borrador_amortizacion": None,
+            }
+        )
+    if accion != "confirmar":
+        return JsonResponse({"ok": False, "error": "Acción no válida."}, status=400)
+
+    operation = str(draft.get("operacion") or "").strip()
+    if operation and Deuda.objects.filter(
+        usuario=request.user,
+        nota__contains=f"Operación importada: {operation}",
+    ).exists():
+        return JsonResponse({"ok": False, "error": "Esta operación ya fue importada anteriormente."}, status=400)
+
+    try:
+        paid_count = int(draft["cuotas_pagadas"])
+        total_count = int(draft["cuotas_totales"])
+        pending_total = Decimal(draft["total_pendiente"])
+        start_date = parse_date(draft["fecha_consulta"])
+        first_due_date = parse_date(draft["proximo_pago"])
+        last_due_date = parse_date(draft["ultimo_pago"])
+        payment_data = [
+            {
+                **item,
+                "numero": int(item["numero"]),
+                "fecha": parse_date(item["fecha"]),
+                "monto": Decimal(item["monto"]),
+            }
+            for item in draft["cuotas"]
+        ]
+        expected_numbers = list(range(paid_count + 1, total_count + 1))
+        if not start_date or not first_due_date or not last_due_date:
+            raise ValueError("invalid dates")
+        if [item["numero"] for item in payment_data] != expected_numbers:
+            raise ValueError("invalid installment sequence")
+        if sum((item["monto"] for item in payment_data), Decimal("0.00")) != pending_total:
+            raise ValueError("invalid pending total")
+    except (ArithmeticError, IndexError, KeyError, TypeError, ValueError) as exc:
+        logger.warning("Invalid amortization draft for user_id=%s: %s", request.user.pk, exc)
+        return JsonResponse({"ok": False, "error": "El borrador contiene datos inválidos. Vuelve a analizar el PDF."}, status=400)
+
+    creditor_name = str(draft.get("acreedor") or "Acreedor importado")[:120]
+    creditor = Acreedor.objects.filter(usuario=request.user, nombre__iexact=creditor_name).first()
+    if not creditor:
+        creditor = Acreedor.objects.create(usuario=request.user, nombre=creditor_name)
+    note_parts = ["Plan pendiente importado desde una tabla de amortización."]
+    if operation:
+        note_parts.append(f"Operación importada: {operation}.")
+    note_parts.append(f"Cuotas pagadas antes del registro: {paid_count}.")
+    if draft.get("saldo_capital"):
+        note_parts.append(f"Saldo de capital informado: {draft['saldo_capital']} USD.")
+    if draft.get("advertencias"):
+        note_parts.extend(draft["advertencias"])
+
+    debt = Deuda.objects.create(
+        usuario=request.user,
+        acreedor=creditor.nombre,
+        acreedor_entidad=creditor,
+        concepto=str(draft.get("concepto") or "Préstamo importado")[:160],
+        monto_inicial=pending_total,
+        saldo_actual=pending_total,
+        tasa_interes_anual=Decimal(draft["tasa_interes_anual"]) if draft.get("tasa_interes_anual") else None,
+        pago_minimo=Decimal(draft["cuota_habitual"]),
+        numero_cuotas=total_count,
+        cuotas_pagadas_previas=paid_count,
+        fecha_inicio=start_date,
+        fecha_primera_cuota=first_due_date,
+        fecha_vencimiento=last_due_date,
+        estado=Deuda.Estado.ACTIVA,
+        nota=" ".join(note_parts),
+    )
+    payments = [
+        PagoDeuda(
+            deuda=debt,
+            monto=item["monto"],
+            fecha=item["fecha"],
+            cuota_numero=item["numero"],
+            estado=PagoDeuda.Estado.PENDIENTE,
+            nota=(
+                f"Cuota importada. Capital {item['capital']}; interés {item['interes']}; "
+                f"otros intereses {item['otros_intereses']}; seguros {item['seguros']}; "
+                f"saldo de capital {item['saldo_capital']}."
+            ),
+        )
+        for item in payment_data
+    ]
+    PagoDeuda.objects.bulk_create(payments)
+
+    registrar_auditoria(
+        request,
+        RegistroAuditoria.Accion.CREAR,
+        debt,
+        cambios={
+            "origen": "tabla_amortizacion",
+            "cuotas_pagadas_previas": debt.cuotas_pagadas_previas,
+            "cuotas_pendientes_importadas": len(payments),
+            "total_pendiente": str(debt.saldo_actual),
+        },
+    )
+    request.session.pop("borrador_amortizacion", None)
+    request.session.modified = True
+    return JsonResponse(
+        {
+            "ok": True,
+            "respuesta": (
+                f"Deuda creada para {debt.acreedor}. Registré {debt.cuotas_pagadas_previas} cuotas ya pagadas "
+                f"como avance previo y generé {len(payments)} cuotas pendientes."
+            ),
+            "evidencia": [
+                f"Total pendiente: {debt.saldo_actual} USD",
+                f"Próximo pago: cuota {payments[0].cuota_numero} el {payments[0].fecha.isoformat()}",
+                f"Última cuota: {payments[-1].cuota_numero} el {payments[-1].fecha.isoformat()}",
+            ],
+            "advertencia": "",
+            "borrador_amortizacion": None,
+        }
+    )
 
 
 @login_required
@@ -3505,7 +3683,7 @@ def deuda_list(request):
     for deuda in page_obj:
         pagos = list(deuda.pagos.all())
         cuotas_numeradas = {pago.cuota_numero for pago in pagos if pago.cuota_numero is not None}
-        plan_esperado = set(range(1, deuda.numero_cuotas + 1))
+        plan_esperado = set(range(deuda.cuotas_pagadas_previas + 1, deuda.numero_cuotas + 1))
         if deuda.estado == Deuda.Estado.ACTIVA and cuotas_numeradas != plan_esperado:
             sincronizar_cuotas_pendientes_deuda(deuda)
             deuda._prefetched_objects_cache.pop("pagos", None)
@@ -3526,7 +3704,7 @@ def deuda_list(request):
             for pago in pagos
             if pago.estado == PagoDeuda.Estado.PENDIENTE and pago.cuota_numero is not None
         ]
-        deuda.pagos_confirmados_count = len(deuda.cuotas_confirmadas)
+        deuda.pagos_confirmados_count = deuda.cuotas_pagadas_previas + len(deuda.cuotas_confirmadas)
         deuda.cuotas_pendientes_count = len(deuda.cuotas_pendientes)
         deuda.proximo_pago = deuda.cuotas_pendientes[0] if deuda.cuotas_pendientes else None
         deuda.otros_pagos_pendientes = deuda.cuotas_pendientes[1:]
