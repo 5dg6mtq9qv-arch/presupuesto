@@ -97,11 +97,15 @@ Todos los campos de fecha pueden quedar vacíos; en ese caso no limitan el lista
 
 La pantalla de deudas genera y muestra el plan pendiente, incluido el próximo mes. Las alertas avisan de cuotas próximas o vencidas.
 
-### Importar una tabla de amortización
+### Subir un documento de deuda con IA
 
-Desde **Deudas > Importar tabla** o desde **Importar cuotas** en el menú puedes seleccionar o crear un acreedor, seleccionar o crear una categoría y cargar una tabla de amortización en PDF. El sistema lee el número de cuotas pagadas, las cuotas totales y cada fila pendiente con su fecha e importe. Antes de guardar muestra un resumen con el total pendiente, el próximo pago, la última cuota y cualquier fecha corregida por una inconsistencia evidente del documento.
+Desde **Deudas > Subir documento de deuda** puedes subir un PDF o una imagen JPG, PNG o WebP. El flujo primero analiza únicamente el archivo. La IA extrae la tabla completa: número y fecha de cada cuota, monto total, capital, intereses, otros intereses, seguros y saldo de capital cuando estén visibles. Los PDF con texto también disponen de un lector de respaldo si la IA no está disponible.
 
-La importación solo se realiza al elegir **Generar cuotas pendientes**. Las cuotas anteriores se registran como avance previo, pero no se crean pagos históricos. Los nombres e identificaciones personales impresos en el PDF no se conservan.
+Antes de guardar se muestran todas las cuotas. Las que tienen fecha anterior al día actual quedan seleccionadas inicialmente como pagadas, aunque el documento sea un plan emitido al comienzo del crédito. Puedes desmarcar una cuota vencida que todavía no pagaste, marcar otra que sí pagaste o usar las acciones para marcar todas, ninguna o solo las anteriores a hoy. El resumen de cuotas pagadas, pendientes y saldo se recalcula con la selección.
+
+Después del análisis debes seleccionar obligatoriamente un acreedor y una categoría; las etiquetas son opcionales. Los botones **+ Nuevo acreedor**, **+ Nueva categoría o subcategoría** y **+ Nueva etiqueta** permiten crear y seleccionar opciones desde la misma revisión. La deuda solo se crea al elegir **Confirmar estados y crear deuda**. Una cuota marcada como pagada no reduce ninguna cuenta de dinero porque representa un pago histórico anterior al registro; las cuotas no marcadas se crean como pendientes. Revisa siempre los datos extraídos por la IA antes de confirmar. Los nombres e identificaciones personales impresos en el documento no se conservan.
+
+Los campos monetarios de la aplicación aceptan coma o punto como separador decimal; por ejemplo, `172,96` y `172.96` representan el mismo valor.
 
 ## 6. Presupuestos
 

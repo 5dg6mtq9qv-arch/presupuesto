@@ -3,6 +3,7 @@ import csv
 import json
 import logging
 import uuid
+from collections import Counter
 from html import escape
 from ipaddress import ip_address
 from io import BytesIO
@@ -61,6 +62,7 @@ from .forms import (
     CategoriaPrincipalForm,
     CapturaComprobanteForm,
     ConfiguracionIAForm,
+    ConfirmarImportacionAmortizacionForm,
     ImportacionBancariaForm,
     ImportacionAmortizacionForm,
     RevisionComprobanteForm,
@@ -112,7 +114,7 @@ from .services import (
     sincronizar_deuda_compra_credito,
 )
 from .bank_import import CSVImportError, confirm_import, create_import_preview
-from .amortization_import import AmortizationImportError, parse_amortization_pdf
+from .amortization_import import AmortizationImportError, parse_amortization_file as parse_amortization_pdf
 from .receipt_capture import analyze_receipt
 
 User = get_user_model()
@@ -267,52 +269,67 @@ def importacion_amortizacion_nueva(request):
     form = ImportacionAmortizacionForm(request.POST or None, request.FILES or None, user=request.user)
     if request.method == "POST" and form.is_valid():
         try:
-            draft = parse_amortization_pdf(form.cleaned_data["archivo"])
+            draft = parse_amortization_pdf(
+                form.cleaned_data["archivo"],
+                user=request.user,
+                today=timezone.localdate(),
+            )
         except AmortizationImportError as exc:
             form.add_error("archivo", str(exc))
         else:
-            creditor = form.cleaned_data["acreedor_existente"]
-            new_creditor = (form.cleaned_data["nuevo_acreedor"] or "").strip()
-            category = form.cleaned_data["categoria"]
-            new_category = (form.cleaned_data["nueva_categoria"] or "").strip()
-            draft["acreedor_id"] = creditor.pk if creditor else None
-            draft["acreedor"] = creditor.nombre if creditor else new_creditor
-            draft["categoria_id"] = category.pk if category else None
-            draft["nueva_categoria"] = new_category
-            draft["categoria"] = (
-                f"{category.parent.nombre} > {category.nombre}"
-                if category and category.parent_id
-                else (category.nombre if category else (new_category or "Sin categoría"))
-            )
             request.session["borrador_amortizacion"] = draft
             request.session.modified = True
             return redirect("importacion_amortizacion_preview")
     return render(request, "core/importacion_amortizacion_form.html", {"form": form})
 
 
+def _amortization_review_context(request, draft, form=None):
+    installments = [
+        {**item, "fecha": parse_date(item["fecha"])}
+        for item in (draft.get("todas_cuotas") or draft.get("cuotas", []))
+    ]
+    if not installments:
+        return None
+    if form is None:
+        detected_name = str(draft.get("acreedor") or "").strip()
+        detected_creditor = None
+        if detected_name and detected_name.casefold() != "acreedor importado":
+            detected_creditor = Acreedor.objects.filter(
+                usuario=request.user,
+                activo=True,
+                nombre__iexact=detected_name,
+            ).first()
+        form = ConfirmarImportacionAmortizacionForm(
+            user=request.user,
+            initial={"acreedor": detected_creditor},
+        )
+    category_parents = list(
+        Categoria.objects.filter(
+            usuario=request.user,
+            tipo=Categoria.Tipo.FINANZAS,
+            parent__isnull=True,
+        ).order_by("nombre").values("id", "nombre", "color")
+    )
+    return {
+        "borrador": draft,
+        "cuotas_preview": installments,
+        "fecha_hoy": timezone.localdate().isoformat(),
+        "form": form,
+        "categorias_principales": category_parents,
+    }
+
+
 @login_required
 def importacion_amortizacion_preview(request):
     draft = request.session.get("borrador_amortizacion")
     if not draft:
-        messages.info(request, "Primero selecciona una tabla de amortización.")
+        messages.info(request, "Primero selecciona un archivo o imagen con cuotas.")
         return redirect("importacion_amortizacion_nueva")
-    installments = [
-        {**item, "fecha": parse_date(item["fecha"])}
-        for item in draft.get("cuotas", [])
-    ]
-    if not installments:
-        messages.error(request, "El resumen no contiene cuotas pendientes. Vuelve a cargar el PDF.")
+    context = _amortization_review_context(request, draft)
+    if context is None:
+        messages.error(request, "El resumen no contiene cuotas. Vuelve a cargar el archivo.")
         return redirect("importacion_amortizacion_nueva")
-    return render(
-        request,
-        "core/importacion_amortizacion_preview.html",
-        {
-            "borrador": draft,
-            "primera_cuota": installments[0],
-            "ultima_cuota": installments[-1],
-            "cuotas_preview": installments[:12],
-        },
-    )
+    return render(request, "core/importacion_amortizacion_preview.html", context)
 
 
 @login_required
@@ -321,8 +338,16 @@ def importacion_amortizacion_preview(request):
 def importacion_amortizacion_confirmar(request):
     draft = request.session.get("borrador_amortizacion")
     if not draft:
-        messages.error(request, "El resumen ya no está disponible. Vuelve a cargar el PDF.")
+        messages.error(request, "El resumen ya no está disponible. Vuelve a subir el documento de deuda.")
         return redirect("importacion_amortizacion_nueva")
+
+    review_form = ConfirmarImportacionAmortizacionForm(request.POST, user=request.user)
+    if not review_form.is_valid():
+        context = _amortization_review_context(request, draft, review_form)
+        if context is None:
+            return redirect("importacion_amortizacion_nueva")
+        messages.error(request, "Selecciona el acreedor y la categoría antes de confirmar la deuda.")
+        return render(request, "core/importacion_amortizacion_preview.html", context, status=400)
 
     operation = str(draft.get("operacion") or "").strip()
     if operation and Deuda.objects.filter(
@@ -333,12 +358,10 @@ def importacion_amortizacion_confirmar(request):
         return redirect("importacion_amortizacion_preview")
 
     try:
-        paid_count = int(draft["cuotas_pagadas"])
         total_count = int(draft["cuotas_totales"])
-        pending_total = Decimal(draft["total_pendiente"])
         start_date = parse_date(draft["fecha_consulta"])
-        first_due_date = parse_date(draft["proximo_pago"])
-        last_due_date = parse_date(draft["ultimo_pago"])
+        has_full_schedule = bool(draft.get("todas_cuotas"))
+        raw_payment_data = draft.get("todas_cuotas") or draft["cuotas"]
         payment_data = [
             {
                 **item,
@@ -346,65 +369,58 @@ def importacion_amortizacion_confirmar(request):
                 "fecha": parse_date(item["fecha"]),
                 "monto": Decimal(item["monto"]),
             }
-            for item in draft["cuotas"]
+            for item in raw_payment_data
         ]
-        expected_numbers = list(range(paid_count + 1, total_count + 1))
-        if not start_date or not first_due_date or not last_due_date:
+        if has_full_schedule:
+            schedule_start = payment_data[0]["numero"]
+            expected_numbers = list(range(schedule_start, total_count + 1))
+            previous_paid_numbers = set(range(1, schedule_start))
+            if request.POST.get("seleccion_revision") == "1":
+                selected_numbers = {int(value) for value in request.POST.getlist("cuotas_pagadas")}
+            else:
+                selected_numbers = {
+                    item["numero"] for item in payment_data if item.get("pagada_sugerida")
+                }
+            if not selected_numbers.issubset(set(expected_numbers)):
+                raise ValueError("invalid paid selection")
+            paid_numbers = previous_paid_numbers | selected_numbers
+            paid_prefix = schedule_start - 1
+            while paid_prefix + 1 in paid_numbers:
+                paid_prefix += 1
+        else:
+            # Borradores de la versión anterior solo guardaban las cuotas pendientes.
+            paid_prefix = int(draft["cuotas_pagadas"])
+            expected_numbers = list(range(paid_prefix + 1, total_count + 1))
+            paid_numbers = set(range(1, paid_prefix + 1))
+        if not start_date or any(not item["fecha"] for item in payment_data):
             raise ValueError("invalid dates")
         if [item["numero"] for item in payment_data] != expected_numbers:
             raise ValueError("invalid installment sequence")
-        if sum((item["monto"] for item in payment_data), Decimal("0.00")) != pending_total:
-            raise ValueError("invalid pending total")
+        tracked_payments = [item for item in payment_data if item["numero"] > paid_prefix]
+        pending_payments = [item for item in tracked_payments if item["numero"] not in paid_numbers]
+        pending_total = sum((item["monto"] for item in pending_payments), Decimal("0.00"))
+        scheduled_total = sum((item["monto"] for item in payment_data), Decimal("0.00"))
+        all_amounts = [item["monto"] for item in (pending_payments or payment_data)]
+        common_payment = Counter(all_amounts).most_common(1)[0][0]
+        first_due_date = tracked_payments[0]["fecha"] if tracked_payments else None
+        last_due_date = payment_data[-1]["fecha"]
     except (ArithmeticError, IndexError, KeyError, TypeError, ValueError) as exc:
         logger.warning("Invalid amortization draft for user_id=%s: %s", request.user.pk, exc)
-        messages.error(request, "El resumen contiene datos inválidos. Vuelve a cargar el PDF.")
+        messages.error(request, "El resumen contiene datos inválidos. Vuelve a subir el documento de deuda.")
         return redirect("importacion_amortizacion_nueva")
 
-    creditor = None
-    if draft.get("acreedor_id"):
-        creditor = Acreedor.objects.filter(
-            pk=draft["acreedor_id"],
-            usuario=request.user,
-            activo=True,
-        ).first()
-        if not creditor:
-            messages.error(request, "El acreedor seleccionado ya no está disponible. Vuelve a revisar la importación.")
-            return redirect("importacion_amortizacion_nueva")
-    creditor_name = str(draft.get("acreedor") or "").strip()[:120]
-    if not creditor and not creditor_name:
-        messages.error(request, "Selecciona o crea un acreedor antes de confirmar.")
-        return redirect("importacion_amortizacion_nueva")
-    category = None
-    if draft.get("categoria_id"):
-        category = Categoria.objects.filter(pk=draft["categoria_id"], usuario=request.user).first()
-        if not category:
-            messages.error(request, "La categoría seleccionada ya no está disponible. Vuelve a revisar la importación.")
-            return redirect("importacion_amortizacion_nueva")
-        if not category.parent_id:
-            category = get_general_subcategory(category)
-    elif draft.get("nueva_categoria"):
-        category_name = str(draft["nueva_categoria"]).strip()[:80]
-        parent_category = Categoria.objects.filter(
-            usuario=request.user,
-            tipo=Categoria.Tipo.FINANZAS,
-            parent__isnull=True,
-            nombre__iexact=category_name,
-        ).first()
-        if not parent_category:
-            parent_category = Categoria.objects.create(
-                usuario=request.user,
-                tipo=Categoria.Tipo.FINANZAS,
-                nombre=category_name,
-            )
-        category = get_general_subcategory(parent_category)
-    if not creditor:
-        creditor = Acreedor.objects.filter(usuario=request.user, nombre__iexact=creditor_name).first()
-        if not creditor:
-            creditor = Acreedor.objects.create(usuario=request.user, nombre=creditor_name)
-    note_parts = ["Plan pendiente importado desde una tabla de amortización."]
+    creditor = review_form.cleaned_data["acreedor"]
+    category = review_form.cleaned_data["categoria"]
+    if not category.parent_id:
+        category = get_general_subcategory(category)
+    tags = review_form.cleaned_data["etiquetas"]
+    note_parts = ["Documento de deuda analizado con IA. Tabla de amortización importada y revisada."]
+    detected_creditor = str(draft.get("acreedor") or "").strip()
+    if detected_creditor and detected_creditor.casefold() != creditor.nombre.casefold():
+        note_parts.append(f"Acreedor sugerido por la IA: {detected_creditor}.")
     if operation:
         note_parts.append(f"Operación importada: {operation}.")
-    note_parts.append(f"Cuotas pagadas antes del registro: {paid_count}.")
+    note_parts.append(f"Cuotas pagadas antes del registro: {len(paid_numbers)}.")
     if draft.get("saldo_capital"):
         note_parts.append(f"Saldo de capital informado: {draft['saldo_capital']} USD.")
     if draft.get("advertencias"):
@@ -416,32 +432,39 @@ def importacion_amortizacion_confirmar(request):
         acreedor_entidad=creditor,
         categoria=category,
         concepto=str(draft.get("concepto") or "Préstamo importado")[:160],
-        monto_inicial=pending_total,
+        monto_inicial=scheduled_total,
         saldo_actual=pending_total,
         tasa_interes_anual=Decimal(draft["tasa_interes_anual"]) if draft.get("tasa_interes_anual") else None,
-        pago_minimo=Decimal(draft["cuota_habitual"]),
+        pago_minimo=common_payment,
         numero_cuotas=total_count,
-        cuotas_pagadas_previas=paid_count,
+        cuotas_pagadas_previas=paid_prefix,
         fecha_inicio=start_date,
         fecha_primera_cuota=first_due_date,
         fecha_vencimiento=last_due_date,
-        estado=Deuda.Estado.ACTIVA,
+        estado=Deuda.Estado.ACTIVA if pending_payments else Deuda.Estado.PAGADA,
         nota=" ".join(note_parts),
     )
+    debt.etiquetas.set(tags)
+    confirmed_at = timezone.now()
     payments = [
         PagoDeuda(
             deuda=debt,
             monto=item["monto"],
             fecha=item["fecha"],
             cuota_numero=item["numero"],
-            estado=PagoDeuda.Estado.PENDIENTE,
+            estado=(
+                PagoDeuda.Estado.CONFIRMADO
+                if item["numero"] in paid_numbers
+                else PagoDeuda.Estado.PENDIENTE
+            ),
+            confirmado_en=confirmed_at if item["numero"] in paid_numbers else None,
             nota=(
-                f"Cuota importada. Capital {item['capital']}; interés {item['interes']}; "
+                f"Cuota importada y revisada. Capital {item['capital']}; interés {item['interes']}; "
                 f"otros intereses {item['otros_intereses']}; seguros {item['seguros']}; "
                 f"saldo de capital {item['saldo_capital']}."
             ),
         )
-        for item in payment_data
+        for item in tracked_payments
     ]
     PagoDeuda.objects.bulk_create(payments)
 
@@ -452,7 +475,9 @@ def importacion_amortizacion_confirmar(request):
         cambios={
             "origen": "tabla_amortizacion",
             "cuotas_pagadas_previas": debt.cuotas_pagadas_previas,
-            "cuotas_pendientes_importadas": len(payments),
+            "cuotas_pagadas_seleccionadas": len(paid_numbers),
+            "cuotas_pendientes_importadas": len(pending_payments),
+            "etiquetas": list(tags.values_list("nombre", flat=True)),
             "total_pendiente": str(debt.saldo_actual),
         },
     )
@@ -460,7 +485,7 @@ def importacion_amortizacion_confirmar(request):
     request.session.modified = True
     messages.success(
         request,
-        f"Importación confirmada: {debt.cuotas_pagadas_previas} cuotas pagadas previamente y {len(payments)} cuotas pendientes creadas.",
+        f"Importación confirmada: {len(paid_numbers)} cuotas pagadas y {len(pending_payments)} pendientes.",
     )
     return redirect("deuda_list")
 
@@ -3681,7 +3706,8 @@ def deuda_list(request):
     generar_pagos_deudas(hasta_fecha=fin_mes_siguiente, usuario=request.user)
     pagos_ordenados = PagoDeuda.objects.select_related("cuenta").order_by("fecha", "cuota_numero", "creado")
     deudas = Deuda.objects.filter(usuario=request.user).select_related("categoria__parent").prefetch_related(
-        Prefetch("pagos", queryset=pagos_ordenados)
+        Prefetch("pagos", queryset=pagos_ordenados),
+        "etiquetas",
     )
     q = request.GET.get("q", "").strip()
     estado = request.GET.get("estado", "")

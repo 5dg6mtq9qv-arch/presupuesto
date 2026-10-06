@@ -30,6 +30,41 @@ from .models import (
 User = get_user_model()
 
 
+def _normalize_decimal_value(value):
+    if not isinstance(value, str):
+        return value
+    normalized = value.strip().replace(" ", "")
+    if "," in normalized and "." in normalized:
+        if normalized.rfind(",") > normalized.rfind("."):
+            normalized = normalized.replace(".", "").replace(",", ".")
+        else:
+            normalized = normalized.replace(",", "")
+    elif "," in normalized:
+        normalized = normalized.replace(",", ".")
+    return normalized
+
+
+class FlexibleDecimalField(forms.DecimalField):
+    """Accept decimal comma or point without relying on browser locale."""
+
+    def to_python(self, value):
+        return super().to_python(_normalize_decimal_value(value))
+
+
+def enable_flexible_decimal_inputs(fields):
+    for field in fields.values():
+        if not isinstance(field, forms.DecimalField):
+            continue
+        if not isinstance(field, FlexibleDecimalField):
+            field.__class__ = FlexibleDecimalField
+        if isinstance(field.widget, forms.NumberInput) and not field.widget.is_hidden:
+            attrs = dict(field.widget.attrs)
+            attrs.pop("step", None)
+            attrs["inputmode"] = "decimal"
+            attrs["data-decimal-input"] = ""
+            field.widget = forms.TextInput(attrs=attrs)
+
+
 class ObjetivoFinancieroForm(forms.ModelForm):
     class Meta:
         model = ObjetivoFinanciero
@@ -50,6 +85,7 @@ class ObjetivoFinancieroForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        enable_flexible_decimal_inputs(self.fields)
         for field in self.fields.values():
             field.widget.attrs["class"] = "form-select" if isinstance(field.widget, forms.Select) else "form-control"
 
@@ -212,6 +248,7 @@ class UserScopedModelForm(forms.ModelForm):
     def __init__(self, *args, user=None, **kwargs):
         self.user = user
         super().__init__(*args, **kwargs)
+        enable_flexible_decimal_inputs(self.fields)
         for field in self.fields.values():
             widget = field.widget
             css_class = widget.attrs.get("class", "")
@@ -257,6 +294,7 @@ class EtiquetaSelectMultiple(forms.SelectMultiple):
 
 class BootstrapFormMixin:
     def apply_bootstrap_classes(self):
+        enable_flexible_decimal_inputs(self.fields)
         for field in self.fields.values():
             widget = field.widget
             css_class = widget.attrs.get("class", "")
@@ -1126,11 +1164,11 @@ class DeudaForm(UserScopedModelForm):
 
 
 class AjusteSaldoForm(forms.Form):
-    saldo_nuevo = forms.DecimalField(
+    saldo_nuevo = FlexibleDecimalField(
         label="Saldo real",
         max_digits=12,
         decimal_places=2,
-        widget=forms.NumberInput(attrs={"class": "form-control", "step": "0.01"}),
+        widget=forms.TextInput(attrs={"class": "form-control", "inputmode": "decimal", "data-decimal-input": ""}),
     )
     motivo = forms.CharField(
         label="Motivo del ajuste",
@@ -1177,43 +1215,58 @@ class ImportacionBancariaForm(forms.ModelForm):
 
 
 class ImportacionAmortizacionForm(forms.Form):
-    acreedor_existente = forms.ModelChoiceField(
+    archivo = forms.FileField(
+        label="Archivo o imagen con las cuotas",
+        help_text=(
+            "PDF, JPG, PNG o WebP de hasta 10 MB. Las imágenes y los formatos de PDF no reconocidos "
+            "se leen con la IA configurada. Nada se guarda sin tu confirmación."
+        ),
+        widget=forms.FileInput(
+            attrs={"accept": "application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp", "class": "form-control"}
+        ),
+    )
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs.setdefault(
+                "class",
+                "form-select" if isinstance(field.widget, forms.Select) else "form-control",
+            )
+
+    def clean_archivo(self):
+        uploaded = self.cleaned_data["archivo"]
+        if uploaded.size > 10 * 1024 * 1024:
+            raise forms.ValidationError("El archivo supera el límite de 10 MB.")
+        if not uploaded.name.lower().endswith((".pdf", ".jpg", ".jpeg", ".png", ".webp")):
+            raise forms.ValidationError("Selecciona un PDF o una imagen JPG, PNG o WebP.")
+        return uploaded
+
+
+class ConfirmarImportacionAmortizacionForm(forms.Form):
+    acreedor = forms.ModelChoiceField(
         label="Acreedor",
         queryset=Acreedor.objects.none(),
-        required=False,
         empty_label="Selecciona un acreedor",
-    )
-    nuevo_acreedor = forms.CharField(
-        label="O crea uno nuevo",
-        max_length=120,
-        required=False,
-        help_text="Se guardará al confirmar la importación.",
+        help_text="Obligatorio. Si no existe, créalo con el botón + Nuevo acreedor.",
     )
     categoria = forms.ModelChoiceField(
         label="Categoría",
         queryset=Categoria.objects.none(),
-        required=False,
-        empty_label="Sin categoría",
+        empty_label="Selecciona una categoría",
+        help_text="Obligatoria para clasificar la deuda.",
     )
-    nueva_categoria = forms.CharField(
-        label="O crea una categoría nueva",
-        max_length=80,
+    etiquetas = forms.ModelMultipleChoiceField(
+        label="Etiquetas",
+        queryset=Etiqueta.objects.none(),
         required=False,
-        help_text="Se creará con su subcategoría General al confirmar.",
-    )
-    archivo = forms.FileField(
-        label="Tabla de amortización PDF",
-        help_text="Hasta 8 MB. Primero verás un resumen y ninguna cuota se guardará sin confirmación.",
-        widget=forms.FileInput(attrs={"accept": "application/pdf,.pdf", "class": "form-control"}),
+        widget=EtiquetaSelectMultiple(attrs={"size": "1", "data-compact-multiple": "true"}),
+        help_text="Opcionales. Puedes crear y seleccionar varias.",
     )
 
     def __init__(self, *args, user=None, **kwargs):
-        self.user = user
         super().__init__(*args, **kwargs)
-        self.fields["acreedor_existente"].queryset = Acreedor.objects.filter(
-            usuario=user,
-            activo=True,
-        ).order_by("nombre")
+        self.fields["acreedor"].queryset = Acreedor.objects.filter(usuario=user, activo=True).order_by("nombre")
         self.fields["categoria"].queryset = Categoria.objects.filter(
             usuario=user,
             tipo__in=FINANCIAL_CATEGORY_TYPES,
@@ -1221,35 +1274,9 @@ class ImportacionAmortizacionForm(forms.Form):
         self.fields["categoria"].label_from_instance = lambda obj: (
             f"{obj.parent.nombre} > {obj.nombre}" if obj.parent_id else obj.nombre
         )
+        self.fields["etiquetas"].queryset = Etiqueta.objects.filter(usuario=user).order_by("nombre")
         for field in self.fields.values():
-            field.widget.attrs.setdefault(
-                "class",
-                "form-select" if isinstance(field.widget, forms.Select) else "form-control",
-            )
-
-    def clean(self):
-        cleaned_data = super().clean()
-        creditor = cleaned_data.get("acreedor_existente")
-        new_creditor = (cleaned_data.get("nuevo_acreedor") or "").strip()
-        category = cleaned_data.get("categoria")
-        new_category = (cleaned_data.get("nueva_categoria") or "").strip()
-        if creditor and new_creditor:
-            self.add_error("nuevo_acreedor", "Selecciona un acreedor o crea uno nuevo, no ambos.")
-        elif not creditor and not new_creditor:
-            self.add_error("acreedor_existente", "Selecciona un acreedor o escribe uno nuevo.")
-        elif creditor and creditor.usuario_id != self.user.id:
-            self.add_error("acreedor_existente", "El acreedor seleccionado no es válido.")
-        if category and new_category:
-            self.add_error("nueva_categoria", "Selecciona una categoría o crea una nueva, no ambas.")
-        return cleaned_data
-
-    def clean_archivo(self):
-        uploaded = self.cleaned_data["archivo"]
-        if uploaded.size > 8 * 1024 * 1024:
-            raise forms.ValidationError("El PDF supera el límite de 8 MB.")
-        if not uploaded.name.lower().endswith(".pdf"):
-            raise forms.ValidationError("Selecciona una tabla de amortización en formato PDF.")
-        return uploaded
+            field.widget.attrs["class"] = "form-select" if isinstance(field.widget, forms.Select) else "form-control"
 
 
 class CapturaComprobanteForm(forms.ModelForm):
@@ -1277,7 +1304,13 @@ class CapturaComprobanteForm(forms.ModelForm):
 
 class RevisionComprobanteForm(forms.Form):
     tipo = forms.ChoiceField(label="Tipo", choices=MovimientoFinanciero.Tipo.choices)
-    monto = forms.DecimalField(label="Monto", max_digits=12, decimal_places=2, min_value=Decimal("0.01"))
+    monto = FlexibleDecimalField(
+        label="Monto",
+        max_digits=12,
+        decimal_places=2,
+        min_value=Decimal("0.01"),
+        widget=forms.TextInput(attrs={"inputmode": "decimal", "data-decimal-input": ""}),
+    )
     concepto = forms.CharField(label="Concepto", max_length=160)
     fecha = forms.DateField(label="Fecha", widget=forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}))
     categoria = forms.ModelChoiceField(queryset=Categoria.objects.none(), label="Categoría")

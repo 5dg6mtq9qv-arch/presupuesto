@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
-{% block page_title %}Importar tabla de amortización{% endblock %}
-{% block page_subtitle %}Carga el PDF, revisa el resumen y confirma las cuotas pendientes{% endblock %}
+{% block page_title %}Subir documento de deuda{% endblock %}
+{% block page_subtitle %}Primero analiza el archivo; después completas acreedor, categoría y etiquetas{% endblock %}
 
 {% block content %}
 <section class="panel form-panel">
@@ -9,7 +9,7 @@
     <span class="material-symbols-outlined">verified_user</span>
     <div>
       <strong>Nada se registra todavía</strong>
-      <p>Leeremos la tabla y te mostraremos las cuotas pagadas, las pendientes y las fechas antes de guardar.</p>
+      <p>En este paso solo subes el archivo. Después podrás clasificar la deuda, revisar las cuotas y confirmar.</p>
     </div>
   </div>
   <form class="form-grid" method="post" enctype="multipart/form-data">
@@ -18,7 +18,7 @@
     <div class="form-actions">
       <a class="btn btn-outline-secondary" href="{% url 'deuda_list' %}">Cancelar</a>
       <button class="btn btn-primary" type="submit">
-        <span class="material-symbols-outlined">preview</span>Crear resumen
+        <span class="material-symbols-outlined">document_scanner</span>Analizar con IA
       </button>
     </div>
   </form>

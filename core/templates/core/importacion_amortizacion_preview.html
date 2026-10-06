@@ -1,71 +1,356 @@
 {% extends "base.html" %}
 
-{% block page_title %}Revisar tabla de amortización{% endblock %}
-{% block page_subtitle %}Confirma el resumen antes de generar las cuotas pendientes{% endblock %}
+{% block page_title %}Revisar documento de deuda{% endblock %}
+{% block page_subtitle %}Corrige qué cuotas están pagadas y confirma el resultado extraído por la IA{% endblock %}
 
 {% block content %}
+{{ categorias_principales|json_script:"amortization-category-parents" }}
 <section class="panel">
   <div class="panel-heading">
     <div>
-      <span class="eyebrow">{{ borrador.acreedor }}</span>
+      <span class="eyebrow">Acreedor sugerido por la IA: {{ borrador.acreedor|default:"No identificado" }}</span>
       <h2>{{ borrador.concepto }}</h2>
-      <p class="muted mb-0">{{ borrador.categoria }}{% if borrador.operacion %} · Operación {{ borrador.operacion }}{% endif %}{% if borrador.estado_documento %} · {{ borrador.estado_documento }}{% endif %}</p>
+      <p class="muted mb-0">{% if borrador.operacion %}Operación {{ borrador.operacion }}{% endif %}{% if borrador.estado_documento %}{% if borrador.operacion %} · {% endif %}{{ borrador.estado_documento }}{% endif %}</p>
     </div>
     <span class="badge text-bg-warning">Pendiente de confirmación</span>
   </div>
 
-  <div class="expense-summary mb-3" aria-label="Resumen de la tabla">
-    <span><small>Cuotas pagadas</small><strong>{{ borrador.cuotas_pagadas }} de {{ borrador.cuotas_totales }}</strong></span>
-    <span><small>Cuotas pendientes</small><strong>{{ borrador.cuotas_pendientes }}</strong></span>
-    <span><small>Total futuro programado</small><strong class="amount">{{ borrador.total_pendiente }} USD</strong></span>
-  </div>
-
-  <div class="expense-summary mb-3" aria-label="Fechas del plan">
-    <span><small>Próximo pago</small><strong>Cuota {{ primera_cuota.numero }} · {{ primera_cuota.fecha|date:"d/m/Y" }}</strong></span>
-    <span><small>Cuota habitual</small><strong class="amount">{{ borrador.cuota_habitual }} USD</strong></span>
-    <span><small>Último pago</small><strong>Cuota {{ ultima_cuota.numero }} · {{ ultima_cuota.fecha|date:"d/m/Y" }}</strong></span>
-  </div>
-
-  {% if borrador.saldo_capital %}
-    <div class="safe-notice mb-3">
-      <span class="material-symbols-outlined">info</span>
-      <div><strong>Saldo de capital informado: {{ borrador.saldo_capital }} USD</strong><p>El total futuro incluye capital, intereses, seguros y otros valores de las cuotas pendientes.</p></div>
+  <div class="safe-notice mb-3">
+    <span class="material-symbols-outlined">checklist</span>
+    <div>
+      <strong>Revisa la selección antes de guardar</strong>
+      <p>Las cuotas anteriores a hoy aparecen marcadas como pagadas. Si alguna sigue pendiente, desmárcala; también puedes marcar una cuota que ya pagaste.</p>
     </div>
-  {% endif %}
+  </div>
 
   {% for advertencia in borrador.advertencias %}
     <div class="alert alert-warning">{{ advertencia }}</div>
   {% endfor %}
 
-  <div class="panel-heading mt-4">
-    <div><h2>Primeras cuotas pendientes</h2><p class="muted mb-0">Mostramos {{ cuotas_preview|length }} de {{ borrador.cuotas_pendientes }} cuotas que se crearán.</p></div>
-  </div>
-  <div class="table-wrap">
-    <table class="table">
-      <thead><tr><th>Cuota</th><th>Fecha</th><th>Total</th><th>Capital</th><th>Interés</th><th>Seguros</th></tr></thead>
-      <tbody>
-        {% for cuota in cuotas_preview %}
-          <tr>
-            <td>{{ cuota.numero }}</td>
-            <td>{{ cuota.fecha|date:"d/m/Y" }}</td>
-            <td class="amount">{{ cuota.monto }}</td>
-            <td class="amount">{{ cuota.capital }}</td>
-            <td class="amount">{{ cuota.interes }}</td>
-            <td class="amount">{{ cuota.seguros }}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
+  {% if borrador.tasa_interes_anual or borrador.saldo_capital %}
+    <div class="expense-summary mb-3" aria-label="Datos financieros extraídos">
+      {% if borrador.tasa_interes_anual %}<span><small>Tasa de interés anual</small><strong>{{ borrador.tasa_interes_anual }} %</strong></span>{% endif %}
+      {% if borrador.saldo_capital %}<span><small>Saldo de capital informado</small><strong class="amount">{{ borrador.saldo_capital }} USD</strong></span>{% endif %}
+    </div>
+  {% endif %}
 
-  <div class="form-actions">
-    <form method="post" action="{% url 'importacion_amortizacion_cancelar' %}">
-      {% csrf_token %}<button class="btn btn-outline-secondary" type="submit">Cancelar</button>
-    </form>
-    <a class="btn btn-outline-primary" href="{% url 'importacion_amortizacion_nueva' %}">Elegir otro PDF</a>
-    <form method="post" action="{% url 'importacion_amortizacion_confirmar' %}">
-      {% csrf_token %}<button class="btn btn-primary" type="submit"><span class="material-symbols-outlined">done</span>Generar cuotas pendientes</button>
-    </form>
-  </div>
+  <form id="cuotas-form" method="post" action="{% url 'importacion_amortizacion_confirmar' %}">
+    {% csrf_token %}
+    <input type="hidden" name="seleccion_revision" value="1">
+
+    <div class="panel-heading mt-4">
+      <div><h2>Clasifica la deuda</h2><p class="muted mb-0">El acreedor y la categoría son obligatorios. Puedes crear opciones sin salir de esta revisión.</p></div>
+    </div>
+    <div class="form-grid mb-4" data-amortization-fields>
+      {% include "core/includes/unfold_form_fields.html" %}
+    </div>
+
+    <div class="expense-summary mb-3" aria-label="Resumen editable de la deuda">
+      <span><small>Cuotas pagadas</small><strong aria-label="{{ borrador.cuotas_pagadas }} de {{ borrador.cuotas_totales }} cuotas pagadas"><span id="paid-count">{{ borrador.cuotas_pagadas }}</span> de {{ borrador.cuotas_totales }}</strong></span>
+      <span aria-label="{{ borrador.cuotas_pendientes }} cuotas que se crearán como pendientes"><small>Cuotas pendientes</small><strong id="pending-count">{{ borrador.cuotas_pendientes }}</strong></span>
+      <span><small>Total pendiente</small><strong class="amount"><span id="pending-total">{{ borrador.total_pendiente }}</span> USD</strong></span>
+    </div>
+
+    <div class="d-flex flex-wrap gap-2 mb-3" aria-label="Acciones de selección">
+      <button class="btn btn-outline-primary btn-sm" type="button" id="mark-past">Marcar anteriores a hoy</button>
+      <button class="btn btn-outline-secondary btn-sm" type="button" id="mark-all">Marcar todas pagadas</button>
+      <button class="btn btn-outline-secondary btn-sm" type="button" id="clear-all">Marcar todas pendientes</button>
+    </div>
+
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>Pagada</th><th>Cuota</th><th>Fecha</th><th>Total</th><th>Capital</th><th>Interés</th><th>Otros intereses</th><th>Seguros</th><th>Saldo capital</th><th>Estado</th></tr></thead>
+        <tbody>
+          {% for cuota in cuotas_preview %}
+            <tr>
+              <td>
+                <input
+                  class="form-check-input installment-paid"
+                  type="checkbox"
+                  name="cuotas_pagadas"
+                  value="{{ cuota.numero }}"
+                  data-date="{{ cuota.fecha|date:'Y-m-d' }}"
+                  data-amount="{{ cuota.monto }}"
+                  aria-label="Marcar cuota {{ cuota.numero }} como pagada"
+                  {% if cuota.pagada_sugerida %}checked{% endif %}
+                >
+              </td>
+              <td>{{ cuota.numero }}</td>
+              <td>{{ cuota.fecha|date:"d/m/Y" }}</td>
+              <td class="amount">{{ cuota.monto }}</td>
+              <td class="amount">{{ cuota.capital }}</td>
+              <td class="amount">{{ cuota.interes }}</td>
+              <td class="amount">{{ cuota.otros_intereses }}</td>
+              <td class="amount">{{ cuota.seguros }}</td>
+              <td class="amount">{{ cuota.saldo_capital }}</td>
+              <td><span class="badge installment-status"></span></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="form-actions">
+      <button class="btn btn-outline-secondary" type="submit" formaction="{% url 'importacion_amortizacion_cancelar' %}">Cancelar</button>
+      <a class="btn btn-outline-primary" href="{% url 'importacion_amortizacion_nueva' %}">Elegir otro documento</a>
+      <button class="btn btn-primary" type="submit"><span class="material-symbols-outlined">done</span>Confirmar estados y crear deuda</button>
+    </div>
+  </form>
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+  const form = document.getElementById('cuotas-form');
+  const creditorSelect = document.getElementById('id_acreedor');
+  const categorySelect = document.getElementById('id_categoria');
+  const tagSelect = document.getElementById('id_etiquetas');
+  if (!form || !window.Swal) return;
+  const csrfToken = form.querySelector('input[name="csrfmiddlewaretoken"]')?.value || '';
+  const parentNode = document.getElementById('amortization-category-parents');
+  const parents = parentNode ? JSON.parse(parentNode.textContent) : [];
+  const detectedCreditor = '{{ borrador.acreedor|default:""|escapejs }}';
+  const swalTheme = {
+    customClass: { popup: 'finance-swal', confirmButton: 'finance-swal-confirm', cancelButton: 'finance-swal-cancel' },
+    buttonsStyling: false,
+    reverseButtons: true,
+  };
+  const errorsText = (errors) => Object.values(errors || {}).flat().join(' ') || 'No se pudo guardar.';
+  const postOption = async (endpoint, values) => {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'X-CSRFToken': csrfToken,
+        'X-Requested-With': 'XMLHttpRequest',
+        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+      },
+      body: new URLSearchParams({ ...values, csrfmiddlewaretoken: csrfToken }),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(errorsText(data.errors));
+    return data;
+  };
+  const selectOption = (select, optionData, multiple = false) => {
+    let option = [...select.options].find((item) => String(item.value) === String(optionData.id));
+    if (!option) {
+      option = new Option(optionData.label, optionData.id, true, true);
+      select.add(option);
+    }
+    option.selected = true;
+    option.text = optionData.label;
+    if (optionData.color) option.dataset.color = optionData.color;
+    if (window.jQuery) {
+      if (multiple) {
+        const values = [...select.selectedOptions].map((item) => String(item.value));
+        window.jQuery(select).val(values).trigger('change');
+      } else {
+        window.jQuery(select).val(String(optionData.id)).trigger('change');
+      }
+    } else {
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  };
+  const inputField = (label, placeholder = '') => {
+    const wrap = document.createElement('div');
+    const labelNode = document.createElement('label');
+    labelNode.className = 'form-label';
+    labelNode.textContent = label;
+    const input = document.createElement('input');
+    input.className = 'form-control mb-3';
+    input.placeholder = placeholder;
+    wrap.append(labelNode, input);
+    return { wrap, input };
+  };
+  const colorField = (value) => {
+    const input = document.createElement('input');
+    input.type = 'color';
+    input.value = value;
+    input.className = 'form-control form-control-color mb-3';
+    return input;
+  };
+  const addButton = (select, label, handler) => {
+    const field = select?.closest('.unfold-field');
+    if (!field) return;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'btn btn-sm btn-outline-primary mt-2';
+    button.innerHTML = '<span class="material-symbols-outlined">add</span><span></span>';
+    button.lastElementChild.textContent = label;
+    button.addEventListener('click', handler);
+    field.append(button);
+  };
+
+  const createCreditor = async () => {
+    const name = inputField('Nombre *', 'Ej.: Banco, cooperativa o persona');
+    if (detectedCreditor && detectedCreditor !== 'Acreedor importado') name.input.value = detectedCreditor;
+    const result = await Swal.fire({
+      ...swalTheme,
+      title: 'Nuevo acreedor',
+      html: name.wrap,
+      showCancelButton: true,
+      confirmButtonText: 'Crear y seleccionar',
+      cancelButtonText: 'Cancelar',
+      focusConfirm: false,
+      didOpen: () => name.input.focus(),
+      preConfirm: async () => {
+        if (!name.input.value.trim()) {
+          Swal.showValidationMessage('Escribe el nombre del acreedor.');
+          return false;
+        }
+        try {
+          return await postOption('{% url "acreedor_rapido_create" %}', { nombre: name.input.value.trim() });
+        } catch (error) {
+          Swal.showValidationMessage(error.message);
+          return false;
+        }
+      },
+    });
+    if (result.isConfirmed && result.value) selectOption(creditorSelect, result.value.option);
+  };
+
+  const createCategory = async () => {
+    const content = document.createElement('div');
+    const typeLabel = document.createElement('label');
+    typeLabel.className = 'form-label';
+    typeLabel.textContent = 'Qué deseas crear';
+    const type = document.createElement('select');
+    type.className = 'form-select mb-3';
+    type.innerHTML = '<option value="subcategoria">Subcategoría</option><option value="categoria">Categoría principal</option>';
+    const parentLabel = document.createElement('label');
+    parentLabel.className = 'form-label';
+    parentLabel.textContent = 'Categoría principal';
+    const parent = document.createElement('select');
+    parent.className = 'form-select mb-3';
+    parent.replaceChildren(...parents.map((item) => new Option(item.nombre, item.id)));
+    const parentWrap = document.createElement('div');
+    parentWrap.append(parentLabel, parent);
+    const name = inputField('Nombre *', 'Ej.: Préstamos personales');
+    const colorLabel = document.createElement('label');
+    colorLabel.className = 'form-label';
+    colorLabel.textContent = 'Color';
+    const color = colorField('#ef4444');
+    content.append(typeLabel, type, parentWrap, name.wrap, colorLabel, color);
+    const syncType = () => { parentWrap.hidden = type.value !== 'subcategoria'; };
+    type.addEventListener('change', syncType);
+    if (!parents.length) type.value = 'categoria';
+    syncType();
+    const result = await Swal.fire({
+      ...swalTheme,
+      title: 'Nueva categoría',
+      html: content,
+      showCancelButton: true,
+      confirmButtonText: 'Crear y seleccionar',
+      cancelButtonText: 'Cancelar',
+      focusConfirm: false,
+      preConfirm: async () => {
+        if (!name.input.value.trim()) {
+          Swal.showValidationMessage('Escribe un nombre.');
+          return false;
+        }
+        if (type.value === 'subcategoria' && !parent.value) {
+          Swal.showValidationMessage('Selecciona una categoría principal.');
+          return false;
+        }
+        try {
+          return await postOption('{% url "movimiento_opcion_create" %}', {
+            tipo_opcion: type.value,
+            parent: type.value === 'subcategoria' ? parent.value : '',
+            nombre: name.input.value.trim(),
+            color: color.value,
+          });
+        } catch (error) {
+          Swal.showValidationMessage(error.message);
+          return false;
+        }
+      },
+    });
+    if (!result.isConfirmed || !result.value) return;
+    selectOption(categorySelect, result.value.option);
+    if (result.value.parent && !parents.some((item) => String(item.id) === String(result.value.parent.id))) {
+      parents.push(result.value.parent);
+    }
+  };
+
+  const createTag = async () => {
+    const content = document.createElement('div');
+    const name = inputField('Nombre *', 'Ej.: Universidad, vehículo, urgente');
+    const colorLabel = document.createElement('label');
+    colorLabel.className = 'form-label';
+    colorLabel.textContent = 'Color';
+    const color = colorField('#6366f1');
+    content.append(name.wrap, colorLabel, color);
+    const result = await Swal.fire({
+      ...swalTheme,
+      title: 'Nueva etiqueta',
+      html: content,
+      showCancelButton: true,
+      confirmButtonText: 'Crear y seleccionar',
+      cancelButtonText: 'Cancelar',
+      focusConfirm: false,
+      preConfirm: async () => {
+        if (!name.input.value.trim()) {
+          Swal.showValidationMessage('Escribe un nombre.');
+          return false;
+        }
+        try {
+          return await postOption('{% url "movimiento_opcion_create" %}', {
+            tipo_opcion: 'etiqueta',
+            nombre: name.input.value.trim(),
+            color: color.value,
+          });
+        } catch (error) {
+          Swal.showValidationMessage(error.message);
+          return false;
+        }
+      },
+    });
+    if (result.isConfirmed && result.value) selectOption(tagSelect, result.value.option, true);
+  };
+
+  addButton(creditorSelect, 'Nuevo acreedor', createCreditor);
+  addButton(categorySelect, 'Nueva categoría o subcategoría', createCategory);
+  addButton(tagSelect, 'Nueva etiqueta', createTag);
+})();
+</script>
+<script>
+(() => {
+  const checkboxes = [...document.querySelectorAll('.installment-paid')];
+  const today = '{{ fecha_hoy }}';
+  const previousUndetailed = Number('{{ borrador.cuotas_anteriores_no_detalladas|default:0 }}');
+  const paidCount = document.getElementById('paid-count');
+  const pendingCount = document.getElementById('pending-count');
+  const pendingTotal = document.getElementById('pending-total');
+
+  function refreshSummary() {
+    const paid = checkboxes.filter((box) => box.checked).length;
+    const total = checkboxes
+      .filter((box) => !box.checked)
+      .reduce((sum, box) => sum + Number(box.dataset.amount || 0), 0);
+    paidCount.textContent = previousUndetailed + paid;
+    pendingCount.textContent = checkboxes.length - paid;
+    pendingTotal.textContent = total.toFixed(2);
+    checkboxes.forEach((box) => {
+      const badge = box.closest('tr').querySelector('.installment-status');
+      badge.textContent = box.checked ? 'Pagada' : 'Pendiente';
+      badge.className = `badge installment-status ${box.checked ? 'text-bg-success' : 'text-bg-warning'}`;
+    });
+  }
+
+  checkboxes.forEach((box) => box.addEventListener('change', refreshSummary));
+  document.getElementById('mark-past').addEventListener('click', () => {
+    checkboxes.forEach((box) => { box.checked = box.dataset.date < today; });
+    refreshSummary();
+  });
+  document.getElementById('mark-all').addEventListener('click', () => {
+    checkboxes.forEach((box) => { box.checked = true; });
+    refreshSummary();
+  });
+  document.getElementById('clear-all').addEventListener('click', () => {
+    checkboxes.forEach((box) => { box.checked = false; });
+    refreshSummary();
+  });
+  refreshSummary();
+})();
+</script>
 {% endblock %}

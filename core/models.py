@@ -879,6 +879,7 @@ class Deuda(models.Model):
         null=True,
         blank=True,
     )
+    etiquetas = models.ManyToManyField(Etiqueta, blank=True, related_name="deudas")
     acreedor = models.CharField(max_length=120)
     acreedor_entidad = models.ForeignKey(
         Acreedor,

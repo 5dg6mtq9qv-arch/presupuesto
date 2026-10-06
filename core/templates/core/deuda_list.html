@@ -10,9 +10,9 @@
     <p class="muted mb-0">Cada deuda muestra primero lo que necesitas atender ahora.</p>
   </div>
   <div class="actions">
-    <a class="btn btn-outline-primary shadow-sm" href="{% url 'importacion_amortizacion_nueva' %}">
+    <a class="btn btn-outline-primary shadow-sm" href="{% url 'importacion_amortizacion_nueva' %}" aria-label="Subir documento de deuda: Tabla de amortización o imagen">
       <span class="material-symbols-outlined">upload_file</span>
-      <span>Importar tabla</span>
+      <span>Subir documento de deuda</span>
     </a>
     <a class="btn btn-primary shadow-sm" href="{% url 'deuda_create' %}">
       <span class="material-symbols-outlined">add</span>
@@ -130,10 +130,11 @@
           <span>Saldo pendiente</span>
           <strong class="amount">{{ deuda.saldo_actual }}</strong>
           <small>De un monto inicial de <strong class="amount">{{ deuda.monto_inicial }}</strong></small>
-          <div class="debt-financial-tags">
-            {% if deuda.tasa_interes_anual is not None %}<span><span class="material-symbols-outlined">percent</span>{{ deuda.tasa_interes_anual }}% anual</span>{% endif %}
-            {% if deuda.pago_minimo is not None %}<span><span class="material-symbols-outlined">payments</span>Cuota {{ deuda.pago_minimo }}</span>{% endif %}
-          </div>
+            <div class="debt-financial-tags">
+              {% if deuda.tasa_interes_anual is not None %}<span><span class="material-symbols-outlined">percent</span>{{ deuda.tasa_interes_anual }}% anual</span>{% endif %}
+              {% if deuda.pago_minimo is not None %}<span><span class="material-symbols-outlined">payments</span>Cuota {{ deuda.pago_minimo }}</span>{% endif %}
+              {% for etiqueta in deuda.etiquetas.all %}<span style="--tag-color: {{ etiqueta.color|default:'#6366f1' }}"><span class="material-symbols-outlined">label</span>{{ etiqueta.nombre }}</span>{% endfor %}
+            </div>
         </section>
 
         <section class="debt-plan" aria-label="Avance del plan de pagos">

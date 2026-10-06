@@ -1694,7 +1694,7 @@
       .quick-sheet.is-open { transform: translateY(0); }
       .quick-sheet h2 { margin: 0 0 5px; font-size: 17px; }
       .quick-sheet-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 9px; }
-      .quick-sheet-option { display: flex; align-items: center; gap: 9px; min-height: 54px; border: 1px solid var(--line); border-radius: 12px; color: var(--text); padding: 10px; }
+      .quick-sheet-option { display: flex; align-items: center; gap: 9px; min-height: 54px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--text); padding: 10px; font: inherit; text-align: left; cursor: pointer; }
       .quick-sheet-option .material-symbols-outlined { color: var(--primary); }
     }
 
@@ -1766,10 +1766,8 @@
           {% endif %}
           <li><a class="nav-link {% if 'movimiento' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'movimiento_list' %}"><span class="material-symbols-outlined">sync_alt</span> Ingresos y gastos</a></li>
           <li><a class="nav-link {% if request.resolver_match.url_name == 'actividad_financiera' %}active{% endif %}" href="{% url 'actividad_financiera' %}"><span class="material-symbols-outlined">history</span> Actividad</a></li>
-          <li><a class="nav-link {% if 'importacion_bancaria' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'importacion_bancaria_nueva' %}"><span class="material-symbols-outlined">upload_file</span> Importar banco</a></li>
-          <li><a class="nav-link {% if 'importacion_amortizacion' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'importacion_amortizacion_nueva' %}"><span class="material-symbols-outlined">table_view</span> Importar cuotas</a></li>
           <li><a class="nav-link {% if request.resolver_match.url_name == 'cuenta_transferir' %}active{% endif %}" href="{% url 'cuenta_transferir' %}"><span class="material-symbols-outlined">swap_horiz</span> Transferir</a></li>
-          <li><a class="nav-link {% if 'deuda' in request.resolver_match.url_name or 'pago' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'deuda_list' %}"><span class="material-symbols-outlined">receipt_long</span> Deudas</a></li>
+          <li><a class="nav-link {% if 'deuda' in request.resolver_match.url_name or 'pago' in request.resolver_match.url_name or 'importacion_amortizacion' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'deuda_list' %}"><span class="material-symbols-outlined">receipt_long</span> Deudas</a></li>
           <li><a class="nav-link {% if 'presupuesto' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'presupuesto_list' %}"><span class="material-symbols-outlined">price_check</span> Presupuestos</a></li>
           <li><a class="nav-link {% if 'recurrente' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'recurrente_list' %}"><span class="material-symbols-outlined">event_repeat</span> Recurrentes</a></li>
         </ul>
@@ -1866,12 +1864,20 @@
     <div class="quick-sheet-backdrop" data-quick-sheet-close></div>
     <aside class="quick-sheet" aria-label="Acciones rápidas" data-quick-sheet>
       <div class="panel-heading"><div><h2>¿Qué quieres registrar?</h2><small class="muted">Elige una acción para continuar</small></div><button class="btn btn-light btn-icon" type="button" data-quick-sheet-close aria-label="Cerrar"><span class="material-symbols-outlined">close</span></button></div>
-      <div class="quick-sheet-grid">
+      <div class="quick-sheet-grid" data-quick-main>
         <a class="quick-sheet-option" href="{% url 'movimiento_ingreso_create' %}"><span class="material-symbols-outlined">south_west</span><strong>Ingreso</strong></a>
         <a class="quick-sheet-option" href="{% url 'movimiento_gasto_create' %}"><span class="material-symbols-outlined">north_east</span><strong>Gasto</strong></a>
         <a class="quick-sheet-option" href="{% url 'comprobante_nuevo' %}"><span class="material-symbols-outlined">photo_camera</span><strong>Comprobante</strong></a>
         <a class="quick-sheet-option" href="{% url 'importacion_bancaria_nueva' %}"><span class="material-symbols-outlined">upload_file</span><strong>CSV bancario</strong></a>
-        <a class="quick-sheet-option" href="{% url 'importacion_amortizacion_nueva' %}"><span class="material-symbols-outlined">table_view</span><strong>Tabla de amortización</strong></a>
+        <button class="quick-sheet-option" type="button" data-quick-debt-open><span class="material-symbols-outlined">receipt_long</span><strong>Deuda</strong></button>
+      </div>
+      <div data-quick-debt hidden>
+        <button class="btn btn-light mb-3" type="button" data-quick-debt-back><span class="material-symbols-outlined">arrow_back</span>Volver</button>
+        <div class="quick-sheet-grid">
+          <a class="quick-sheet-option" href="{% url 'deuda_list' %}"><span class="material-symbols-outlined">list_alt</span><strong>Ver deudas</strong></a>
+          <a class="quick-sheet-option" href="{% url 'deuda_create' %}"><span class="material-symbols-outlined">add_card</span><strong>Nueva deuda</strong></a>
+          <a class="quick-sheet-option" href="{% url 'importacion_amortizacion_nueva' %}"><span class="material-symbols-outlined">document_scanner</span><strong>Analizar documento con IA</strong></a>
+        </div>
       </div>
       <button class="btn btn-outline-primary" type="button" data-install-app hidden><span class="material-symbols-outlined">install_mobile</span>Instalar aplicación</button>
     </aside>
@@ -2075,6 +2081,29 @@
           if (!compactScreen()) question.focus({preventScroll: true});
         }
       });
+    })();
+  </script>
+  <script>
+    (() => {
+      const normalizeDecimal = value => {
+        let normalized = String(value || "").trim().replace(/\s/g, "");
+        if (normalized.includes(",") && normalized.includes(".")) {
+          normalized = normalized.lastIndexOf(",") > normalized.lastIndexOf(".")
+            ? normalized.replace(/\./g, "").replace(",", ".")
+            : normalized.replace(/,/g, "");
+        } else if (normalized.includes(",")) {
+          normalized = normalized.replace(",", ".");
+        }
+        return normalized;
+      };
+      document.querySelectorAll("[data-decimal-input]").forEach(input => {
+        input.addEventListener("change", () => { input.value = normalizeDecimal(input.value); });
+      });
+      document.addEventListener("submit", event => {
+        event.target.querySelectorAll?.("[data-decimal-input]").forEach(input => {
+          input.value = normalizeDecimal(input.value);
+        });
+      }, true);
     })();
   </script>
   <script>
@@ -2409,13 +2438,22 @@
       const sheet = document.querySelector("[data-quick-sheet]");
       const backdrop = document.querySelector("[data-quick-sheet-close].quick-sheet-backdrop");
       const openButton = document.querySelector("[data-quick-sheet-open]");
+      const quickMain = document.querySelector("[data-quick-main]");
+      const quickDebt = document.querySelector("[data-quick-debt]");
+      const showDebtOptions = open => {
+        if (quickMain) quickMain.hidden = open;
+        if (quickDebt) quickDebt.hidden = !open;
+      };
       const setOpen = open => {
         sheet?.classList.toggle("is-open", open);
         backdrop?.classList.toggle("is-open", open);
         openButton?.setAttribute("aria-expanded", String(open));
+        if (!open) showDebtOptions(false);
       };
       openButton?.addEventListener("click", () => setOpen(!sheet?.classList.contains("is-open")));
       document.querySelectorAll("[data-quick-sheet-close]").forEach(button => button.addEventListener("click", () => setOpen(false)));
+      document.querySelector("[data-quick-debt-open]")?.addEventListener("click", () => showDebtOptions(true));
+      document.querySelector("[data-quick-debt-back]")?.addEventListener("click", () => showDebtOptions(false));
       let installPrompt = null;
       const installButton = document.querySelector("[data-install-app]");
       window.addEventListener("beforeinstallprompt", event => {
