@@ -11,6 +11,7 @@ from PIL import Image
 
 from .amortization_import import (
     AmortizationImportError,
+    _analyze_with_ai,
     _json_money,
     _prepare_ai_image,
     _result_from_ai_data,
@@ -21,6 +22,20 @@ from .models import Acreedor, Categoria, Deuda, Etiqueta, PagoDeuda
 
 
 class AmortizationParserTests(TestCase):
+    @patch("core.amortization_import.user_can_use_ai", return_value=True)
+    @patch("core.amortization_import.get_ai_runtime_config")
+    @patch("core.amortization_import._provider_message")
+    def test_ai_import_uses_one_request_with_a_sixty_second_timeout(self, provider, runtime_config, _access):
+        runtime_config.return_value.configured = True
+        provider.return_value = {
+            "content": '{"cuotas":[{"numero":1,"fecha":"2026-10-20","monto":"25.00"}]}'
+        }
+
+        _analyze_with_ai(object(), today=date(2026, 10, 6))
+
+        self.assertEqual(provider.call_args.kwargs["transient_retries"], 0)
+        self.assertEqual(provider.call_args.kwargs["timeout_seconds"], 60)
+
     def test_prepares_large_photo_with_bounded_dimensions(self):
         source = BytesIO()
         Image.new("RGB", (3200, 1600), "white").save(source, format="JPEG")

@@ -1585,6 +1585,7 @@ def _provider_message(
     max_tokens=600,
     usage_context=None,
     transient_retries=1,
+    timeout_seconds=None,
 ):
     started_at = time.monotonic()
     provider_data = {}
@@ -1625,6 +1626,7 @@ def _provider_message(
     }
     if config.provider == "gemini":
         headers["x-goog-api-client"] = "taskbudget-oai/1.0"
+    request_timeout = config.timeout_seconds if timeout_seconds is None else max(5, min(int(timeout_seconds), 60))
     request = Request(
         config.base_url + "/chat/completions",
         data=json.dumps(payload).encode("utf-8"),
@@ -1632,7 +1634,7 @@ def _provider_message(
         method="POST",
     )
     try:
-        with urlopen(request, timeout=config.timeout_seconds) as response:
+        with urlopen(request, timeout=request_timeout) as response:
             provider_data = json.loads(response.read().decode("utf-8"))
             http_status = getattr(response, "status", None)
         message = provider_data["choices"][0]["message"]
@@ -1670,6 +1672,7 @@ def _provider_message(
                 max_tokens=max_tokens,
                 usage_context=usage_context,
                 transient_retries=transient_retries - 1,
+                timeout_seconds=request_timeout,
             )
         if exc.code == 401:
             raise AIAssistantError("La clave de la IA no es válida.") from exc
@@ -1705,6 +1708,7 @@ def _provider_message(
                 max_tokens=max_tokens,
                 usage_context=usage_context,
                 transient_retries=transient_retries - 1,
+                timeout_seconds=request_timeout,
             )
         raise AIAssistantError("El proveedor de IA no está disponible en este momento.") from exc
     except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:

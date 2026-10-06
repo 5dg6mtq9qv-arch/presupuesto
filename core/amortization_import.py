@@ -446,6 +446,8 @@ def _analyze_with_ai(user, *, image_raws=None, text="", document_hash="", today=
             config,
             max_tokens=8000,
             usage_context={"user": user, "interaction_id": uuid.uuid4(), "operation": "importacion_amortizacion"},
+            transient_retries=0,
+            timeout_seconds=60,
         )
         response_text = str(message.get("content") or "{}").strip()
         if response_text.startswith("```"):
