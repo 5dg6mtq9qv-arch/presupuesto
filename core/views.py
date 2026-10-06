@@ -62,6 +62,7 @@ from .forms import (
     CapturaComprobanteForm,
     ConfiguracionIAForm,
     ImportacionBancariaForm,
+    ImportacionAmortizacionForm,
     RevisionComprobanteForm,
     SubcategoriaForm,
     TareaForm,
@@ -69,6 +70,7 @@ from .forms import (
     UsuarioCreateForm,
     UsuarioPasswordForm,
     UsuarioUpdateForm,
+    get_general_subcategory,
 )
 from .models import (
     Acreedor,
@@ -261,76 +263,74 @@ def asistente_financiero_preguntar(request):
 
 
 @login_required
-@require_POST
-def asistente_amortizacion_analizar(request):
-    if not user_can_use_ai(request.user):
-        return JsonResponse({"ok": False, "error": "No tienes autorización para utilizar el asistente de IA."}, status=403)
-    uploaded = request.FILES.get("archivo")
-    if not uploaded:
-        return JsonResponse({"ok": False, "error": "Selecciona una tabla de amortización en PDF."}, status=400)
-    try:
-        draft = parse_amortization_pdf(uploaded)
-    except AmortizationImportError as exc:
-        return JsonResponse({"ok": False, "error": str(exc)}, status=400)
+def importacion_amortizacion_nueva(request):
+    form = ImportacionAmortizacionForm(request.POST or None, request.FILES or None, user=request.user)
+    if request.method == "POST" and form.is_valid():
+        try:
+            draft = parse_amortization_pdf(form.cleaned_data["archivo"])
+        except AmortizationImportError as exc:
+            form.add_error("archivo", str(exc))
+        else:
+            creditor = form.cleaned_data["acreedor_existente"]
+            new_creditor = (form.cleaned_data["nuevo_acreedor"] or "").strip()
+            category = form.cleaned_data["categoria"]
+            new_category = (form.cleaned_data["nueva_categoria"] or "").strip()
+            draft["acreedor_id"] = creditor.pk if creditor else None
+            draft["acreedor"] = creditor.nombre if creditor else new_creditor
+            draft["categoria_id"] = category.pk if category else None
+            draft["nueva_categoria"] = new_category
+            draft["categoria"] = (
+                f"{category.parent.nombre} > {category.nombre}"
+                if category and category.parent_id
+                else (category.nombre if category else (new_category or "Sin categoría"))
+            )
+            request.session["borrador_amortizacion"] = draft
+            request.session.modified = True
+            return redirect("importacion_amortizacion_preview")
+    return render(request, "core/importacion_amortizacion_form.html", {"form": form})
 
-    request.session["borrador_amortizacion"] = draft
-    request.session.modified = True
-    warning = " ".join(draft["advertencias"])
-    return JsonResponse(
+
+@login_required
+def importacion_amortizacion_preview(request):
+    draft = request.session.get("borrador_amortizacion")
+    if not draft:
+        messages.info(request, "Primero selecciona una tabla de amortización.")
+        return redirect("importacion_amortizacion_nueva")
+    installments = [
+        {**item, "fecha": parse_date(item["fecha"])}
+        for item in draft.get("cuotas", [])
+    ]
+    if not installments:
+        messages.error(request, "El resumen no contiene cuotas pendientes. Vuelve a cargar el PDF.")
+        return redirect("importacion_amortizacion_nueva")
+    return render(
+        request,
+        "core/importacion_amortizacion_preview.html",
         {
-            "ok": True,
-            "respuesta": (
-                f"La tabla indica {draft['cuotas_pagadas']} de {draft['cuotas_totales']} cuotas pagadas. "
-                f"Quedan {draft['cuotas_pendientes']} cuotas por {draft['total_pendiente']} USD en total. "
-                "Revisa el resumen y confirma si deseas generar solo las cuotas pendientes."
-            ),
-            "evidencia": [
-                f"Próximo pago: cuota {draft['cuotas'][0]['numero']} el {draft['proximo_pago']} por {draft['cuotas'][0]['monto']} USD",
-                f"Último pago: cuota {draft['cuotas'][-1]['numero']} el {draft['ultimo_pago']} por {draft['cuotas'][-1]['monto']} USD",
-                f"Saldo de capital informado: {draft['saldo_capital']} USD",
-            ],
-            "advertencia": warning,
-            "borrador_amortizacion": {
-                "acreedor": draft["acreedor"],
-                "concepto": draft["concepto"],
-                "cuotas_pagadas": draft["cuotas_pagadas"],
-                "cuotas_pendientes": draft["cuotas_pendientes"],
-                "total_pendiente": draft["total_pendiente"],
-            },
-        }
+            "borrador": draft,
+            "primera_cuota": installments[0],
+            "ultima_cuota": installments[-1],
+            "cuotas_preview": installments[:12],
+        },
     )
 
 
 @login_required
 @require_POST
 @transaction.atomic
-def asistente_amortizacion_accion(request, accion):
-    if not user_can_use_ai(request.user):
-        return JsonResponse({"ok": False, "error": "No tienes autorización para utilizar el asistente de IA."}, status=403)
+def importacion_amortizacion_confirmar(request):
     draft = request.session.get("borrador_amortizacion")
     if not draft:
-        return JsonResponse({"ok": False, "error": "El borrador ya no está disponible. Vuelve a subir el PDF."}, status=400)
-    if accion == "cancelar":
-        request.session.pop("borrador_amortizacion", None)
-        request.session.modified = True
-        return JsonResponse(
-            {
-                "ok": True,
-                "respuesta": "Importación cancelada; no se creó la deuda ni ninguna cuota.",
-                "evidencia": [],
-                "advertencia": "",
-                "borrador_amortizacion": None,
-            }
-        )
-    if accion != "confirmar":
-        return JsonResponse({"ok": False, "error": "Acción no válida."}, status=400)
+        messages.error(request, "El resumen ya no está disponible. Vuelve a cargar el PDF.")
+        return redirect("importacion_amortizacion_nueva")
 
     operation = str(draft.get("operacion") or "").strip()
     if operation and Deuda.objects.filter(
         usuario=request.user,
         nota__contains=f"Operación importada: {operation}",
     ).exists():
-        return JsonResponse({"ok": False, "error": "Esta operación ya fue importada anteriormente."}, status=400)
+        messages.error(request, "Esta operación ya fue importada anteriormente.")
+        return redirect("importacion_amortizacion_preview")
 
     try:
         paid_count = int(draft["cuotas_pagadas"])
@@ -357,12 +357,50 @@ def asistente_amortizacion_accion(request, accion):
             raise ValueError("invalid pending total")
     except (ArithmeticError, IndexError, KeyError, TypeError, ValueError) as exc:
         logger.warning("Invalid amortization draft for user_id=%s: %s", request.user.pk, exc)
-        return JsonResponse({"ok": False, "error": "El borrador contiene datos inválidos. Vuelve a analizar el PDF."}, status=400)
+        messages.error(request, "El resumen contiene datos inválidos. Vuelve a cargar el PDF.")
+        return redirect("importacion_amortizacion_nueva")
 
-    creditor_name = str(draft.get("acreedor") or "Acreedor importado")[:120]
-    creditor = Acreedor.objects.filter(usuario=request.user, nombre__iexact=creditor_name).first()
+    creditor = None
+    if draft.get("acreedor_id"):
+        creditor = Acreedor.objects.filter(
+            pk=draft["acreedor_id"],
+            usuario=request.user,
+            activo=True,
+        ).first()
+        if not creditor:
+            messages.error(request, "El acreedor seleccionado ya no está disponible. Vuelve a revisar la importación.")
+            return redirect("importacion_amortizacion_nueva")
+    creditor_name = str(draft.get("acreedor") or "").strip()[:120]
+    if not creditor and not creditor_name:
+        messages.error(request, "Selecciona o crea un acreedor antes de confirmar.")
+        return redirect("importacion_amortizacion_nueva")
+    category = None
+    if draft.get("categoria_id"):
+        category = Categoria.objects.filter(pk=draft["categoria_id"], usuario=request.user).first()
+        if not category:
+            messages.error(request, "La categoría seleccionada ya no está disponible. Vuelve a revisar la importación.")
+            return redirect("importacion_amortizacion_nueva")
+        if not category.parent_id:
+            category = get_general_subcategory(category)
+    elif draft.get("nueva_categoria"):
+        category_name = str(draft["nueva_categoria"]).strip()[:80]
+        parent_category = Categoria.objects.filter(
+            usuario=request.user,
+            tipo=Categoria.Tipo.FINANZAS,
+            parent__isnull=True,
+            nombre__iexact=category_name,
+        ).first()
+        if not parent_category:
+            parent_category = Categoria.objects.create(
+                usuario=request.user,
+                tipo=Categoria.Tipo.FINANZAS,
+                nombre=category_name,
+            )
+        category = get_general_subcategory(parent_category)
     if not creditor:
-        creditor = Acreedor.objects.create(usuario=request.user, nombre=creditor_name)
+        creditor = Acreedor.objects.filter(usuario=request.user, nombre__iexact=creditor_name).first()
+        if not creditor:
+            creditor = Acreedor.objects.create(usuario=request.user, nombre=creditor_name)
     note_parts = ["Plan pendiente importado desde una tabla de amortización."]
     if operation:
         note_parts.append(f"Operación importada: {operation}.")
@@ -376,6 +414,7 @@ def asistente_amortizacion_accion(request, accion):
         usuario=request.user,
         acreedor=creditor.nombre,
         acreedor_entidad=creditor,
+        categoria=category,
         concepto=str(draft.get("concepto") or "Préstamo importado")[:160],
         monto_inicial=pending_total,
         saldo_actual=pending_total,
@@ -419,22 +458,20 @@ def asistente_amortizacion_accion(request, accion):
     )
     request.session.pop("borrador_amortizacion", None)
     request.session.modified = True
-    return JsonResponse(
-        {
-            "ok": True,
-            "respuesta": (
-                f"Deuda creada para {debt.acreedor}. Registré {debt.cuotas_pagadas_previas} cuotas ya pagadas "
-                f"como avance previo y generé {len(payments)} cuotas pendientes."
-            ),
-            "evidencia": [
-                f"Total pendiente: {debt.saldo_actual} USD",
-                f"Próximo pago: cuota {payments[0].cuota_numero} el {payments[0].fecha.isoformat()}",
-                f"Última cuota: {payments[-1].cuota_numero} el {payments[-1].fecha.isoformat()}",
-            ],
-            "advertencia": "",
-            "borrador_amortizacion": None,
-        }
+    messages.success(
+        request,
+        f"Importación confirmada: {debt.cuotas_pagadas_previas} cuotas pagadas previamente y {len(payments)} cuotas pendientes creadas.",
     )
+    return redirect("deuda_list")
+
+
+@login_required
+@require_POST
+def importacion_amortizacion_cancelar(request):
+    request.session.pop("borrador_amortizacion", None)
+    request.session.modified = True
+    messages.info(request, "Importación cancelada; no se creó ninguna deuda ni cuota.")
+    return redirect("deuda_list")
 
 
 @login_required

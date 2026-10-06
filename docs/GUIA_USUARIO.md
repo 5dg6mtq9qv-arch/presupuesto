@@ -99,7 +99,7 @@ La pantalla de deudas genera y muestra el plan pendiente, incluido el próximo m
 
 ### Importar una tabla de amortización
 
-Desde el asistente financiero puedes adjuntar una tabla de amortización en PDF. El sistema lee el número de cuotas pagadas, las cuotas totales y cada fila pendiente con su fecha e importe. Antes de guardar muestra un resumen con el total pendiente, el próximo pago, la última cuota y cualquier fecha corregida por una inconsistencia evidente del documento.
+Desde **Deudas > Importar tabla** o desde **Importar cuotas** en el menú puedes seleccionar o crear un acreedor, seleccionar o crear una categoría y cargar una tabla de amortización en PDF. El sistema lee el número de cuotas pagadas, las cuotas totales y cada fila pendiente con su fecha e importe. Antes de guardar muestra un resumen con el total pendiente, el próximo pago, la última cuota y cualquier fecha corregida por una inconsistencia evidente del documento.
 
 La importación solo se realiza al elegir **Generar cuotas pendientes**. Las cuotas anteriores se registran como avance previo, pero no se crean pagos históricos. Los nombres e identificaciones personales impresos en el PDF no se conservan.
 

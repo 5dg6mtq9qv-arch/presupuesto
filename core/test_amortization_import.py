@@ -7,7 +7,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from .amortization_import import parse_amortization_text
-from .models import Deuda, PagoDeuda, PerfilUsuario
+from .models import Acreedor, Categoria, Deuda, PagoDeuda
 
 
 class AmortizationParserTests(TestCase):
@@ -36,14 +36,15 @@ class AmortizationParserTests(TestCase):
         self.assertIn("Se corrigieron 1 fechas", result["advertencias"][0])
 
 
-class AssistantAmortizationImportTests(TestCase):
+class AmortizationImportFlowTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(username="amortizacion", password="test")
-        PerfilUsuario.objects.update_or_create(
-            usuario=self.user,
-            defaults={"puede_usar_asistente_ia": True},
-        )
         self.client.force_login(self.user)
+        self.category = Categoria.objects.create(
+            usuario=self.user,
+            tipo=Categoria.Tipo.FINANZAS,
+            nombre="Préstamos",
+        )
         self.draft = {
             "document_hash": "abc",
             "acreedor": "Banco de prueba",
@@ -90,19 +91,31 @@ class AssistantAmortizationImportTests(TestCase):
         parser.return_value = self.draft
         upload = SimpleUploadedFile("tabla.pdf", b"%PDF-test", content_type="application/pdf")
 
-        preview = self.client.post(reverse("asistente_amortizacion_analizar"), {"archivo": upload})
+        upload_response = self.client.post(
+            reverse("importacion_amortizacion_nueva"),
+            {
+                "acreedor_existente": "",
+                "nuevo_acreedor": "Cooperativa nueva",
+                "categoria": self.category.pk,
+                "archivo": upload,
+            },
+        )
 
-        self.assertEqual(preview.status_code, 200)
-        self.assertContains(preview, "32 de 34 cuotas pagadas")
-        self.assertTrue(preview.json()["borrador_amortizacion"])
+        self.assertRedirects(upload_response, reverse("importacion_amortizacion_preview"))
+        preview = self.client.get(reverse("importacion_amortizacion_preview"))
+        self.assertContains(preview, "32 de 34")
+        self.assertContains(preview, "2 cuotas que se crearán")
+        self.assertContains(preview, "20/10/2026")
 
-        confirmation = self.client.post(reverse("asistente_amortizacion_accion", args=["confirmar"]))
+        confirmation = self.client.post(reverse("importacion_amortizacion_confirmar"))
 
-        self.assertEqual(confirmation.status_code, 200)
+        self.assertRedirects(confirmation, reverse("deuda_list"))
         debt = Deuda.objects.get(usuario=self.user)
         self.assertEqual(debt.numero_cuotas, 34)
         self.assertEqual(debt.cuotas_pagadas_previas, 32)
         self.assertEqual(debt.saldo_actual, Decimal("435.74"))
+        self.assertEqual(debt.acreedor, "Cooperativa nueva")
+        self.assertEqual(debt.categoria.parent, self.category)
         installments = list(debt.pagos.order_by("cuota_numero"))
         self.assertEqual([item.cuota_numero for item in installments], [33, 34])
         self.assertEqual([item.monto for item in installments], [Decimal("215.74"), Decimal("220.00")])
@@ -111,15 +124,70 @@ class AssistantAmortizationImportTests(TestCase):
         debt_page = self.client.get(reverse("deuda_list"))
         self.assertContains(debt_page, "32 de 34 cuotas pagadas")
         self.assertContains(debt_page, "Cuota 33")
+        self.assertContains(debt_page, "Tabla de amortización")
 
     @patch("core.views.parse_amortization_pdf")
     def test_cancel_does_not_create_records(self, parser):
         parser.return_value = self.draft
         upload = SimpleUploadedFile("tabla.pdf", b"%PDF-test", content_type="application/pdf")
-        self.client.post(reverse("asistente_amortizacion_analizar"), {"archivo": upload})
+        self.client.post(
+            reverse("importacion_amortizacion_nueva"),
+            {
+                "acreedor_existente": "",
+                "nuevo_acreedor": "Banco temporal",
+                "categoria": "",
+                "archivo": upload,
+            },
+        )
 
-        response = self.client.post(reverse("asistente_amortizacion_accion", args=["cancelar"]))
+        response = self.client.post(reverse("importacion_amortizacion_cancelar"))
 
-        self.assertEqual(response.status_code, 200)
+        self.assertRedirects(response, reverse("deuda_list"))
         self.assertFalse(Deuda.objects.filter(usuario=self.user).exists())
         self.assertFalse(PagoDeuda.objects.exists())
+        self.assertFalse(Acreedor.objects.filter(usuario=self.user, nombre="Banco temporal").exists())
+
+    @patch("core.views.parse_amortization_pdf")
+    def test_accepts_an_existing_creditor(self, parser):
+        parser.return_value = self.draft
+        creditor = Acreedor.objects.create(usuario=self.user, nombre="Banco existente")
+        upload = SimpleUploadedFile("tabla.pdf", b"%PDF-test", content_type="application/pdf")
+
+        response = self.client.post(
+            reverse("importacion_amortizacion_nueva"),
+            {
+                "acreedor_existente": creditor.pk,
+                "nuevo_acreedor": "",
+                "categoria": "",
+                "archivo": upload,
+            },
+        )
+
+        self.assertRedirects(response, reverse("importacion_amortizacion_preview"))
+        self.assertEqual(self.client.session["borrador_amortizacion"]["acreedor_id"], creditor.pk)
+        self.assertEqual(self.client.session["borrador_amortizacion"]["acreedor"], creditor.nombre)
+
+    @patch("core.views.parse_amortization_pdf")
+    def test_creates_a_new_category_only_after_confirmation(self, parser):
+        parser.return_value = self.draft
+        upload = SimpleUploadedFile("tabla.pdf", b"%PDF-test", content_type="application/pdf")
+
+        response = self.client.post(
+            reverse("importacion_amortizacion_nueva"),
+            {
+                "acreedor_existente": "",
+                "nuevo_acreedor": "Banco categoría nueva",
+                "categoria": "",
+                "nueva_categoria": "Hipoteca importada",
+                "archivo": upload,
+            },
+        )
+
+        self.assertRedirects(response, reverse("importacion_amortizacion_preview"))
+        self.assertFalse(Categoria.objects.filter(usuario=self.user, nombre="Hipoteca importada").exists())
+
+        self.client.post(reverse("importacion_amortizacion_confirmar"))
+
+        debt = Deuda.objects.get(usuario=self.user)
+        self.assertEqual(debt.categoria.nombre, "General")
+        self.assertEqual(debt.categoria.parent.nombre, "Hipoteca importada")

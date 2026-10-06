@@ -1767,6 +1767,7 @@
           <li><a class="nav-link {% if 'movimiento' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'movimiento_list' %}"><span class="material-symbols-outlined">sync_alt</span> Ingresos y gastos</a></li>
           <li><a class="nav-link {% if request.resolver_match.url_name == 'actividad_financiera' %}active{% endif %}" href="{% url 'actividad_financiera' %}"><span class="material-symbols-outlined">history</span> Actividad</a></li>
           <li><a class="nav-link {% if 'importacion_bancaria' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'importacion_bancaria_nueva' %}"><span class="material-symbols-outlined">upload_file</span> Importar banco</a></li>
+          <li><a class="nav-link {% if 'importacion_amortizacion' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'importacion_amortizacion_nueva' %}"><span class="material-symbols-outlined">table_view</span> Importar cuotas</a></li>
           <li><a class="nav-link {% if request.resolver_match.url_name == 'cuenta_transferir' %}active{% endif %}" href="{% url 'cuenta_transferir' %}"><span class="material-symbols-outlined">swap_horiz</span> Transferir</a></li>
           <li><a class="nav-link {% if 'deuda' in request.resolver_match.url_name or 'pago' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'deuda_list' %}"><span class="material-symbols-outlined">receipt_long</span> Deudas</a></li>
           <li><a class="nav-link {% if 'presupuesto' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'presupuesto_list' %}"><span class="material-symbols-outlined">price_check</span> Presupuestos</a></li>
@@ -1870,6 +1871,7 @@
         <a class="quick-sheet-option" href="{% url 'movimiento_gasto_create' %}"><span class="material-symbols-outlined">north_east</span><strong>Gasto</strong></a>
         <a class="quick-sheet-option" href="{% url 'comprobante_nuevo' %}"><span class="material-symbols-outlined">photo_camera</span><strong>Comprobante</strong></a>
         <a class="quick-sheet-option" href="{% url 'importacion_bancaria_nueva' %}"><span class="material-symbols-outlined">upload_file</span><strong>CSV bancario</strong></a>
+        <a class="quick-sheet-option" href="{% url 'importacion_amortizacion_nueva' %}"><span class="material-symbols-outlined">table_view</span><strong>Tabla de amortización</strong></a>
       </div>
       <button class="btn btn-outline-primary" type="button" data-install-app hidden><span class="material-symbols-outlined">install_mobile</span>Instalar aplicación</button>
     </aside>

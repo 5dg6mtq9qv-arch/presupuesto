@@ -17,12 +17,11 @@
   .assistant-message-ai { align-self: flex-start; background: var(--surface-soft); border: 0; border-bottom-left-radius: 4px; box-shadow: 0 1px 2px rgba(15, 23, 42, .08); }
   .assistant-evidence { margin: 10px 0 0; padding: 10px 0 0 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
   .assistant-warning { margin-top: 10px; color: #92400e; font-size: 12px; }
-  .assistant-form { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px 10px; align-items: end; border-top: 1px solid var(--line); padding-top: 16px; }
+  .assistant-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 10px; align-items: end; border-top: 1px solid var(--line); padding-top: 16px; }
   .assistant-form .unfold-field { display: contents; }
   .assistant-form label, .assistant-form .form-text { grid-column: 1 / -1; }
-  .assistant-form textarea { grid-column: 2; min-width: 0; min-height: 70px; max-height: 150px; font-size: 16px; }
-  .assistant-form .assistant-file-button { grid-column: 1; grid-row: 2; min-width: 46px; min-height: 46px; }
-  .assistant-form .assistant-send-button { grid-column: 3; grid-row: 2; min-width: 46px; min-height: 46px; }
+  .assistant-form textarea { grid-column: 1; min-width: 0; min-height: 70px; max-height: 150px; font-size: 16px; }
+  .assistant-form .btn { grid-column: 2; grid-row: 2; min-width: 46px; min-height: 46px; }
   .assistant-suggestions { display: grid; gap: 8px; }
   .assistant-suggestion { width: 100%; text-align: left; justify-content: flex-start; white-space: normal; }
   .assistant-privacy { display: flex; gap: 9px; color: var(--muted); font-size: 12px; line-height: 1.5; }
@@ -71,16 +70,12 @@
 
     <form class="assistant-form" id="assistant-form">
       {% csrf_token %}
-      <input id="assistant-amortization-file" type="file" accept="application/pdf,.pdf" hidden>
-      <button class="btn btn-outline-primary assistant-file-button" id="assistant-amortization-button" type="button" title="Subir tabla de amortización PDF" aria-label="Subir tabla de amortización PDF">
-        <span class="material-symbols-outlined">attach_file</span>
-      </button>
       <div class="unfold-field">
         <label for="assistant-question">Tu pregunta</label>
         <textarea id="assistant-question" rows="2" maxlength="600" enterkeyhint="send" autocomplete="off" placeholder="Ej.: ¿En qué categoría gasté más este mes?" {% if not ai_configured %}disabled{% endif %}></textarea>
-        <div class="form-text">Puedes adjuntar una tabla de amortización PDF. No escribas contraseñas ni números de tarjeta.</div>
+        <div class="form-text">No escribas contraseñas, números de tarjeta ni otros datos sensibles.</div>
       </div>
-      <button class="btn btn-primary assistant-send-button" type="submit" {% if not ai_configured %}disabled{% endif %}>
+      <button class="btn btn-primary" type="submit" {% if not ai_configured %}disabled{% endif %}>
         <span class="material-symbols-outlined">send</span><span>Preguntar</span>
       </button>
     </form>
@@ -148,7 +143,7 @@
     </section>
     <section class="panel assistant-privacy">
       <span class="material-symbols-outlined">shield_lock</span>
-      <span>Se envían al proveedor tu pregunta, hasta diez mensajes recientes y el resumen financiero. Los PDF de amortización se leen en la aplicación y solo se guarda el plan después de mostrarte el resumen y recibir tu confirmación; no se conserva la identidad que aparezca en el documento.</span>
+      <span>Se envían tu pregunta, hasta diez mensajes recientes y el resumen financiero. Django consulta solo tus datos y el asistente únicamente crea un registro después de mostrarte el resumen y recibir tu confirmación. No se envían tu identidad, correos, comprobantes, notas ni credenciales.</span>
     </section>
   </aside>
 </div>
@@ -161,9 +156,7 @@
     const question = document.getElementById("assistant-question");
     const messages = document.getElementById("assistant-messages");
     const submit = form?.querySelector('button[type="submit"]');
-    const amortizationFile = document.getElementById("assistant-amortization-file");
-    const amortizationButton = document.getElementById("assistant-amortization-button");
-    if (!form || !question || !messages || !submit || !amortizationFile || !amortizationButton) return;
+    if (!form || !question || !messages || !submit || question.disabled) return;
     const csrfToken = form.querySelector('input[name="csrfmiddlewaretoken"]').value;
     const history = [];
     const compactScreen = () => window.matchMedia("(max-width: 560px)").matches;
@@ -221,23 +214,6 @@
         });
         node.append(actions);
       }
-      if (data.borrador_amortizacion) {
-        const actions = document.createElement("div");
-        actions.className = "assistant-draft-actions";
-        const choices = [
-          ["Generar cuotas pendientes", "confirmar", "btn-primary"],
-          ["Cancelar", "cancelar", "btn-outline-secondary"],
-        ];
-        choices.forEach(([label, action, style]) => {
-          const button = document.createElement("button");
-          button.type = "button";
-          button.className = `btn btn-sm ${style}`;
-          button.textContent = label;
-          button.addEventListener("click", () => runAmortizationAction(action, label, actions));
-          actions.append(button);
-        });
-        node.append(actions);
-      }
       messages.append(node);
       messages.scrollTop = messages.scrollHeight;
       return node;
@@ -263,28 +239,6 @@
       } catch (error) {
         pending.remove();
         addMessage(error.message || "No fue posible completar la acción.", "ai");
-        actionsNode.querySelectorAll("button").forEach(button => { button.disabled = false; });
-      }
-    };
-
-    const runAmortizationAction = async (action, label, actionsNode) => {
-      actionsNode.querySelectorAll("button").forEach(button => { button.disabled = true; });
-      addMessage(label, "user");
-      const pending = addMessage(action === "confirmar" ? "Generando las cuotas pendientes…" : "Cancelando…", "ai");
-      try {
-        const urlTemplate = "{% url 'asistente_amortizacion_accion' 'ACCION' %}";
-        const response = await fetch(urlTemplate.replace("ACCION", action), {
-          method: "POST",
-          headers: {"X-CSRFToken": csrfToken, "X-Requested-With": "XMLHttpRequest"},
-        });
-        const data = await response.json();
-        pending.remove();
-        if (!response.ok || !data.ok) throw new Error(data.error || "No fue posible completar la importación.");
-        addMessage(data.respuesta, "ai", data);
-        actionsNode.remove();
-      } catch (error) {
-        pending.remove();
-        addMessage(error.message || "No fue posible completar la importación.", "ai");
         actionsNode.querySelectorAll("button").forEach(button => { button.disabled = false; });
       }
     };
@@ -315,7 +269,6 @@
 
     form.addEventListener("submit", async event => {
       event.preventDefault();
-      if (question.disabled) return;
       const value = question.value.trim();
       if (!value || submit.disabled) return question.focus();
       addMessage(value, "user");
@@ -359,34 +312,6 @@
       } finally {
         submit.disabled = false;
         if (!compactScreen()) question.focus({preventScroll: true});
-      }
-    });
-
-    amortizationButton.addEventListener("click", () => amortizationFile.click());
-    amortizationFile.addEventListener("change", async () => {
-      const file = amortizationFile.files?.[0];
-      if (!file) return;
-      addMessage(`Tabla de amortización: ${file.name}`, "user");
-      const pending = addMessage("Leyendo cuotas, fechas e importes…", "ai");
-      amortizationButton.disabled = true;
-      const payload = new FormData();
-      payload.append("archivo", file);
-      try {
-        const response = await fetch("{% url 'asistente_amortizacion_analizar' %}", {
-          method: "POST",
-          headers: {"X-CSRFToken": csrfToken, "X-Requested-With": "XMLHttpRequest"},
-          body: payload,
-        });
-        const data = await response.json();
-        pending.remove();
-        if (!response.ok || !data.ok) throw new Error(data.error || "No se pudo analizar la tabla.");
-        addMessage(data.respuesta, "ai", data);
-      } catch (error) {
-        pending.remove();
-        addMessage(error.message || "No se pudo analizar la tabla.", "ai");
-      } finally {
-        amortizationFile.value = "";
-        amortizationButton.disabled = false;
       }
     });
 

@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block page_title %}Revisar tabla de amortización{% endblock %}
+{% block page_subtitle %}Confirma el resumen antes de generar las cuotas pendientes{% endblock %}
+
+{% block content %}
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <span class="eyebrow">{{ borrador.acreedor }}</span>
+      <h2>{{ borrador.concepto }}</h2>
+      <p class="muted mb-0">{{ borrador.categoria }}{% if borrador.operacion %} · Operación {{ borrador.operacion }}{% endif %}{% if borrador.estado_documento %} · {{ borrador.estado_documento }}{% endif %}</p>
+    </div>
+    <span class="badge text-bg-warning">Pendiente de confirmación</span>
+  </div>
+
+  <div class="expense-summary mb-3" aria-label="Resumen de la tabla">
+    <span><small>Cuotas pagadas</small><strong>{{ borrador.cuotas_pagadas }} de {{ borrador.cuotas_totales }}</strong></span>
+    <span><small>Cuotas pendientes</small><strong>{{ borrador.cuotas_pendientes }}</strong></span>
+    <span><small>Total futuro programado</small><strong class="amount">{{ borrador.total_pendiente }} USD</strong></span>
+  </div>
+
+  <div class="expense-summary mb-3" aria-label="Fechas del plan">
+    <span><small>Próximo pago</small><strong>Cuota {{ primera_cuota.numero }} · {{ primera_cuota.fecha|date:"d/m/Y" }}</strong></span>
+    <span><small>Cuota habitual</small><strong class="amount">{{ borrador.cuota_habitual }} USD</strong></span>
+    <span><small>Último pago</small><strong>Cuota {{ ultima_cuota.numero }} · {{ ultima_cuota.fecha|date:"d/m/Y" }}</strong></span>
+  </div>
+
+  {% if borrador.saldo_capital %}
+    <div class="safe-notice mb-3">
+      <span class="material-symbols-outlined">info</span>
+      <div><strong>Saldo de capital informado: {{ borrador.saldo_capital }} USD</strong><p>El total futuro incluye capital, intereses, seguros y otros valores de las cuotas pendientes.</p></div>
+    </div>
+  {% endif %}
+
+  {% for advertencia in borrador.advertencias %}
+    <div class="alert alert-warning">{{ advertencia }}</div>
+  {% endfor %}
+
+  <div class="panel-heading mt-4">
+    <div><h2>Primeras cuotas pendientes</h2><p class="muted mb-0">Mostramos {{ cuotas_preview|length }} de {{ borrador.cuotas_pendientes }} cuotas que se crearán.</p></div>
+  </div>
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Cuota</th><th>Fecha</th><th>Total</th><th>Capital</th><th>Interés</th><th>Seguros</th></tr></thead>
+      <tbody>
+        {% for cuota in cuotas_preview %}
+          <tr>
+            <td>{{ cuota.numero }}</td>
+            <td>{{ cuota.fecha|date:"d/m/Y" }}</td>
+            <td class="amount">{{ cuota.monto }}</td>
+            <td class="amount">{{ cuota.capital }}</td>
+            <td class="amount">{{ cuota.interes }}</td>
+            <td class="amount">{{ cuota.seguros }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="form-actions">
+    <form method="post" action="{% url 'importacion_amortizacion_cancelar' %}">
+      {% csrf_token %}<button class="btn btn-outline-secondary" type="submit">Cancelar</button>
+    </form>
+    <a class="btn btn-outline-primary" href="{% url 'importacion_amortizacion_nueva' %}">Elegir otro PDF</a>
+    <form method="post" action="{% url 'importacion_amortizacion_confirmar' %}">
+      {% csrf_token %}<button class="btn btn-primary" type="submit"><span class="material-symbols-outlined">done</span>Generar cuotas pendientes</button>
+    </form>
+  </div>
+</section>
+{% endblock %}

@@ -9,10 +9,16 @@
     <span class="eyebrow">Plan de pagos</span>
     <p class="muted mb-0">Cada deuda muestra primero lo que necesitas atender ahora.</p>
   </div>
-  <a class="btn btn-primary shadow-sm" href="{% url 'deuda_create' %}">
-    <span class="material-symbols-outlined">add</span>
-    <span>Nueva deuda</span>
-  </a>
+  <div class="actions">
+    <a class="btn btn-outline-primary shadow-sm" href="{% url 'importacion_amortizacion_nueva' %}">
+      <span class="material-symbols-outlined">upload_file</span>
+      <span>Importar tabla</span>
+    </a>
+    <a class="btn btn-primary shadow-sm" href="{% url 'deuda_create' %}">
+      <span class="material-symbols-outlined">add</span>
+      <span>Nueva deuda</span>
+    </a>
+  </div>
 </div>
 
 <section class="panel debt-filter-panel" aria-labelledby="debt-filter-title">

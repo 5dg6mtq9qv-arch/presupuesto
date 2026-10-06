@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block page_title %}Importar tabla de amortización{% endblock %}
+{% block page_subtitle %}Carga el PDF, revisa el resumen y confirma las cuotas pendientes{% endblock %}
+
+{% block content %}
+<section class="panel form-panel">
+  <div class="safe-notice">
+    <span class="material-symbols-outlined">verified_user</span>
+    <div>
+      <strong>Nada se registra todavía</strong>
+      <p>Leeremos la tabla y te mostraremos las cuotas pagadas, las pendientes y las fechas antes de guardar.</p>
+    </div>
+  </div>
+  <form class="form-grid" method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    {% include "core/includes/unfold_form_fields.html" %}
+    <div class="form-actions">
+      <a class="btn btn-outline-secondary" href="{% url 'deuda_list' %}">Cancelar</a>
+      <button class="btn btn-primary" type="submit">
+        <span class="material-symbols-outlined">preview</span>Crear resumen
+      </button>
+    </div>
+  </form>
+</section>
+{% endblock %}

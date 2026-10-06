@@ -1176,6 +1176,82 @@ class ImportacionBancariaForm(forms.ModelForm):
         return uploaded
 
 
+class ImportacionAmortizacionForm(forms.Form):
+    acreedor_existente = forms.ModelChoiceField(
+        label="Acreedor",
+        queryset=Acreedor.objects.none(),
+        required=False,
+        empty_label="Selecciona un acreedor",
+    )
+    nuevo_acreedor = forms.CharField(
+        label="O crea uno nuevo",
+        max_length=120,
+        required=False,
+        help_text="Se guardará al confirmar la importación.",
+    )
+    categoria = forms.ModelChoiceField(
+        label="Categoría",
+        queryset=Categoria.objects.none(),
+        required=False,
+        empty_label="Sin categoría",
+    )
+    nueva_categoria = forms.CharField(
+        label="O crea una categoría nueva",
+        max_length=80,
+        required=False,
+        help_text="Se creará con su subcategoría General al confirmar.",
+    )
+    archivo = forms.FileField(
+        label="Tabla de amortización PDF",
+        help_text="Hasta 8 MB. Primero verás un resumen y ninguna cuota se guardará sin confirmación.",
+        widget=forms.FileInput(attrs={"accept": "application/pdf,.pdf", "class": "form-control"}),
+    )
+
+    def __init__(self, *args, user=None, **kwargs):
+        self.user = user
+        super().__init__(*args, **kwargs)
+        self.fields["acreedor_existente"].queryset = Acreedor.objects.filter(
+            usuario=user,
+            activo=True,
+        ).order_by("nombre")
+        self.fields["categoria"].queryset = Categoria.objects.filter(
+            usuario=user,
+            tipo__in=FINANCIAL_CATEGORY_TYPES,
+        ).select_related("parent").order_by("parent__nombre", "nombre")
+        self.fields["categoria"].label_from_instance = lambda obj: (
+            f"{obj.parent.nombre} > {obj.nombre}" if obj.parent_id else obj.nombre
+        )
+        for field in self.fields.values():
+            field.widget.attrs.setdefault(
+                "class",
+                "form-select" if isinstance(field.widget, forms.Select) else "form-control",
+            )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        creditor = cleaned_data.get("acreedor_existente")
+        new_creditor = (cleaned_data.get("nuevo_acreedor") or "").strip()
+        category = cleaned_data.get("categoria")
+        new_category = (cleaned_data.get("nueva_categoria") or "").strip()
+        if creditor and new_creditor:
+            self.add_error("nuevo_acreedor", "Selecciona un acreedor o crea uno nuevo, no ambos.")
+        elif not creditor and not new_creditor:
+            self.add_error("acreedor_existente", "Selecciona un acreedor o escribe uno nuevo.")
+        elif creditor and creditor.usuario_id != self.user.id:
+            self.add_error("acreedor_existente", "El acreedor seleccionado no es válido.")
+        if category and new_category:
+            self.add_error("nueva_categoria", "Selecciona una categoría o crea una nueva, no ambas.")
+        return cleaned_data
+
+    def clean_archivo(self):
+        uploaded = self.cleaned_data["archivo"]
+        if uploaded.size > 8 * 1024 * 1024:
+            raise forms.ValidationError("El PDF supera el límite de 8 MB.")
+        if not uploaded.name.lower().endswith(".pdf"):
+            raise forms.ValidationError("Selecciona una tabla de amortización en formato PDF.")
+        return uploaded
+
+
 class CapturaComprobanteForm(forms.ModelForm):
     class Meta:
         model = CapturaComprobante
