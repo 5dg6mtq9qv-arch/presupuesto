@@ -48,7 +48,9 @@ def record_ai_usage(
             tokens_entrada=input_tokens,
             tokens_salida=output_tokens,
             tokens_totales=total_tokens,
-            tokens_cacheados=_non_negative_int(input_details.get("cached_tokens")),
+            tokens_cacheados=_non_negative_int(
+                input_details.get("cached_tokens", usage.get("cache_read_input_tokens"))
+            ),
             tokens_razonamiento=_non_negative_int(output_details.get("reasoning_tokens")),
             duracion_ms=_non_negative_int(duration_ms),
             exitoso=bool(successful),

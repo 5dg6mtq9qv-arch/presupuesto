@@ -74,6 +74,119 @@ class AIUsageTrackingTests(TestCase):
         self.assertTrue(consumo.exitoso)
         self.assertFalse(any(field.name in {"pregunta", "respuesta", "contenido", "prompt"} for field in ConsumoIA._meta.fields))
 
+    @patch("core.ai_assistant.urlopen")
+    def test_anthropic_usa_messages_api_y_normaliza_respuesta_consumo_y_herramientas(self, mocked_urlopen):
+        response = MagicMock()
+        response.status = 200
+        response.read.return_value = json.dumps(
+            {
+                "id": "msg_claude_prueba",
+                "content": [
+                    {"type": "text", "text": "Voy a consultar."},
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_1",
+                        "name": "consultar_cuentas",
+                        "input": {"limite": 5},
+                    },
+                ],
+                "usage": {
+                    "input_tokens": 80,
+                    "output_tokens": 12,
+                    "cache_read_input_tokens": 20,
+                },
+            }
+        ).encode()
+        response.__enter__.return_value = response
+        mocked_urlopen.return_value = response
+        config = AIRuntimeConfig(
+            enabled=True,
+            provider="anthropic",
+            api_key="clave-claude",
+            model="claude-sonnet-5",
+            base_url="https://api.anthropic.com/v1",
+            timeout_seconds=25,
+            source="database",
+        )
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "consultar_cuentas",
+                    "description": "Consulta las cuentas del usuario.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"limite": {"type": "integer"}},
+                    },
+                },
+            }
+        ]
+
+        message = _provider_message(
+            [
+                {"role": "system", "content": "Responde en español."},
+                {"role": "user", "content": "Consulta mis cuentas."},
+            ],
+            config,
+            tools=tools,
+            usage_context={"user": self.user, "interaction_id": uuid.uuid4(), "operation": "consulta"},
+        )
+
+        request = mocked_urlopen.call_args.args[0]
+        payload = json.loads(request.data)
+        self.assertEqual(request.full_url, "https://api.anthropic.com/v1/messages")
+        self.assertEqual(request.get_header("X-api-key"), "clave-claude")
+        self.assertEqual(request.get_header("Anthropic-version"), "2023-06-01")
+        self.assertEqual(payload["system"], "Responde en español.")
+        self.assertNotIn("temperature", payload)
+        self.assertEqual(payload["tools"][0]["input_schema"]["type"], "object")
+        self.assertEqual(message["tool_calls"][0]["function"]["name"], "consultar_cuentas")
+        self.assertEqual(json.loads(message["tool_calls"][0]["function"]["arguments"]), {"limite": 5})
+        consumo = ConsumoIA.objects.get()
+        self.assertEqual(consumo.tokens_entrada, 80)
+        self.assertEqual(consumo.tokens_salida, 12)
+        self.assertEqual(consumo.tokens_cacheados, 20)
+
+    @patch("core.ai_assistant.urlopen")
+    def test_anthropic_convierte_imagenes_y_resultados_de_herramientas(self, mocked_urlopen):
+        response = MagicMock()
+        response.status = 200
+        response.read.return_value = b'{"id":"msg_2","content":[{"type":"text","text":"{\\"respuesta\\":\\"ok\\"}"}],"usage":{}}'
+        response.__enter__.return_value = response
+        mocked_urlopen.return_value = response
+        config = AIRuntimeConfig(True, "anthropic", "clave", "claude-sonnet-5", "https://api.anthropic.com/v1", 25, "database")
+
+        message = _provider_message(
+            [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Lee la imagen"},
+                        {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,YWJj"}},
+                    ],
+                },
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "toolu_2",
+                            "type": "function",
+                            "function": {"name": "consultar_cuentas", "arguments": "{}"},
+                        }
+                    ],
+                },
+                {"role": "tool", "tool_call_id": "toolu_2", "content": '{"cuentas": []}'},
+            ],
+            config,
+        )
+
+        payload = json.loads(mocked_urlopen.call_args.args[0].data)
+        self.assertEqual(payload["messages"][0]["content"][1]["type"], "image")
+        self.assertEqual(payload["messages"][1]["content"][0]["type"], "tool_use")
+        self.assertEqual(payload["messages"][2]["content"][0]["type"], "tool_result")
+        self.assertEqual(message["content"], '{"respuesta":"ok"}')
+
     @patch("core.ai_assistant.time.sleep")
     @patch("core.ai_assistant.urlopen")
     def test_reintenta_una_vez_si_el_proveedor_falla_temporalmente(self, mocked_urlopen, mocked_sleep):

@@ -1577,6 +1577,132 @@ TOOL_HANDLERS = {
 }
 
 
+def _anthropic_content_blocks(content):
+    if isinstance(content, str):
+        return [{"type": "text", "text": content}] if content else []
+    blocks = []
+    for part in content or []:
+        if not isinstance(part, dict):
+            continue
+        if part.get("type") == "text":
+            text = str(part.get("text") or "")
+            if text:
+                blocks.append({"type": "text", "text": text})
+            continue
+        if part.get("type") != "image_url":
+            continue
+        image_url = part.get("image_url") or {}
+        data_url = image_url.get("url", "") if isinstance(image_url, dict) else str(image_url)
+        if not data_url.startswith("data:") or ";base64," not in data_url:
+            continue
+        media_type, encoded = data_url[5:].split(";base64,", 1)
+        blocks.append(
+            {
+                "type": "image",
+                "source": {"type": "base64", "media_type": media_type, "data": encoded},
+            }
+        )
+    return blocks
+
+
+def _anthropic_request_payload(messages, tools, model, max_tokens):
+    system_parts = []
+    converted_messages = []
+
+    def append_message(role, blocks):
+        if not blocks:
+            return
+        if converted_messages and converted_messages[-1]["role"] == role:
+            converted_messages[-1]["content"].extend(blocks)
+        else:
+            converted_messages.append({"role": role, "content": blocks})
+
+    for message in messages:
+        role = message.get("role")
+        if role == "system":
+            system_parts.extend(
+                block.get("text", "")
+                for block in _anthropic_content_blocks(message.get("content"))
+                if block.get("type") == "text"
+            )
+            continue
+        if role == "tool":
+            append_message(
+                "user",
+                [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": str(message.get("tool_call_id") or ""),
+                        "content": str(message.get("content") or ""),
+                    }
+                ],
+            )
+            continue
+
+        blocks = _anthropic_content_blocks(message.get("content"))
+        if role == "assistant":
+            for tool_call in message.get("tool_calls") or []:
+                function = tool_call.get("function") or {}
+                arguments = function.get("arguments") or "{}"
+                try:
+                    tool_input = json.loads(arguments) if isinstance(arguments, str) else arguments
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    tool_input = {}
+                blocks.append(
+                    {
+                        "type": "tool_use",
+                        "id": str(tool_call.get("id") or ""),
+                        "name": str(function.get("name") or ""),
+                        "input": tool_input if isinstance(tool_input, dict) else {},
+                    }
+                )
+        append_message(role, blocks)
+
+    payload = {
+        "model": model,
+        "max_tokens": max_tokens,
+        "messages": converted_messages,
+    }
+    if system_parts:
+        payload["system"] = "\n\n".join(system_parts)
+    if tools:
+        converted_tools = []
+        for tool in tools:
+            function = tool.get("function") or {}
+            converted_tools.append(
+                {
+                    "name": function.get("name", ""),
+                    "description": function.get("description", ""),
+                    "input_schema": function.get("parameters") or {"type": "object", "properties": {}},
+                }
+            )
+        payload["tools"] = converted_tools
+        payload["tool_choice"] = {"type": "auto"}
+    return payload
+
+
+def _anthropic_response_message(provider_data):
+    text_parts = []
+    tool_calls = []
+    for block in provider_data.get("content") or []:
+        if not isinstance(block, dict):
+            continue
+        if block.get("type") == "text":
+            text_parts.append(str(block.get("text") or ""))
+        elif block.get("type") == "tool_use":
+            tool_calls.append(
+                {
+                    "id": str(block.get("id") or ""),
+                    "type": "function",
+                    "function": {
+                        "name": str(block.get("name") or ""),
+                        "arguments": json.dumps(block.get("input") or {}, ensure_ascii=False),
+                    },
+                }
+            )
+    return {"content": "\n".join(text_parts), "tool_calls": tool_calls}
+
+
 def _provider_message(
     messages,
     config,
@@ -1606,29 +1732,40 @@ def _provider_message(
             provider_request_id=provider_request_id,
         )
 
-    payload = {
-        "model": config.model,
-        "temperature": 0.2,
-        "max_tokens": max_tokens,
-        "messages": messages,
-    }
-    if tools:
-        payload["tools"] = tools
-        payload["tool_choice"] = "auto"
+    if config.provider == "anthropic":
+        payload = _anthropic_request_payload(messages, tools, config.model, max_tokens)
+        headers = {
+            "x-api-key": config.api_key,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+            "User-Agent": "TaskBudget/1.0",
+        }
+        endpoint = config.base_url + "/messages"
     else:
-        payload["response_format"] = {"type": "json_object"}
-    if config.provider == "gemini" and config.model.startswith("gemini-2.5") and "pro" not in config.model:
-        payload["reasoning_effort"] = "none"
-    headers = {
-        "Authorization": f"Bearer {config.api_key}",
-        "Content-Type": "application/json",
-        "User-Agent": "TaskBudget/1.0",
-    }
-    if config.provider == "gemini":
-        headers["x-goog-api-client"] = "taskbudget-oai/1.0"
+        payload = {
+            "model": config.model,
+            "temperature": 0.2,
+            "max_tokens": max_tokens,
+            "messages": messages,
+        }
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+        else:
+            payload["response_format"] = {"type": "json_object"}
+        if config.provider == "gemini" and config.model.startswith("gemini-2.5") and "pro" not in config.model:
+            payload["reasoning_effort"] = "none"
+        headers = {
+            "Authorization": f"Bearer {config.api_key}",
+            "Content-Type": "application/json",
+            "User-Agent": "TaskBudget/1.0",
+        }
+        if config.provider == "gemini":
+            headers["x-goog-api-client"] = "taskbudget-oai/1.0"
+        endpoint = config.base_url + "/chat/completions"
     request_timeout = config.timeout_seconds if timeout_seconds is None else max(5, min(int(timeout_seconds), 60))
     request = Request(
-        config.base_url + "/chat/completions",
+        endpoint,
         data=json.dumps(payload).encode("utf-8"),
         headers=headers,
         method="POST",
@@ -1637,7 +1774,11 @@ def _provider_message(
         with urlopen(request, timeout=request_timeout) as response:
             provider_data = json.loads(response.read().decode("utf-8"))
             http_status = getattr(response, "status", None)
-        message = provider_data["choices"][0]["message"]
+        message = (
+            _anthropic_response_message(provider_data)
+            if config.provider == "anthropic"
+            else provider_data["choices"][0]["message"]
+        )
         record_call(
             successful=True,
             usage=provider_data.get("usage"),
@@ -1680,7 +1821,7 @@ def _provider_message(
             raise AIAssistantError("La clave o el proyecto no tienen permiso para utilizar este modelo.") from exc
         if exc.code == 404:
             raise AIAssistantError("El modelo configurado no está disponible para este proyecto.") from exc
-        if exc.code == 402 or (exc.code == 429 and any(term in error_body.lower() for term in ("insufficient_quota", "billing", "quota"))):
+        if exc.code == 402 or (exc.code == 429 and any(term in error_body.lower() for term in ("insufficient_quota", "billing", "quota", "credit balance"))):
             raise AIAssistantError(
                 "La cuenta de la API no tiene saldo o cuota disponible. La suscripción de ChatGPT y el consumo de la API se facturan por separado."
             ) from exc

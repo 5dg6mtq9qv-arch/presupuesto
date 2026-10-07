@@ -173,6 +173,12 @@ AI_MODEL_OPTIONS = {
         ("gpt-4o-mini", "GPT-4o Mini — económico"),
         ("gpt-4o", "GPT-4o — uso general"),
     ],
+    "anthropic": [
+        ("claude-sonnet-5", "Claude Sonnet 5 — recomendado"),
+        ("claude-sonnet-4-6", "Claude Sonnet 4.6 — estable"),
+        ("claude-opus-5", "Claude Opus 5 — máxima capacidad"),
+        ("claude-haiku-4-5-20251001", "Claude Haiku 4.5 — rápido y económico"),
+    ],
     "gemini": [
         ("gemini-3.8-flash", "Gemini 3.8 Flash — recomendado"),
         ("gemini-3.7-flash", "Gemini 3.7 Flash"),

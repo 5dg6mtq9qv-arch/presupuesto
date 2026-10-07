@@ -156,6 +156,10 @@
         url: "https://api.openai.com/v1",
         html: '<strong>OpenAI:</strong> crea una clave en <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com/api-keys</a>. Requiere facturación de API independiente de ChatGPT.'
       },
+      anthropic: {
+        url: "https://api.anthropic.com/v1",
+        html: '<strong>Anthropic Claude:</strong> crea una clave en <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">Anthropic Console</a>. La API se factura independientemente de Claude.ai.'
+      },
       gemini: {
         url: "https://generativelanguage.googleapis.com/v1beta/openai",
         html: '<strong>Google Gemini:</strong> crea una clave en <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a>.'
@@ -172,6 +176,7 @@
     let previous = provider.value;
     const providerLabels = {
       openai: "OpenAI",
+      anthropic: "Anthropic Claude",
       gemini: "Google Gemini",
       groq: "Groq"
     };

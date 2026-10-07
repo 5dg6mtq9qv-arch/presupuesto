@@ -31,7 +31,9 @@ AI_CONFIG_ENCRYPTION_KEY=
 
 ### Pantalla administrativa
 
-Un usuario staff puede abrir **Configuración de IA**, seleccionar proveedor y modelo, guardar la clave y probar la conexión. Se admiten OpenAI, Google Gemini, Groq y un servicio personalizado compatible con el formato OpenAI.
+Un usuario staff puede abrir **Configuración de IA**, seleccionar proveedor y modelo, guardar la clave y probar la conexión. Se admiten OpenAI, Anthropic Claude, Google Gemini, Groq y un servicio personalizado compatible con el formato OpenAI. Claude usa de forma nativa la API Messages de Anthropic, incluidas las herramientas financieras y el análisis de imágenes.
+
+Para Claude selecciona **Anthropic Claude**, pega una clave creada en Anthropic Console y conserva la URL `https://api.anthropic.com/v1`. La suscripción de Claude.ai y el consumo de la API son servicios facturados por separado.
 
 Importante: desde que existe un registro de configuración en la base, ese registro tiene prioridad completa sobre las variables `AI_*`, incluso si está desactivado. Para cambiar el comportamiento usa la pantalla administrativa o administra explícitamente ese registro.
 

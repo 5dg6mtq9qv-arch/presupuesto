@@ -1870,6 +1870,7 @@ class FinancialAssistantTests(TestCase):
         self.client.force_login(staff)
         response = self.client.get(reverse("configuracion_ia"))
         self.assertContains(response, "GPT-4.1 Mini")
+        self.assertContains(response, "Claude Sonnet 5")
         self.assertContains(response, "Gemini 3.8 Flash")
         self.assertContains(response, "GPT-OSS 120B")
         self.assertContains(response, "Modelo (todos los proveedores)")

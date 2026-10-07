@@ -80,9 +80,10 @@ class ConfiguracionIAAdminForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["proveedor"].help_text = "Gemini, Groq u otro endpoint compatible con OpenAI."
-        self.fields["modelo"].help_text = "Ej.: gemini-2.5-flash-lite u openai/gpt-oss-20b."
+        self.fields["proveedor"].help_text = "OpenAI, Anthropic Claude, Gemini, Groq u otro endpoint compatible."
+        self.fields["modelo"].help_text = "Ej.: claude-sonnet-5, gemini-2.5-flash-lite u openai/gpt-oss-20b."
         self.fields["url_base"].help_text = (
+            "Claude: https://api.anthropic.com/v1 · "
             "Gemini: https://generativelanguage.googleapis.com/v1beta/openai · "
             "Groq: https://api.groq.com/openai/v1"
         )

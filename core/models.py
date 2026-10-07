@@ -205,6 +205,7 @@ class RecomendacionFinanciera(models.Model):
 class ConfiguracionIA(models.Model):
     class Proveedor(models.TextChoices):
         OPENAI = "openai", "OpenAI"
+        ANTHROPIC = "anthropic", "Anthropic Claude"
         GEMINI = "gemini", "Google Gemini"
         GROQ = "groq", "Groq"
         PERSONALIZADO = "personalizado", "Compatible con OpenAI"
