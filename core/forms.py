@@ -377,6 +377,12 @@ class RegistroUsuarioForm(BootstrapFormMixin, UserCreationForm):
         self.fields["email"].required = True
         self.apply_bootstrap_classes()
 
+    def clean_email(self):
+        email = self.cleaned_data["email"].strip().lower()
+        if User.objects.filter(email__iexact=email).exists():
+            raise forms.ValidationError("Ya existe una cuenta asociada a este correo electrónico.")
+        return email
+
 
 class UsuarioUpdateForm(BootstrapFormMixin, forms.ModelForm):
     puede_usar_asistente_ia = forms.BooleanField(

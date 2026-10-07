@@ -215,6 +215,64 @@ class ConfiguracionIA(models.Model):
         return f"{self.get_proveedor_display()} · {self.modelo}"
 
 
+class ConfiguracionCorreo(models.Model):
+    unico = models.BooleanField(default=True, unique=True, editable=False)
+    activo = models.BooleanField(default=False, verbose_name="Usar esta configuración")
+    servidor = models.CharField(max_length=255, default="smtp.hostinger.com")
+    puerto = models.PositiveIntegerField(default=465)
+    usuario = models.EmailField(default="contacto@felixiot.site")
+    remitente = models.CharField(
+        max_length=255,
+        default="Félix IoT <contacto@felixiot.site>",
+        help_text="Nombre y dirección que verán los destinatarios.",
+    )
+    destinatario_prueba = models.EmailField(
+        blank=True,
+        help_text="Dirección que recibirá el mensaje al ejecutar la prueba desde el administrador.",
+    )
+    usar_tls = models.BooleanField(default=False, verbose_name="Usar TLS/STARTTLS")
+    usar_ssl = models.BooleanField(default=True, verbose_name="Usar SSL")
+    timeout_segundos = models.PositiveSmallIntegerField(default=15)
+    password_cifrada = models.TextField(blank=True, editable=False)
+    password_configurada = models.BooleanField(default=False, editable=False)
+    actualizado = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = '"configuracion"."configuracion_correo"'
+        verbose_name = "configuración de correo"
+        verbose_name_plural = "configuración de correo"
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if not 1 <= self.puerto <= 65535:
+            errors["puerto"] = "El puerto debe estar entre 1 y 65535."
+        if not 5 <= self.timeout_segundos <= 60:
+            errors["timeout_segundos"] = "El timeout debe estar entre 5 y 60 segundos."
+        if self.usar_tls and self.usar_ssl:
+            errors["usar_tls"] = "TLS y SSL no pueden estar activos al mismo tiempo."
+            errors["usar_ssl"] = "TLS y SSL no pueden estar activos al mismo tiempo."
+        if self.activo and not self.password_cifrada:
+            errors["activo"] = "Configura la contraseña SMTP antes de activar el correo."
+        if errors:
+            raise ValidationError(errors)
+
+    def set_password(self, value):
+        from .email_config import encrypt_email_password
+
+        password = str(value or "")
+        self.password_cifrada = encrypt_email_password(password) if password else ""
+        self.password_configurada = bool(password)
+
+    def get_password(self):
+        from .email_config import decrypt_email_password
+
+        return decrypt_email_password(self.password_cifrada) if self.password_cifrada else ""
+
+    def __str__(self):
+        return f"{self.usuario} · {self.servidor}:{self.puerto}"
+
+
 class ConsumoIA(models.Model):
     usuario = models.ForeignKey(
         settings.AUTH_USER_MODEL,

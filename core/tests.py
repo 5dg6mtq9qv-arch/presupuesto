@@ -4,6 +4,7 @@ from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 from django.contrib.auth import get_user_model
+from django.core import mail
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -24,11 +25,13 @@ from .ai_assistant import (
     query_movements,
 )
 from .ai_config import AIRuntimeConfig, get_ai_runtime_config
-from .admin import ConfiguracionIAAdminForm
+from .email_config import get_email_runtime_config
+from .admin import ConfiguracionCorreoAdminForm, ConfiguracionIAAdminForm
 from .models import (
     Acreedor,
     AjusteSaldo,
     Categoria,
+    ConfiguracionCorreo,
     CuentaFinanciera,
     ConfiguracionIA,
     Deuda,
@@ -119,6 +122,151 @@ class PrimerUsoTests(TestCase):
     def test_bienvenida_requiere_autenticacion(self):
         response = self.client.post(reverse("onboarding_bienvenida_completar"))
         self.assertEqual(response.status_code, 302)
+
+    def test_registro_rechaza_correo_duplicado_sin_importar_mayusculas(self):
+        get_user_model().objects.create_user(
+            username="existente",
+            email="persona@example.com",
+            password="Clave-segura-2026!",
+        )
+
+        response = self.client.post(
+            reverse("registro"),
+            {
+                "username": "nuevo",
+                "first_name": "Ana",
+                "last_name": "Pérez",
+                "email": "PERSONA@example.com",
+                "password1": "Clave-segura-2026!",
+                "password2": "Clave-segura-2026!",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Ya existe una cuenta asociada a este correo electrónico.")
+        self.assertFalse(get_user_model().objects.filter(username="nuevo").exists())
+
+
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+class RecuperacionContraseniaTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="persona",
+            email="persona@example.com",
+            password="Clave-anterior-2026!",
+        )
+
+    def test_login_muestra_enlace_de_recuperacion(self):
+        response = self.client.get(reverse("login"))
+
+        self.assertContains(response, reverse("password_reset"))
+        self.assertContains(response, "Olvidé mi contraseña")
+
+    def test_recuperacion_envia_enlace_para_usuario_activo(self):
+        response = self.client.post(
+            reverse("password_reset"),
+            {"email": "persona@example.com"},
+        )
+
+        self.assertRedirects(response, reverse("password_reset_done"))
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["persona@example.com"])
+        self.assertIn("/accounts/reset/", mail.outbox[0].body)
+
+    def test_recuperacion_no_revela_si_el_correo_no_existe(self):
+        response = self.client.post(
+            reverse("password_reset"),
+            {"email": "desconocido@example.com"},
+        )
+
+        self.assertRedirects(response, reverse("password_reset_done"))
+        self.assertEqual(mail.outbox, [])
+
+
+@override_settings(
+    EMAIL_CONFIG_ENCRYPTION_KEY="clave-maestra-correo-prueba",
+    EMAIL_BACKEND="core.email_backend.ConfiguredEmailBackend",
+    EMAIL_FALLBACK_BACKEND="django.core.mail.backends.console.EmailBackend",
+)
+class ConfiguracionCorreoTests(TestCase):
+    def datos_formulario(self, **overrides):
+        data = {
+            "activo": "on",
+            "servidor": "smtp.hostinger.com",
+            "puerto": "465",
+            "usuario": "contacto@felixiot.site",
+            "remitente": "Félix IoT <contacto@felixiot.site>",
+            "destinatario_prueba": "destino@example.com",
+            "usar_tls": "",
+            "usar_ssl": "on",
+            "timeout_segundos": "15",
+            "password": "Clave-SMTP-super-secreta",
+            "eliminar_password": "",
+        }
+        data.update(overrides)
+        return data
+
+    def test_admin_guarda_password_cifrada_y_runtime_usa_base(self):
+        form = ConfiguracionCorreoAdminForm(data=self.datos_formulario())
+
+        self.assertTrue(form.is_valid(), form.errors)
+        config = form.save()
+        self.assertNotIn("Clave-SMTP-super-secreta", config.password_cifrada)
+        self.assertEqual(config.get_password(), "Clave-SMTP-super-secreta")
+        runtime = get_email_runtime_config()
+        self.assertEqual(runtime.source, "database")
+        self.assertTrue(runtime.configured)
+        self.assertEqual(runtime.host, "smtp.hostinger.com")
+        self.assertTrue(runtime.use_ssl)
+
+    def test_editar_sin_password_conserva_credencial(self):
+        config = ConfiguracionCorreo()
+        config.set_password("clave-existente")
+        config.activo = True
+        config.save()
+        form = ConfiguracionCorreoAdminForm(
+            instance=config,
+            data=self.datos_formulario(password="", timeout_segundos="20"),
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        updated = form.save()
+        self.assertEqual(updated.get_password(), "clave-existente")
+        self.assertEqual(updated.timeout_segundos, 20)
+
+    def test_no_permite_tls_y_ssl_simultaneamente(self):
+        form = ConfiguracionCorreoAdminForm(
+            data=self.datos_formulario(usar_tls="on", usar_ssl="on")
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("usar_tls", form.errors)
+        self.assertIn("usar_ssl", form.errors)
+
+    @patch("core.email_backend.SMTPEmailBackend")
+    def test_accion_admin_envia_correo_de_prueba(self, smtp_backend):
+        connection = smtp_backend.return_value
+        connection.send_messages.return_value = 1
+        form = ConfiguracionCorreoAdminForm(data=self.datos_formulario())
+        self.assertTrue(form.is_valid(), form.errors)
+        config = form.save()
+        admin_user = get_user_model().objects.create_superuser(
+            username="admin-correo",
+            email="admin@example.com",
+            password="Clave-admin-2026!",
+        )
+        self.client.force_login(admin_user)
+
+        response = self.client.post(
+            reverse("admin:core_configuracioncorreo_changelist"),
+            {"action": "enviar_correo_prueba", "_selected_action": [config.pk]},
+            follow=True,
+        )
+
+        self.assertContains(response, "Correo de prueba enviado a destino@example.com")
+        connection.send_messages.assert_called_once()
+        sent_message = connection.send_messages.call_args.args[0][0]
+        self.assertEqual(sent_message.to, ["destino@example.com"])
 
 
 class GastoTarjetaCreditoTests(TestCase):

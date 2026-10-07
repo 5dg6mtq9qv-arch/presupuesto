@@ -88,6 +88,35 @@ El registro público crea usuarios normales, no administradores. `createsuperuse
 | `MEDIA_ROOT` | Imágenes y comprobantes | `<proyecto>/media` |
 | `AI_*` | Configuración inicial de IA | consulta la guía de IA |
 
+### Correo transaccional y recuperación de contraseña
+
+El registro público crea la cuenta e inicia sesión inmediatamente; no requiere aprobación administrativa. El acceso continúa usando nombre de usuario y contraseña. Para que **Olvidé mi contraseña** pueda enviar enlaces en producción, el despliegue actual usa el buzón `contacto@felixiot.site` de Hostinger Mail:
+
+```dotenv
+EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+EMAIL_HOST=smtp.hostinger.com
+EMAIL_PORT=465
+EMAIL_HOST_USER=contacto@felixiot.site
+EMAIL_HOST_PASSWORD=contraseña-del-buzón
+EMAIL_USE_TLS=false
+EMAIL_USE_SSL=true
+EMAIL_TIMEOUT=15
+DEFAULT_FROM_EMAIL=Félix IoT <contacto@felixiot.site>
+EMAIL_CONFIG_ENCRYPTION_KEY=una-clave-maestra-independiente-y-estable
+PASSWORD_RESET_TIMEOUT=3600
+```
+
+Usa exactamente el remitente autorizado por Hostinger. `EMAIL_USE_TLS` y `EMAIL_USE_SSL` no deben estar activos al mismo tiempo. Si el puerto 465 no estuviera disponible en otra infraestructura, Hostinger admite como alternativa el puerto 587 con TLS (`EMAIL_USE_TLS=true` y `EMAIL_USE_SSL=false`). En desarrollo, si no se define `EMAIL_BACKEND`, Django imprime los mensajes en la consola y no envía correo real.
+
+Un superusuario también puede configurar el correo en **Administración → Configuración de correo**. La contraseña SMTP se cifra antes de guardarse y nunca vuelve a mostrarse. La configuración activa del administrador tiene prioridad sobre las variables SMTP anteriores, que permanecen como respaldo. Para verificarla:
+
+1. Completa el servidor, puerto, usuario, remitente y contraseña.
+2. Activa únicamente SSL o TLS según el puerto.
+3. Escribe un destinatario de prueba y guarda.
+4. Regresa al listado, selecciona la configuración y ejecuta **Enviar correo de prueba**.
+
+La clave `EMAIL_CONFIG_ENCRYPTION_KEY` debe conservarse estable entre despliegues. Si se omite, el cifrado deriva de `DJANGO_SECRET_KEY`, que tampoco debe cambiar o la contraseña almacenada dejará de poder descifrarse.
+
 `STATIC_ROOT` y `MEDIA_ROOT` son opcionales en `.env`; si no se indican se usan los valores definidos en `settings.py`.
 
 ## 6. Preparación para producción

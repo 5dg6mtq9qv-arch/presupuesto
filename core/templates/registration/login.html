@@ -137,6 +137,8 @@
     .actions { display: grid; gap: 12px; }
     .btn { width: 100%; font-weight: 700; gap: 8px; }
     .register-link { color: var(--primary); text-align: center; text-decoration: none; }
+    .password-link { color: var(--muted); text-align: center; text-decoration: none; }
+    .password-link:hover, .register-link:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -158,6 +160,7 @@
             <span class="material-symbols-outlined">login</span>
             <span>Entrar</span>
           </button>
+          <a class="password-link" href="{% url 'password_reset' %}">Olvidé mi contraseña</a>
           <a class="register-link" href="{% url 'registro' %}">Crear una cuenta nueva</a>
         </div>
       </form>

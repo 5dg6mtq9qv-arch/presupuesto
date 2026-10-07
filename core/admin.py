@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django import forms
 from django.contrib import messages
+from django.core.mail import EmailMessage
 from unfold.admin import ModelAdmin, TabularInline
 
 from .ai_assistant import AIAssistantError, _provider_message
@@ -12,6 +13,7 @@ from .models import (
     BorradorMovimientoIA,
     Categoria,
     CuentaFinanciera,
+    ConfiguracionCorreo,
     ConfiguracionIA,
     Deuda,
     EliminacionRegistro,
@@ -163,6 +165,141 @@ class ConfiguracionIAAdmin(ModelAdmin):
             self.message_user(request, str(exc), level=messages.ERROR)
             return
         self.message_user(request, "Conexión correcta con el proveedor de IA.", level=messages.SUCCESS)
+
+
+class ConfiguracionCorreoAdminForm(forms.ModelForm):
+    password = forms.CharField(
+        label="Nueva contraseña SMTP",
+        required=False,
+        widget=forms.PasswordInput(render_value=False, attrs={"autocomplete": "new-password"}),
+        help_text="Déjala vacía para conservar la contraseña actual. Nunca se vuelve a mostrar.",
+    )
+    eliminar_password = forms.BooleanField(
+        label="Eliminar contraseña guardada",
+        required=False,
+        help_text="Desactiva primero el correo si deseas eliminar la contraseña.",
+    )
+
+    class Meta:
+        model = ConfiguracionCorreo
+        fields = [
+            "activo",
+            "servidor",
+            "puerto",
+            "usuario",
+            "remitente",
+            "destinatario_prueba",
+            "usar_tls",
+            "usar_ssl",
+            "timeout_segundos",
+        ]
+
+    def clean(self):
+        cleaned_data = super().clean()
+        password = cleaned_data.get("password") or ""
+        clear_password = cleaned_data.get("eliminar_password", False)
+        if password and clear_password:
+            self.add_error("eliminar_password", "Elige entre reemplazar o eliminar la contraseña.")
+        elif password:
+            self.instance.set_password(password)
+        elif clear_password:
+            self.instance.set_password("")
+        if cleaned_data.get("activo") and not self.instance.password_cifrada:
+            self.add_error("password", "Configura la contraseña SMTP antes de activar el correo.")
+        return cleaned_data
+
+
+@admin.register(ConfiguracionCorreo)
+class ConfiguracionCorreoAdmin(ModelAdmin):
+    form = ConfiguracionCorreoAdminForm
+    actions = ("enviar_correo_prueba",)
+    list_display = ("usuario", "servidor", "puerto", "activo", "estado_password", "actualizado")
+    readonly_fields = ("estado_password", "actualizado")
+    fieldsets = (
+        (
+            "Servidor SMTP",
+            {
+                "fields": (
+                    "activo",
+                    "servidor",
+                    "puerto",
+                    "usuario",
+                    "remitente",
+                    "usar_tls",
+                    "usar_ssl",
+                    "timeout_segundos",
+                )
+            },
+        ),
+        (
+            "Credencial cifrada",
+            {"fields": ("estado_password", "password", "eliminar_password")},
+        ),
+        (
+            "Prueba de envío",
+            {
+                "fields": ("destinatario_prueba",),
+                "description": (
+                    "Guarda la configuración, vuelve al listado, selecciónala y ejecuta "
+                    "«Enviar correo de prueba» en el menú de acciones."
+                ),
+            },
+        ),
+        ("Auditoría", {"fields": ("actualizado",)}),
+    )
+
+    @admin.display(description="Contraseña")
+    def estado_password(self, obj):
+        return "Configurada y cifrada" if obj and obj.password_configurada else "Sin configurar"
+
+    def has_module_permission(self, request):
+        return request.user.is_superuser
+
+    def has_view_permission(self, request, obj=None):
+        return request.user.is_superuser
+
+    def has_change_permission(self, request, obj=None):
+        return request.user.is_superuser
+
+    def has_add_permission(self, request):
+        return request.user.is_superuser and not ConfiguracionCorreo.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    @admin.action(description="Enviar correo de prueba")
+    def enviar_correo_prueba(self, request, queryset):
+        if queryset.count() != 1:
+            self.message_user(request, "Selecciona la configuración de correo.", level=messages.WARNING)
+            return
+        config = queryset.first()
+        if not config.activo or not config.get_password():
+            self.message_user(request, "Activa el correo y configura la contraseña SMTP.", level=messages.ERROR)
+            return
+        if not config.destinatario_prueba:
+            self.message_user(request, "Configura primero un destinatario de prueba.", level=messages.ERROR)
+            return
+        try:
+            sent = EmailMessage(
+                subject="Prueba de correo de Félix IoT",
+                body=(
+                    "La configuración SMTP funciona correctamente. "
+                    "La plataforma ya puede enviar enlaces de recuperación de contraseña."
+                ),
+                from_email=config.remitente,
+                to=[config.destinatario_prueba],
+            ).send(fail_silently=False)
+        except Exception as exc:
+            self.message_user(request, f"No se pudo enviar el correo: {exc}", level=messages.ERROR)
+            return
+        if sent != 1:
+            self.message_user(request, "El servidor no confirmó el envío del mensaje.", level=messages.ERROR)
+            return
+        self.message_user(
+            request,
+            f"Correo de prueba enviado a {config.destinatario_prueba}.",
+            level=messages.SUCCESS,
+        )
 
 
 @admin.register(PerfilUsuario)

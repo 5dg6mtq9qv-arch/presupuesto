@@ -82,6 +82,9 @@ AI_ASSISTANT_ENABLED = os.getenv("AI_ASSISTANT_ENABLED", "true").lower() in {"1"
 # Optional master key for encrypting provider tokens stored through Django Admin.
 # When omitted, DJANGO_SECRET_KEY is used as the encryption root.
 AI_CONFIG_ENCRYPTION_KEY = os.getenv("AI_CONFIG_ENCRYPTION_KEY", "").strip()
+# Optional independent master key for SMTP credentials stored through Django Admin.
+# When omitted, DJANGO_SECRET_KEY is used as the encryption root.
+EMAIL_CONFIG_ENCRYPTION_KEY = os.getenv("EMAIL_CONFIG_ENCRYPTION_KEY", "").strip()
 
 
 # Application definition
@@ -192,6 +195,24 @@ MEDIA_ROOT = Path(
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'dashboard'
 LOGOUT_REDIRECT_URL = 'login'
+
+# Email transaccional. La configuración cifrada de Django Admin tiene prioridad;
+# estas variables sirven como respaldo y la consola sigue siendo el valor local.
+EMAIL_FALLBACK_BACKEND = os.getenv(
+    "EMAIL_BACKEND",
+    "django.core.mail.backends.console.EmailBackend",
+)
+EMAIL_BACKEND = "core.email_backend.ConfiguredEmailBackend"
+EMAIL_HOST = os.getenv("EMAIL_HOST", "")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "true").lower() in {"1", "true", "yes", "on"}
+EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "false").lower() in {"1", "true", "yes", "on"}
+EMAIL_TIMEOUT = max(5, min(int(os.getenv("EMAIL_TIMEOUT", "15")), 60))
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "TaskBudget <no-reply@felixiot.site>")
+SERVER_EMAIL = os.getenv("SERVER_EMAIL", DEFAULT_FROM_EMAIL)
+PASSWORD_RESET_TIMEOUT = max(900, int(os.getenv("PASSWORD_RESET_TIMEOUT", "3600")))
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
