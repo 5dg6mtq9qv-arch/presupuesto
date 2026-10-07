@@ -49,6 +49,7 @@ class SolicitudRegistro(models.Model):
     class Estado(models.TextChoices):
         PENDIENTE = "pendiente", "Pendiente"
         APROBADA = "aprobada", "Aprobada"
+        RECHAZADA = "rechazada", "Rechazada"
 
     usuario = models.OneToOneField(
         settings.AUTH_USER_MODEL,
@@ -264,6 +265,13 @@ class ConfiguracionCorreo(models.Model):
     destinatario_prueba = models.EmailField(
         blank=True,
         help_text="Dirección que recibirá el mensaje al ejecutar la prueba desde el administrador.",
+    )
+    destinatario_solicitudes = models.EmailField(
+        blank=True,
+        help_text=(
+            "Dirección que recibirá cada nueva solicitud de acceso. "
+            "Si queda vacía, se usará el correo del buzón SMTP."
+        ),
     )
     usar_tls = models.BooleanField(default=False, verbose_name="Usar TLS/STARTTLS")
     usar_ssl = models.BooleanField(default=True, verbose_name="Usar SSL")

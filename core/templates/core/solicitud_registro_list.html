@@ -12,6 +12,7 @@
         <option value="">Todas</option>
         <option value="pendiente"{% if estado == "pendiente" %} selected{% endif %}>Pendientes</option>
         <option value="aprobada"{% if estado == "aprobada" %} selected{% endif %}>Aprobadas</option>
+        <option value="rechazada"{% if estado == "rechazada" %} selected{% endif %}>Rechazadas</option>
       </select>
     </div>
     <button class="btn btn-primary btn-icon" type="submit" title="Filtrar" aria-label="Filtrar">
@@ -34,16 +35,24 @@
             <td>
               {% if solicitud.estado == "pendiente" %}
                 <span class="badge rounded-pill text-bg-warning">Pendiente</span>
-              {% else %}
+              {% elif solicitud.estado == "aprobada" %}
                 <span class="badge rounded-pill text-bg-success">Aprobada</span>
+              {% else %}
+                <span class="badge rounded-pill text-bg-danger">Rechazada</span>
               {% endif %}
             </td>
             <td class="text-nowrap">
               {% if solicitud.estado == "pendiente" %}
-                <form method="post" action="{% url 'solicitud_registro_aprobar' solicitud.pk %}">
-                  {% csrf_token %}
-                  <button class="btn btn-sm btn-primary" type="submit">Autorizar alta</button>
-                </form>
+                <div class="d-flex gap-2">
+                  <form method="post" action="{% url 'solicitud_registro_aprobar' solicitud.pk %}">
+                    {% csrf_token %}
+                    <button class="btn btn-sm btn-primary" type="submit">Autorizar alta</button>
+                  </form>
+                  <form method="post" action="{% url 'solicitud_registro_rechazar' solicitud.pk %}">
+                    {% csrf_token %}
+                    <button class="btn btn-sm btn-outline-danger" type="submit">Rechazar</button>
+                  </form>
+                </div>
               {% else %}
                 <span class="muted">{{ solicitud.resuelta_en|date:"d/m/Y H:i" }}</span>
               {% endif %}

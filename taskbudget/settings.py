@@ -213,6 +213,8 @@ EMAIL_TIMEOUT = max(5, min(int(os.getenv("EMAIL_TIMEOUT", "15")), 60))
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "TaskBudget <no-reply@felixiot.site>")
 SERVER_EMAIL = os.getenv("SERVER_EMAIL", DEFAULT_FROM_EMAIL)
 PASSWORD_RESET_TIMEOUT = max(900, int(os.getenv("PASSWORD_RESET_TIMEOUT", "3600")))
+REGISTRATION_DECISION_TIMEOUT = max(900, int(os.getenv("REGISTRATION_DECISION_TIMEOUT", "86400")))
+REGISTRATION_APPROVAL_EMAIL = os.getenv("REGISTRATION_APPROVAL_EMAIL", "").strip()
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field

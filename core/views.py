@@ -15,9 +15,11 @@ from django.contrib.auth import update_session_auth_hash
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.decorators import user_passes_test
+from django.conf import settings
+from django.core import signing
 from django.core.paginator import Paginator
 from django.core.cache import cache
-from django.core.mail import EmailMessage
+from django.core.mail import EmailMessage, EmailMultiAlternatives
 from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
 from django.db import transaction
 from django.db.models import Count, Max, Min, Prefetch, Q, Sum
@@ -123,6 +125,7 @@ from .receipt_capture import analyze_receipt
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
+REGISTRATION_DECISION_SALT = "taskbudget.registration-decision"
 
 
 @login_required
@@ -1248,7 +1251,8 @@ def registro(request):
             user = form.save(commit=False)
             user.is_active = False
             user.save()
-            SolicitudRegistro.objects.create(usuario=user)
+            solicitud = SolicitudRegistro.objects.create(usuario=user)
+        _enviar_solicitud_registro_a_administrador(request, solicitud)
         return redirect("registro_solicitado")
 
     return render(request, "registration/registro.html", {"form": form})
@@ -2210,45 +2214,228 @@ def solicitud_registro_list(request):
 @admin_required
 @require_POST
 def solicitud_registro_aprobar(request, pk):
+    solicitud, resuelta = _resolver_solicitud_registro(
+        pk=pk,
+        accion="aprobar",
+        administrador=request.user,
+    )
+    if not resuelta:
+        messages.info(request, "Esta solicitud ya fue resuelta.")
+        return redirect("solicitud_registro_list")
+
+    enviada = _enviar_resultado_solicitud(request, solicitud)
+    if enviada:
+        messages.success(
+            request,
+            f"Cuenta de {solicitud.usuario.username} aprobada con IA habilitada y correo enviado.",
+        )
+    else:
+        messages.warning(
+            request,
+            f"La cuenta de {solicitud.usuario.username} fue aprobada con IA habilitada, "
+            "pero no se pudo enviar el correo.",
+        )
+    return redirect("solicitud_registro_list")
+
+
+@admin_required
+@require_POST
+def solicitud_registro_rechazar(request, pk):
+    solicitud, resuelta = _resolver_solicitud_registro(
+        pk=pk,
+        accion="rechazar",
+        administrador=request.user,
+    )
+    if not resuelta:
+        messages.info(request, "Esta solicitud ya fue resuelta.")
+        return redirect("solicitud_registro_list")
+
+    enviada = _enviar_resultado_solicitud(request, solicitud)
+    if enviada:
+        messages.success(request, f"Solicitud de {solicitud.usuario.username} rechazada y correo enviado.")
+    else:
+        messages.warning(
+            request,
+            f"La solicitud de {solicitud.usuario.username} fue rechazada, pero no se pudo enviar el correo.",
+        )
+    return redirect("solicitud_registro_list")
+
+
+@admin_required
+def solicitud_registro_decision(request, token):
+    try:
+        payload = signing.loads(
+            token,
+            salt=REGISTRATION_DECISION_SALT,
+            max_age=settings.REGISTRATION_DECISION_TIMEOUT,
+        )
+        solicitud_id = int(payload["solicitud_id"])
+    except (KeyError, TypeError, ValueError, signing.BadSignature, signing.SignatureExpired):
+        return HttpResponseBadRequest(
+            "El enlace no es válido o ya venció. Puedes resolver la solicitud desde el panel administrativo."
+        )
+
+    solicitud = get_object_or_404(
+        SolicitudRegistro.objects.select_related("usuario", "resuelta_por"),
+        pk=solicitud_id,
+    )
+    if request.method == "POST":
+        accion = request.POST.get("accion")
+        if accion not in {"aprobar", "rechazar"}:
+            return HttpResponseBadRequest("Acción no válida.")
+        solicitud, resuelta = _resolver_solicitud_registro(
+            pk=solicitud.pk,
+            accion=accion,
+            administrador=request.user,
+        )
+        if resuelta:
+            _enviar_resultado_solicitud(request, solicitud)
+            if accion == "aprobar":
+                messages.success(request, "Cuenta aprobada con acceso a IA habilitado.")
+            else:
+                messages.success(request, "Solicitud rechazada.")
+        else:
+            messages.info(request, "Esta solicitud ya había sido resuelta.")
+        return redirect("solicitud_registro_list")
+
+    return render(
+        request,
+        "core/solicitud_registro_decision.html",
+        {"solicitud": solicitud},
+    )
+
+
+def _resolver_solicitud_registro(*, pk, accion, administrador):
     with transaction.atomic():
         solicitud = get_object_or_404(
             SolicitudRegistro.objects.select_for_update().select_related("usuario"),
             pk=pk,
         )
         if solicitud.estado != SolicitudRegistro.Estado.PENDIENTE:
-            messages.info(request, "Esta solicitud ya fue resuelta.")
-            return redirect("solicitud_registro_list")
+            return solicitud, False
 
         user = solicitud.usuario
-        user.is_active = True
+        aprobada = accion == "aprobar"
+        user.is_active = aprobada
         user.save(update_fields=("is_active",))
-        ensure_user_finance_setup(user)
-        solicitud.estado = SolicitudRegistro.Estado.APROBADA
+        if aprobada:
+            ensure_user_finance_setup(user)
+            PerfilUsuario.objects.update_or_create(
+                usuario=user,
+                defaults={"puede_usar_asistente_ia": True},
+            )
+        solicitud.estado = (
+            SolicitudRegistro.Estado.APROBADA
+            if aprobada
+            else SolicitudRegistro.Estado.RECHAZADA
+        )
         solicitud.resuelta_en = timezone.now()
-        solicitud.resuelta_por = request.user
+        solicitud.resuelta_por = administrador
         solicitud.save(update_fields=("estado", "resuelta_en", "resuelta_por"))
+    return solicitud, True
 
+
+def _enviar_resultado_solicitud(request, solicitud):
+    user = solicitud.usuario
+    if not user.email:
+        return False
     login_url = request.build_absolute_uri(reverse("login"))
     try:
         EmailMessage(
-            subject="Tu cuenta de TaskBudget fue aprobada",
-            body=(
-                f"Hola {user.first_name or user.username},\n\n"
-                "Tu solicitud de registro fue aprobada. Ya puedes iniciar sesión con las "
-                f"credenciales que elegiste en:\n{login_url}\n\n"
-                "Bienvenido a TaskBudget."
+            subject=(
+                "Tu cuenta de TaskBudget fue aprobada"
+                if solicitud.estado == SolicitudRegistro.Estado.APROBADA
+                else "Tu solicitud de acceso a TaskBudget fue rechazada"
             ),
+            body=_mensaje_resultado_solicitud(solicitud, login_url),
             to=[user.email],
         ).send(fail_silently=False)
     except Exception:
-        logger.exception("No se pudo enviar el correo de aprobación al usuario %s", user.pk)
-        messages.warning(
-            request,
-            f"La cuenta de {user.username} fue aprobada, pero no se pudo enviar el correo.",
+        logger.exception("No se pudo enviar el resultado de la solicitud al usuario %s", user.pk)
+        return False
+    return True
+
+
+def _mensaje_resultado_solicitud(solicitud, login_url):
+    user = solicitud.usuario
+    greeting = f"Hola {user.first_name or user.username},\n\n"
+    if solicitud.estado == SolicitudRegistro.Estado.APROBADA:
+        return (
+            greeting
+            + "Tu solicitud de registro fue aprobada y el asistente de IA quedó habilitado. "
+            + f"Ya puedes iniciar sesión con las credenciales que elegiste en:\n{login_url}\n\n"
+            + "Bienvenido a TaskBudget."
         )
-    else:
-        messages.success(request, f"Cuenta de {user.username} aprobada y correo enviado.")
-    return redirect("solicitud_registro_list")
+    return greeting + "Tu solicitud de acceso a TaskBudget fue rechazada por un administrador."
+
+
+def _destinatarios_solicitudes_registro():
+    config = ConfiguracionCorreo.objects.order_by("pk").first()
+    if config and config.destinatario_solicitudes:
+        return [config.destinatario_solicitudes]
+
+    explicit = settings.REGISTRATION_APPROVAL_EMAIL
+    if explicit:
+        return [address.strip() for address in explicit.split(",") if address.strip()]
+
+    if config and config.usuario:
+        return [config.usuario]
+
+    if settings.EMAIL_HOST_USER:
+        return [settings.EMAIL_HOST_USER]
+
+    return list(
+        User.objects.filter(is_active=True, is_staff=True)
+        .exclude(email="")
+        .values_list("email", flat=True)
+        .distinct()
+    )
+
+
+def _enviar_solicitud_registro_a_administrador(request, solicitud):
+    recipients = _destinatarios_solicitudes_registro()
+    if not recipients:
+        logger.warning("No hay un destinatario configurado para la solicitud de registro %s", solicitud.pk)
+        return False
+
+    token = signing.dumps(
+        {"solicitud_id": solicitud.pk},
+        salt=REGISTRATION_DECISION_SALT,
+        compress=True,
+    )
+    review_url = request.build_absolute_uri(
+        reverse("solicitud_registro_decision", kwargs={"token": token})
+    )
+
+    user = solicitud.usuario
+    full_name = user.get_full_name() or "No indicado"
+    body = (
+        "Se recibió una nueva solicitud de acceso a TaskBudget.\n\n"
+        f"Usuario: {user.username}\nNombre: {full_name}\nCorreo: {user.email}\n\n"
+        f"Revisar y decidir: {review_url}\n\n"
+        "El enlace requiere iniciar sesión como administrador y vence por seguridad."
+    )
+    html = (
+        "<p>Se recibió una nueva solicitud de acceso a <strong>TaskBudget</strong>.</p>"
+        f"<p><strong>Usuario:</strong> {escape(user.username)}<br>"
+        f"<strong>Nombre:</strong> {escape(full_name)}<br>"
+        f"<strong>Correo:</strong> {escape(user.email)}</p>"
+        f'<p><a href="{escape(review_url)}" style="display:inline-block;padding:10px 16px;'
+        'background:#25a194;color:#fff;text-decoration:none;border-radius:6px">Revisar solicitud</a></p>'
+        "<p>El enlace requiere iniciar sesión como administrador y vence por seguridad.</p>"
+    )
+    message = EmailMultiAlternatives(
+        subject=f"Nueva solicitud de acceso: {user.username}",
+        body=body,
+        to=recipients,
+    )
+    message.attach_alternative(html, "text/html")
+    try:
+        message.send(fail_silently=False)
+    except Exception:
+        logger.exception("No se pudo notificar la solicitud de registro %s", solicitud.pk)
+        return False
+    return True
 
 
 @admin_required

@@ -88,6 +88,7 @@ class ConfiguracionCorreoForm(forms.ModelForm):
             "puerto",
             "usuario",
             "remitente",
+            "destinatario_solicitudes",
             "destinatario_prueba",
             "usar_ssl",
             "usar_tls",
@@ -100,12 +101,14 @@ class ConfiguracionCorreoForm(forms.ModelForm):
             "usuario": "Correo del buzón",
             "remitente": "Remitente visible",
             "destinatario_prueba": "Enviar prueba a",
+            "destinatario_solicitudes": "Avisar nuevas solicitudes a",
             "timeout_segundos": "Tiempo máximo de espera",
             "activo": "Activar el envío de correos",
         }
         help_texts = {
             "usuario": "Usa la dirección completa, por ejemplo contacto@felixiot.site.",
             "destinatario_prueba": "Necesario únicamente al usar «Guardar y enviar prueba».",
+            "destinatario_solicitudes": "Recibirá un enlace seguro para revisar y decidir cada alta.",
             "timeout_segundos": "Entre 5 y 60 segundos.",
         }
 

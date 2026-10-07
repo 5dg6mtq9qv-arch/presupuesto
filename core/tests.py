@@ -1,7 +1,9 @@
 import json
+import re
 from datetime import datetime, timedelta
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
+from urllib.parse import urlsplit
 
 from django.contrib.auth import get_user_model
 from django.core import mail
@@ -142,6 +144,29 @@ class PrimerUsoTests(TestCase):
         self.assertContains(response, "Ya existe una cuenta asociada a este correo electrónico.")
         self.assertFalse(get_user_model().objects.filter(username="nuevo").exists())
 
+    @override_settings(
+        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+        REGISTRATION_APPROVAL_EMAIL="propietario@example.com",
+    )
+    def test_registro_notifica_con_enlace_para_revisar_la_solicitud(self):
+        response = self.client.post(
+            reverse("registro"),
+            {
+                "username": "solicitante",
+                "first_name": "Sofía",
+                "last_name": "López",
+                "email": "sofia@example.com",
+                "password1": "Clave-segura-2026!",
+                "password2": "Clave-segura-2026!",
+            },
+        )
+
+        self.assertRedirects(response, reverse("registro_solicitado"))
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["propietario@example.com"])
+        self.assertIn("Revisar y decidir:", mail.outbox[0].body)
+        self.assertEqual(len(re.findall(r"/usuarios/solicitudes/decision/[^\s]+", mail.outbox[0].body)), 1)
+
 
 @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
 class AutorizacionRegistroTests(TestCase):
@@ -189,6 +214,7 @@ class AutorizacionRegistroTests(TestCase):
         self.assertIsNotNone(self.solicitud.resuelta_en)
         self.assertTrue(CuentaFinanciera.objects.filter(usuario=self.user, nombre="General").exists())
         self.assertTrue(Categoria.objects.filter(usuario=self.user, nombre="Ingresos").exists())
+        self.assertTrue(PerfilUsuario.objects.get(usuario=self.user).puede_usar_asistente_ia)
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, ["elena@example.com"])
         self.assertIn(reverse("login"), mail.outbox[0].body)
@@ -200,6 +226,49 @@ class AutorizacionRegistroTests(TestCase):
         self.client.post(url)
         self.client.post(url)
         self.assertEqual(len(mail.outbox), 1)
+
+    def test_rechazo_mantiene_cuenta_inactiva_y_envia_correo(self):
+        self.client.force_login(self.admin)
+        response = self.client.post(
+            reverse("solicitud_registro_rechazar", args=[self.solicitud.pk]),
+        )
+
+        self.assertRedirects(response, reverse("solicitud_registro_list"))
+        self.user.refresh_from_db()
+        self.solicitud.refresh_from_db()
+        self.assertFalse(self.user.is_active)
+        self.assertEqual(self.solicitud.estado, SolicitudRegistro.Estado.RECHAZADA)
+        self.assertEqual(self.solicitud.resuelta_por, self.admin)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("rechazada", mail.outbox[0].body)
+
+    @override_settings(REGISTRATION_APPROVAL_EMAIL="admin@example.com")
+    def test_enlace_del_administrador_permite_aprobar_o_rechazar(self):
+        response = self.client.post(
+            reverse("registro"),
+            {
+                "username": "desde-correo",
+                "first_name": "Mario",
+                "last_name": "Vega",
+                "email": "mario@example.com",
+                "password1": "Clave-segura-2026!",
+                "password2": "Clave-segura-2026!",
+            },
+        )
+        self.assertRedirects(response, reverse("registro_solicitado"))
+        review_url = re.search(r"Revisar y decidir: (https?://[^\s]+)", mail.outbox[0].body).group(1)
+        review_path = urlsplit(review_url).path
+
+        self.client.force_login(self.admin)
+        confirmation = self.client.get(review_path)
+        self.assertContains(confirmation, "Aprobar usuario")
+        self.assertContains(confirmation, "Rechazar usuario")
+        response = self.client.post(review_path, {"accion": "aprobar"})
+
+        self.assertRedirects(response, reverse("solicitud_registro_list"))
+        user = get_user_model().objects.get(username="desde-correo")
+        self.assertTrue(user.is_active)
+        self.assertTrue(PerfilUsuario.objects.get(usuario=user).puede_usar_asistente_ia)
 
 
 @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")

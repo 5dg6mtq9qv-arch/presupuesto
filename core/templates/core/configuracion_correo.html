@@ -72,6 +72,7 @@
         {% endif %}
 
         {% include "core/partials/form_field.html" with field=form.remitente %}
+        {% include "core/partials/form_field.html" with field=form.destinatario_solicitudes %}
 
         <div class="mail-security">
           <div class="form-check">{{ form.usar_ssl }} <label class="form-check-label" for="{{ form.usar_ssl.id_for_label }}">{{ form.usar_ssl.label }}</label></div>

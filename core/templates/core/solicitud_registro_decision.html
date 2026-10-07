@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block page_title %}Revisar solicitud de acceso{% endblock %}
+{% block page_subtitle %}Aprueba o rechaza al nuevo usuario desde el enlace enviado al administrador{% endblock %}
+
+{% block content %}
+<section class="panel" style="max-width: 680px; margin: 0 auto;">
+  <div class="panel-heading">
+    <div>
+      <h2>{{ solicitud.usuario.username }}</h2>
+      <p class="muted mb-0">{{ solicitud.usuario.get_full_name|default:"Nombre no indicado" }} · {{ solicitud.usuario.email }}</p>
+    </div>
+  </div>
+
+  {% if solicitud.estado == "pendiente" %}
+    <p>Si apruebas, se activará la cuenta, se preparará su espacio financiero y se habilitará el asistente de IA. Si rechazas, la cuenta permanecerá inactiva.</p>
+    <form method="post">
+      {% csrf_token %}
+      <button class="btn btn-primary" type="submit" name="accion" value="aprobar">Aprobar usuario</button>
+      <button class="btn btn-danger" type="submit" name="accion" value="rechazar">Rechazar usuario</button>
+      <a class="btn btn-outline-secondary" href="{% url 'solicitud_registro_list' %}">Cancelar</a>
+    </form>
+  {% else %}
+    <p>Esta solicitud ya fue resuelta como <strong>{{ solicitud.get_estado_display|lower }}</strong>.</p>
+    <a class="btn btn-primary" href="{% url 'solicitud_registro_list' %}">Ver solicitudes</a>
+  {% endif %}
+</section>
+{% endblock %}
