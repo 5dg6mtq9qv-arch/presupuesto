@@ -42,6 +42,7 @@ from .models import (
     PagoDeuda,
     PerfilComportamientoFinanciero,
     PerfilUsuario,
+    SolicitudRegistro,
     TransferenciaCuenta,
 )
 from .services import (
@@ -82,7 +83,7 @@ class PrimerUsoTests(TestCase):
             ),
         )
 
-    def test_registro_crea_espacio_e_inicia_sesion(self):
+    def test_registro_crea_solicitud_inactiva_sin_iniciar_sesion(self):
         response = self.client.post(
             reverse("registro"),
             {
@@ -96,28 +97,23 @@ class PrimerUsoTests(TestCase):
         )
 
         user = get_user_model().objects.get(username="persona")
-        self.assertRedirects(response, reverse("dashboard"))
-        self.assertEqual(int(self.client.session["_auth_user_id"]), user.pk)
-        self.assertTrue(CuentaFinanciera.objects.filter(usuario=user, nombre="General").exists())
-        self.assertTrue(Categoria.objects.filter(usuario=user, nombre="Ingresos").exists())
-
-        dashboard = self.client.get(reverse("dashboard"))
-        self.assertContains(dashboard, "¡Bienvenido, Ana!")
-        self.assertContains(dashboard, "Configurar mis cuentas")
-        self.assertContains(dashboard, "Primeros pasos · 0 de 3")
-        self.assertContains(dashboard, "Registrar ingreso")
-        self.assertContains(dashboard, "Registrar gasto")
-
-        completar = self.client.post(
-            reverse("onboarding_bienvenida_completar"),
-            {"destino": "cuentas"},
+        self.assertRedirects(response, reverse("registro_solicitado"))
+        self.assertFalse(user.is_active)
+        self.assertNotIn("_auth_user_id", self.client.session)
+        self.assertTrue(
+            SolicitudRegistro.objects.filter(
+                usuario=user,
+                estado=SolicitudRegistro.Estado.PENDIENTE,
+            ).exists()
         )
-        self.assertRedirects(completar, reverse("cuenta_list"))
-        self.assertTrue(PerfilUsuario.objects.get(usuario=user).bienvenida_vista)
+        self.assertFalse(CuentaFinanciera.objects.filter(usuario=user).exists())
 
-        dashboard = self.client.get(reverse("dashboard"))
-        self.assertNotContains(dashboard, "¡Bienvenido, Ana!")
-        self.assertContains(dashboard, "Primeros pasos · 0 de 3")
+        login_response = self.client.post(
+            reverse("login"),
+            {"username": "persona", "password": "Clave-segura-2026!"},
+        )
+        self.assertEqual(login_response.status_code, 200)
+        self.assertNotIn("_auth_user_id", self.client.session)
 
     def test_bienvenida_requiere_autenticacion(self):
         response = self.client.post(reverse("onboarding_bienvenida_completar"))
@@ -145,6 +141,65 @@ class PrimerUsoTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Ya existe una cuenta asociada a este correo electrónico.")
         self.assertFalse(get_user_model().objects.filter(username="nuevo").exists())
+
+
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+class AutorizacionRegistroTests(TestCase):
+    def setUp(self):
+        self.admin = get_user_model().objects.create_user(
+            username="admin",
+            password="Clave-admin-2026!",
+            is_staff=True,
+        )
+        self.user = get_user_model().objects.create_user(
+            username="pendiente",
+            first_name="Elena",
+            email="elena@example.com",
+            password="Clave-segura-2026!",
+            is_active=False,
+        )
+        self.solicitud = SolicitudRegistro.objects.create(usuario=self.user)
+
+    def test_panel_requiere_administrador(self):
+        response = self.client.get(reverse("solicitud_registro_list"))
+        self.assertRedirects(
+            response,
+            f'{reverse("login")}?next={reverse("solicitud_registro_list")}',
+        )
+
+    def test_admin_ve_solicitudes_pendientes(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(reverse("solicitud_registro_list"))
+        self.assertContains(response, "pendiente")
+        self.assertContains(response, "elena@example.com")
+        self.assertContains(response, "Autorizar alta")
+
+    def test_aprobacion_activa_cuenta_prepara_espacio_y_envia_correo(self):
+        self.client.force_login(self.admin)
+        response = self.client.post(
+            reverse("solicitud_registro_aprobar", args=[self.solicitud.pk]),
+        )
+
+        self.assertRedirects(response, reverse("solicitud_registro_list"))
+        self.user.refresh_from_db()
+        self.solicitud.refresh_from_db()
+        self.assertTrue(self.user.is_active)
+        self.assertEqual(self.solicitud.estado, SolicitudRegistro.Estado.APROBADA)
+        self.assertEqual(self.solicitud.resuelta_por, self.admin)
+        self.assertIsNotNone(self.solicitud.resuelta_en)
+        self.assertTrue(CuentaFinanciera.objects.filter(usuario=self.user, nombre="General").exists())
+        self.assertTrue(Categoria.objects.filter(usuario=self.user, nombre="Ingresos").exists())
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["elena@example.com"])
+        self.assertIn(reverse("login"), mail.outbox[0].body)
+
+    def test_aprobacion_solo_acepta_post_y_no_reenvia_correo(self):
+        self.client.force_login(self.admin)
+        url = reverse("solicitud_registro_aprobar", args=[self.solicitud.pk])
+        self.assertEqual(self.client.get(url).status_code, 405)
+        self.client.post(url)
+        self.client.post(url)
+        self.assertEqual(len(mail.outbox), 1)
 
 
 @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")

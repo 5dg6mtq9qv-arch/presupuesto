@@ -45,6 +45,41 @@ class PerfilUsuario(models.Model):
         return f"Perfil de {self.usuario}"
 
 
+class SolicitudRegistro(models.Model):
+    class Estado(models.TextChoices):
+        PENDIENTE = "pendiente", "Pendiente"
+        APROBADA = "aprobada", "Aprobada"
+
+    usuario = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="solicitud_registro",
+    )
+    estado = models.CharField(
+        max_length=20,
+        choices=Estado.choices,
+        default=Estado.PENDIENTE,
+    )
+    solicitada_en = models.DateTimeField(auto_now_add=True)
+    resuelta_en = models.DateTimeField(null=True, blank=True)
+    resuelta_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="solicitudes_registro_resueltas",
+    )
+
+    class Meta:
+        db_table = '"usuarios"."solicitud_registro"'
+        ordering = ["-solicitada_en"]
+        verbose_name = "solicitud de registro"
+        verbose_name_plural = "solicitudes de registro"
+
+    def __str__(self):
+        return f"Solicitud de {self.usuario} ({self.get_estado_display()})"
+
+
 class PerfilComportamientoFinanciero(models.Model):
     usuario = models.OneToOneField(
         settings.AUTH_USER_MODEL,

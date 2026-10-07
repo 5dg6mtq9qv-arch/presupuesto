@@ -11,7 +11,7 @@ from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.contrib import messages
-from django.contrib.auth import login, update_session_auth_hash
+from django.contrib.auth import update_session_auth_hash
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.decorators import user_passes_test
@@ -100,6 +100,7 @@ from .models import (
     PresupuestoMensual,
     RegistroAuditoria,
     RecomendacionFinanciera,
+    SolicitudRegistro,
     Tarea,
     TransferenciaCuenta,
 )
@@ -1243,13 +1244,20 @@ def registro(request):
 
     form = RegistroUsuarioForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
-        user = form.save()
-        ensure_user_finance_setup(user)
-        login(request, user)
-        messages.success(request, "Tu espacio está listo. Completa estos tres pasos para comenzar.")
-        return redirect("dashboard")
+        with transaction.atomic():
+            user = form.save(commit=False)
+            user.is_active = False
+            user.save()
+            SolicitudRegistro.objects.create(usuario=user)
+        return redirect("registro_solicitado")
 
     return render(request, "registration/registro.html", {"form": form})
+
+
+def registro_solicitado(request):
+    if request.user.is_authenticated:
+        return redirect("dashboard")
+    return render(request, "registration/registro_solicitado.html")
 
 
 @login_required
@@ -2176,6 +2184,71 @@ def usuario_list(request):
             "filters": {"q": q, "estado": estado, "rol": rol},
         },
     )
+
+
+@admin_required
+def solicitud_registro_list(request):
+    solicitudes = SolicitudRegistro.objects.select_related("usuario", "resuelta_por")
+    estado = request.GET.get("estado", SolicitudRegistro.Estado.PENDIENTE)
+    if estado in SolicitudRegistro.Estado.values:
+        solicitudes = solicitudes.filter(estado=estado)
+    else:
+        estado = ""
+    page_obj, list_querystring = paginate_queryset(request, solicitudes)
+    return render(
+        request,
+        "core/solicitud_registro_list.html",
+        {
+            "solicitudes": page_obj,
+            "page_obj": page_obj,
+            "list_querystring": list_querystring,
+            "estado": estado,
+        },
+    )
+
+
+@admin_required
+@require_POST
+def solicitud_registro_aprobar(request, pk):
+    with transaction.atomic():
+        solicitud = get_object_or_404(
+            SolicitudRegistro.objects.select_for_update().select_related("usuario"),
+            pk=pk,
+        )
+        if solicitud.estado != SolicitudRegistro.Estado.PENDIENTE:
+            messages.info(request, "Esta solicitud ya fue resuelta.")
+            return redirect("solicitud_registro_list")
+
+        user = solicitud.usuario
+        user.is_active = True
+        user.save(update_fields=("is_active",))
+        ensure_user_finance_setup(user)
+        solicitud.estado = SolicitudRegistro.Estado.APROBADA
+        solicitud.resuelta_en = timezone.now()
+        solicitud.resuelta_por = request.user
+        solicitud.save(update_fields=("estado", "resuelta_en", "resuelta_por"))
+
+    login_url = request.build_absolute_uri(reverse("login"))
+    try:
+        EmailMessage(
+            subject="Tu cuenta de TaskBudget fue aprobada",
+            body=(
+                f"Hola {user.first_name or user.username},\n\n"
+                "Tu solicitud de registro fue aprobada. Ya puedes iniciar sesión con las "
+                f"credenciales que elegiste en:\n{login_url}\n\n"
+                "Bienvenido a TaskBudget."
+            ),
+            to=[user.email],
+        ).send(fail_silently=False)
+    except Exception:
+        logger.exception("No se pudo enviar el correo de aprobación al usuario %s", user.pk)
+        messages.warning(
+            request,
+            f"La cuenta de {user.username} fue aprobada, pero no se pudo enviar el correo.",
+        )
+    else:
+        messages.success(request, f"Cuenta de {user.username} aprobada y correo enviado.")
+    return redirect("solicitud_registro_list")
 
 
 @admin_required

@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block page_title %}Solicitudes de alta{% endblock %}
+{% block page_subtitle %}Revisa y autoriza las cuentas nuevas antes de permitir su acceso{% endblock %}
+
+{% block content %}
+<section class="panel">
+  <form class="filter-form" method="get">
+    <div>
+      <label for="estado">Estado</label>
+      <select class="form-select" id="estado" name="estado">
+        <option value="">Todas</option>
+        <option value="pendiente"{% if estado == "pendiente" %} selected{% endif %}>Pendientes</option>
+        <option value="aprobada"{% if estado == "aprobada" %} selected{% endif %}>Aprobadas</option>
+      </select>
+    </div>
+    <button class="btn btn-primary btn-icon" type="submit" title="Filtrar" aria-label="Filtrar">
+      <span class="material-symbols-outlined">filter_alt</span>
+    </button>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table class="table table-hover align-middle mb-0">
+      <thead><tr><th>Usuario</th><th>Nombre</th><th>Correo</th><th>Solicitud</th><th>Estado</th><th></th></tr></thead>
+      <tbody>
+        {% for solicitud in solicitudes %}
+          <tr>
+            <td><strong>{{ solicitud.usuario.username }}</strong></td>
+            <td>{{ solicitud.usuario.get_full_name|default:"-" }}</td>
+            <td>{{ solicitud.usuario.email }}</td>
+            <td>{{ solicitud.solicitada_en|date:"d/m/Y H:i" }}</td>
+            <td>
+              {% if solicitud.estado == "pendiente" %}
+                <span class="badge rounded-pill text-bg-warning">Pendiente</span>
+              {% else %}
+                <span class="badge rounded-pill text-bg-success">Aprobada</span>
+              {% endif %}
+            </td>
+            <td class="text-nowrap">
+              {% if solicitud.estado == "pendiente" %}
+                <form method="post" action="{% url 'solicitud_registro_aprobar' solicitud.pk %}">
+                  {% csrf_token %}
+                  <button class="btn btn-sm btn-primary" type="submit">Autorizar alta</button>
+                </form>
+              {% else %}
+                <span class="muted">{{ solicitud.resuelta_en|date:"d/m/Y H:i" }}</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="muted">No hay solicitudes con este estado.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "core/includes/pagination.html" %}
+</section>
+{% endblock %}

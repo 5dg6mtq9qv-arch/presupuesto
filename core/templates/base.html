@@ -1783,6 +1783,7 @@
         {% if user.is_staff %}
           <div class="nav-section">Administración</div>
           <ul class="nav-list">
+            <li><a class="nav-link {% if 'solicitud_registro' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'solicitud_registro_list' %}"><span class="material-symbols-outlined">how_to_reg</span> Solicitudes de alta</a></li>
             <li><a class="nav-link {% if 'usuario' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'usuario_list' %}"><span class="material-symbols-outlined">group</span> Usuarios</a></li>
             <li><a class="nav-link {% if request.resolver_match.url_name == 'configuracion_ia' %}active{% endif %}" href="{% url 'configuracion_ia' %}"><span class="material-symbols-outlined">tune</span> Conectar IA</a></li>
             <li><a class="nav-link {% if request.resolver_match.url_name == 'configuracion_correo' %}active{% endif %}" href="{% url 'configuracion_correo' %}"><span class="material-symbols-outlined">forward_to_inbox</span> Configurar correo</a></li>
