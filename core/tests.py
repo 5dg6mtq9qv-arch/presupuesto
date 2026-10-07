@@ -9,7 +9,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from .forms import ConfiguracionIAForm, MovimientoFinancieroForm
+from .forms import ConfiguracionCorreoForm, ConfiguracionIAForm, MovimientoFinancieroForm
 from .financial_profile import calculate_financial_behavior_profile, get_financial_behavior_profile
 from .ai_assistant import (
     AI_TOOLS,
@@ -26,7 +26,7 @@ from .ai_assistant import (
 )
 from .ai_config import AIRuntimeConfig, get_ai_runtime_config
 from .email_config import get_email_runtime_config
-from .admin import ConfiguracionCorreoAdminForm, ConfiguracionIAAdminForm
+from .admin import ConfiguracionIAAdminForm
 from .models import (
     Acreedor,
     AjusteSaldo,
@@ -207,7 +207,7 @@ class ConfiguracionCorreoTests(TestCase):
         return data
 
     def test_admin_guarda_password_cifrada_y_runtime_usa_base(self):
-        form = ConfiguracionCorreoAdminForm(data=self.datos_formulario())
+        form = ConfiguracionCorreoForm(data=self.datos_formulario())
 
         self.assertTrue(form.is_valid(), form.errors)
         config = form.save()
@@ -224,7 +224,7 @@ class ConfiguracionCorreoTests(TestCase):
         config.set_password("clave-existente")
         config.activo = True
         config.save()
-        form = ConfiguracionCorreoAdminForm(
+        form = ConfiguracionCorreoForm(
             instance=config,
             data=self.datos_formulario(password="", timeout_segundos="20"),
         )
@@ -235,7 +235,7 @@ class ConfiguracionCorreoTests(TestCase):
         self.assertEqual(updated.timeout_segundos, 20)
 
     def test_no_permite_tls_y_ssl_simultaneamente(self):
-        form = ConfiguracionCorreoAdminForm(
+        form = ConfiguracionCorreoForm(
             data=self.datos_formulario(usar_tls="on", usar_ssl="on")
         )
 
@@ -244,29 +244,50 @@ class ConfiguracionCorreoTests(TestCase):
         self.assertIn("usar_ssl", form.errors)
 
     @patch("core.email_backend.SMTPEmailBackend")
-    def test_accion_admin_envia_correo_de_prueba(self, smtp_backend):
+    def test_admin_envia_correo_de_prueba_desde_el_sistema(self, smtp_backend):
         connection = smtp_backend.return_value
         connection.send_messages.return_value = 1
-        form = ConfiguracionCorreoAdminForm(data=self.datos_formulario())
-        self.assertTrue(form.is_valid(), form.errors)
-        config = form.save()
-        admin_user = get_user_model().objects.create_superuser(
+        admin_user = get_user_model().objects.create_user(
             username="admin-correo",
             email="admin@example.com",
             password="Clave-admin-2026!",
+            is_staff=True,
         )
         self.client.force_login(admin_user)
 
         response = self.client.post(
-            reverse("admin:core_configuracioncorreo_changelist"),
-            {"action": "enviar_correo_prueba", "_selected_action": [config.pk]},
+            reverse("configuracion_correo"),
+            self.datos_formulario(action="save_test"),
             follow=True,
         )
 
         self.assertContains(response, "Correo de prueba enviado a destino@example.com")
+        self.assertEqual(response.redirect_chain[0][0], reverse("configuracion_correo"))
         connection.send_messages.assert_called_once()
         sent_message = connection.send_messages.call_args.args[0][0]
         self.assertEqual(sent_message.to, ["destino@example.com"])
+
+    def test_usuario_normal_no_puede_ver_configuracion_correo(self):
+        user = get_user_model().objects.create_user(username="usuario", password="test")
+        self.client.force_login(user)
+
+        response = self.client.get(reverse("configuracion_correo"))
+
+        self.assertRedirects(response, reverse("dashboard"))
+
+    def test_admin_ve_configuracion_correo_en_el_sistema(self):
+        admin_user = get_user_model().objects.create_user(
+            username="admin-visible",
+            password="test",
+            is_staff=True,
+        )
+        self.client.force_login(admin_user)
+
+        response = self.client.get(reverse("configuracion_correo"))
+
+        self.assertContains(response, "Correo del sistema")
+        self.assertContains(response, "Guardar y enviar prueba")
+        self.assertContains(response, "smtp.hostinger.com")
 
 
 class GastoTarjetaCreditoTests(TestCase):

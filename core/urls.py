@@ -18,6 +18,7 @@ urlpatterns = [
     path("asistente/objetivos/<int:pk>/actualizar/", views.objetivo_financiero_actualizar, name="objetivo_financiero_actualizar"),
     path("asistente/recomendaciones/<int:pk>/feedback/", views.recomendacion_financiera_feedback, name="recomendacion_financiera_feedback"),
     path("configuracion/ia/", views.configuracion_ia, name="configuracion_ia"),
+    path("configuracion/correo/", views.configuracion_correo, name="configuracion_correo"),
     path("administracion/consumo-ia/", views.consumo_ia_panel, name="consumo_ia_panel"),
     path("administracion/consumo-ia/usuarios/<int:pk>/acceso/", views.usuario_ia_toggle, name="usuario_ia_toggle"),
     path("perfil/", views.perfil_update, name="perfil_update"),

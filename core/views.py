@@ -17,6 +17,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.decorators import user_passes_test
 from django.core.paginator import Paginator
 from django.core.cache import cache
+from django.core.mail import EmailMessage
 from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
 from django.db import transaction
 from django.db.models import Count, Max, Min, Prefetch, Q, Sum
@@ -61,6 +62,7 @@ from .forms import (
     RegistroUsuarioForm,
     CategoriaPrincipalForm,
     CapturaComprobanteForm,
+    ConfiguracionCorreoForm,
     ConfiguracionIAForm,
     ConfirmarImportacionAmortizacionForm,
     ImportacionBancariaForm,
@@ -80,6 +82,7 @@ from .models import (
     BorradorMovimientoIA,
     CapturaComprobante,
     Categoria,
+    ConfiguracionCorreo,
     ConfiguracionIA,
     ConsumoIA,
     CuentaFinanciera,
@@ -1005,6 +1008,59 @@ def configuracion_ia(request):
             "connection_error": connection_error,
             "ai_model_options": AI_MODEL_OPTIONS,
         },
+    )
+
+
+@admin_required
+def configuracion_correo(request):
+    config = ConfiguracionCorreo.objects.order_by("pk").first() or ConfiguracionCorreo()
+    connection_error = ""
+
+    if request.method == "POST":
+        form = ConfiguracionCorreoForm(request.POST, instance=config)
+        if form.is_valid():
+            action = request.POST.get("action")
+            if action == "save_test" and not form.cleaned_data.get("destinatario_prueba"):
+                form.add_error("destinatario_prueba", "Escribe el correo que recibirá la prueba.")
+            elif action == "save_test" and not form.cleaned_data.get("activo"):
+                form.add_error("activo", "Activa el envío para poder probar la conexión.")
+            else:
+                config = form.save()
+                if action == "save_test":
+                    try:
+                        sent = EmailMessage(
+                            subject="Prueba de correo de Félix IoT",
+                            body=(
+                                "La configuración SMTP funciona correctamente. "
+                                "La plataforma ya puede enviar enlaces de recuperación de contraseña."
+                            ),
+                            from_email=config.remitente,
+                            to=[config.destinatario_prueba],
+                        ).send(fail_silently=False)
+                        if sent != 1:
+                            raise RuntimeError("El servidor no confirmó el envío del mensaje.")
+                    except Exception as exc:
+                        connection_error = str(exc)
+                        messages.error(
+                            request,
+                            f"La configuración se guardó, pero el envío falló: {exc}",
+                        )
+                    else:
+                        messages.success(
+                            request,
+                            f"Correo de prueba enviado a {config.destinatario_prueba}.",
+                        )
+                        return redirect("configuracion_correo")
+                else:
+                    messages.success(request, "Configuración de correo guardada.")
+                    return redirect("configuracion_correo")
+    else:
+        form = ConfiguracionCorreoForm(instance=config)
+
+    return render(
+        request,
+        "core/configuracion_correo.html",
+        {"form": form, "config": config, "connection_error": connection_error},
     )
 
 

@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+
+{% block page_title %}Configurar correo{% endblock %}
+{% block page_subtitle %}Conecta el buzón que enviará recuperaciones de contraseña y avisos del sistema{% endblock %}
+
+{% block content %}
+<style>
+  .mail-setup { max-width: 960px; margin: 0 auto; }
+  .mail-steps { display: flex; gap: 8px; margin-bottom: 20px; color: var(--muted); font-size: 12px; }
+  .mail-step { flex: 1; padding: 10px; border-radius: 10px; background: var(--surface-soft); }
+  .mail-step strong { display: block; color: var(--text); margin-bottom: 2px; }
+  .mail-grid { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 18px; align-items: start; }
+  .mail-form { display: grid; gap: 16px; }
+  .mail-fields-2 { display: grid; grid-template-columns: minmax(0, 1fr) 150px; gap: 14px; }
+  .mail-status { display: flex; align-items: center; gap: 10px; padding: 12px; border-radius: 12px; background: var(--surface-soft); margin-bottom: 18px; }
+  .mail-status .material-symbols-outlined { color: {% if config.password_configurada %}var(--success){% else %}var(--muted){% endif %}; }
+  .mail-status small { display: block; color: var(--muted); }
+  .mail-security { display: flex; gap: 22px; flex-wrap: wrap; padding: 12px; border: 1px solid var(--line); border-radius: 12px; }
+  .mail-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  .mail-actions .btn { min-height: 44px; }
+  .mail-tip { display: flex; gap: 9px; font-size: 13px; line-height: 1.5; }
+  .mail-tip .material-symbols-outlined { color: var(--primary); }
+  .mail-error { padding: 12px; border: 1px solid #fecaca; border-radius: 12px; background: #fff7f7; color: #991b1b; }
+  @media (max-width: 760px) {
+    .mail-grid, .mail-fields-2 { grid-template-columns: 1fr; }
+    .mail-steps { flex-direction: column; }
+  }
+</style>
+
+<div class="mail-setup">
+  <div class="mail-steps" aria-label="Pasos de configuración">
+    <div class="mail-step"><strong>1. Conecta</strong>Ingresa los datos SMTP</div>
+    <div class="mail-step"><strong>2. Protege</strong>Guarda la clave cifrada</div>
+    <div class="mail-step"><strong>3. Comprueba</strong>Envía un mensaje real</div>
+  </div>
+
+  <div class="mail-grid">
+    <section class="panel">
+      <div class="panel-heading">
+        <div><h2>Correo del sistema</h2><p class="muted mb-0">Los cambios se aplican al guardar, sin editar archivos ni reiniciar.</p></div>
+      </div>
+
+      <div class="mail-status">
+        <span class="material-symbols-outlined">{% if config.password_configurada %}verified_user{% else %}key_off{% endif %}</span>
+        <div>
+          <strong>{% if config.password_configurada %}Contraseña protegida{% else %}Falta la contraseña{% endif %}</strong>
+          <small>{% if config.password_configurada %}Déjala vacía para conservar la credencial guardada.{% else %}Escribe la contraseña del buzón para activar los envíos.{% endif %}</small>
+        </div>
+      </div>
+
+      {% if connection_error %}
+        <div class="mail-error" role="alert"><strong>No se pudo enviar.</strong> {{ connection_error }}</div>
+      {% endif %}
+
+      <form method="post" class="mail-form">
+        {% csrf_token %}
+        {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+
+        <div class="mail-fields-2">
+          {% include "core/partials/form_field.html" with field=form.servidor %}
+          {% include "core/partials/form_field.html" with field=form.puerto %}
+        </div>
+
+        {% include "core/partials/form_field.html" with field=form.usuario %}
+        {% include "core/partials/form_field.html" with field=form.password %}
+
+        {% if config.password_configurada %}
+          <div class="unfold-field unfold-check">
+            <div class="form-check">{{ form.eliminar_password }} <label class="form-check-label" for="{{ form.eliminar_password.id_for_label }}">{{ form.eliminar_password.label }}</label></div>
+            {% for error in form.eliminar_password.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+          </div>
+        {% endif %}
+
+        {% include "core/partials/form_field.html" with field=form.remitente %}
+
+        <div class="mail-security">
+          <div class="form-check">{{ form.usar_ssl }} <label class="form-check-label" for="{{ form.usar_ssl.id_for_label }}">{{ form.usar_ssl.label }}</label></div>
+          <div class="form-check">{{ form.usar_tls }} <label class="form-check-label" for="{{ form.usar_tls.id_for_label }}">{{ form.usar_tls.label }}</label></div>
+        </div>
+        {% for error in form.usar_ssl.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+        {% for error in form.usar_tls.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+
+        {% include "core/partials/form_field.html" with field=form.timeout_segundos %}
+
+        <hr>
+        <div>
+          <h3>Prueba de envío</h3>
+          <p class="muted">El mensaje confirma tanto la conexión como las credenciales del buzón.</p>
+        </div>
+        {% include "core/partials/form_field.html" with field=form.destinatario_prueba %}
+
+        <div class="unfold-field unfold-check">
+          <div class="form-check">{{ form.activo }} <label class="form-check-label" for="{{ form.activo.id_for_label }}">{{ form.activo.label }}</label></div>
+          {% for error in form.activo.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+        </div>
+
+        <div class="mail-actions">
+          <button class="btn btn-primary" type="submit" name="action" value="save_test">
+            <span class="material-symbols-outlined">outgoing_mail</span><span>Guardar y enviar prueba</span>
+          </button>
+          <button class="btn btn-outline-secondary" type="submit" name="action" value="save">
+            <span class="material-symbols-outlined">save</span><span>Solo guardar</span>
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <aside class="panel">
+      <div class="panel-heading"><div><h2>Hostinger</h2></div></div>
+      <div class="mail-tip">
+        <span class="material-symbols-outlined">dns</span>
+        <span><strong>Configuración recomendada:</strong><br>smtp.hostinger.com<br>Puerto 465 · SSL</span>
+      </div>
+      <hr>
+      <div class="mail-tip">
+        <span class="material-symbols-outlined">lock</span>
+        <span>La contraseña se cifra antes de guardarse. Solo un administrador puede abrir esta pantalla.</span>
+      </div>
+      <hr>
+      <div class="mail-tip">
+        <span class="material-symbols-outlined">manage_accounts</span>
+        <span>Los usuarios normales pueden recuperar su contraseña, pero no pueden ver ni modificar esta conexión.</span>
+      </div>
+    </aside>
+  </div>
+</div>
+{% endblock %}

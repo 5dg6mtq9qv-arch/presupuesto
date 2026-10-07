@@ -11,6 +11,7 @@ from .models import (
     Acreedor,
     CapturaComprobante,
     Categoria,
+    ConfiguracionCorreo,
     ConfiguracionIA,
     CuentaFinanciera,
     Deuda,
@@ -63,6 +64,72 @@ def enable_flexible_decimal_inputs(fields):
             attrs["inputmode"] = "decimal"
             attrs["data-decimal-input"] = ""
             field.widget = forms.TextInput(attrs=attrs)
+
+
+class ConfiguracionCorreoForm(forms.ModelForm):
+    password = forms.CharField(
+        label="Contraseña del buzón",
+        required=False,
+        widget=forms.PasswordInput(
+            render_value=False,
+            attrs={"autocomplete": "new-password", "placeholder": "Déjala vacía para conservarla"},
+        ),
+        help_text="Se guarda cifrada y nunca vuelve a mostrarse.",
+    )
+    eliminar_password = forms.BooleanField(
+        label="Eliminar la contraseña guardada",
+        required=False,
+    )
+
+    class Meta:
+        model = ConfiguracionCorreo
+        fields = [
+            "servidor",
+            "puerto",
+            "usuario",
+            "remitente",
+            "destinatario_prueba",
+            "usar_ssl",
+            "usar_tls",
+            "timeout_segundos",
+            "activo",
+        ]
+        labels = {
+            "servidor": "Servidor SMTP",
+            "puerto": "Puerto",
+            "usuario": "Correo del buzón",
+            "remitente": "Remitente visible",
+            "destinatario_prueba": "Enviar prueba a",
+            "timeout_segundos": "Tiempo máximo de espera",
+            "activo": "Activar el envío de correos",
+        }
+        help_texts = {
+            "usuario": "Usa la dirección completa, por ejemplo contacto@felixiot.site.",
+            "destinatario_prueba": "Necesario únicamente al usar «Guardar y enviar prueba».",
+            "timeout_segundos": "Entre 5 y 60 segundos.",
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            if isinstance(field.widget, forms.CheckboxInput):
+                field.widget.attrs["class"] = "form-check-input"
+            else:
+                field.widget.attrs["class"] = "form-control"
+
+    def clean(self):
+        cleaned_data = super().clean()
+        password = cleaned_data.get("password") or ""
+        clear_password = cleaned_data.get("eliminar_password", False)
+        if password and clear_password:
+            self.add_error("eliminar_password", "Elige entre reemplazar o eliminar la contraseña.")
+        elif password:
+            self.instance.set_password(password)
+        elif clear_password:
+            self.instance.set_password("")
+        if cleaned_data.get("activo") and not self.instance.password_cifrada:
+            self.add_error("password", "Configura la contraseña antes de activar el correo.")
+        return cleaned_data
 
 
 class ObjetivoFinancieroForm(forms.ModelForm):

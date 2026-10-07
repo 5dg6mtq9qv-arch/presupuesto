@@ -1,0 +1,6 @@
+<div class="unfold-field{% if field.errors %} has-error{% endif %}">
+  <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+  {{ field }}
+  {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+  {% for error in field.errors %}<div class="field-error"><span class="material-symbols-outlined">error</span>{{ error }}</div>{% endfor %}
+</div>

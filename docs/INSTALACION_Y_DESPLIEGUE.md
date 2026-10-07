@@ -108,12 +108,12 @@ PASSWORD_RESET_TIMEOUT=3600
 
 Usa exactamente el remitente autorizado por Hostinger. `EMAIL_USE_TLS` y `EMAIL_USE_SSL` no deben estar activos al mismo tiempo. Si el puerto 465 no estuviera disponible en otra infraestructura, Hostinger admite como alternativa el puerto 587 con TLS (`EMAIL_USE_TLS=true` y `EMAIL_USE_SSL=false`). En desarrollo, si no se define `EMAIL_BACKEND`, Django imprime los mensajes en la consola y no envía correo real.
 
-Un superusuario también puede configurar el correo en **Administración → Configuración de correo**. La contraseña SMTP se cifra antes de guardarse y nunca vuelve a mostrarse. La configuración activa del administrador tiene prioridad sobre las variables SMTP anteriores, que permanecen como respaldo. Para verificarla:
+Un administrador puede configurar el correo desde la propia plataforma en **Administración → Configurar correo**, sin entrar a Django Admin. Los usuarios normales no ven el enlace ni pueden acceder directamente a la página. La contraseña SMTP se cifra antes de guardarse y nunca vuelve a mostrarse. La configuración activa del sistema tiene prioridad sobre las variables SMTP anteriores, que permanecen como respaldo. Para verificarla:
 
 1. Completa el servidor, puerto, usuario, remitente y contraseña.
 2. Activa únicamente SSL o TLS según el puerto.
-3. Escribe un destinatario de prueba y guarda.
-4. Regresa al listado, selecciona la configuración y ejecuta **Enviar correo de prueba**.
+3. Escribe un destinatario de prueba.
+4. Pulsa **Guardar y enviar prueba**.
 
 La clave `EMAIL_CONFIG_ENCRYPTION_KEY` debe conservarse estable entre despliegues. Si se omite, el cifrado deriva de `DJANGO_SECRET_KEY`, que tampoco debe cambiar o la contraseña almacenada dejará de poder descifrarse.
 
