@@ -3,7 +3,7 @@ from decimal import Decimal
 
 TOKENS_PER_MILLION = Decimal("1000000")
 
-# Tarifas estándar en USD por millón de tokens, consultadas el 02-10-2026.
+# Tarifas estándar en USD por millón de tokens, consultadas el 08-10-2026.
 # El costo es orientativo: no incluye impuestos, herramientas, almacenamiento de
 # caché, búsquedas ni descuentos propios de la cuenta del proveedor.
 AI_TOKEN_PRICES_USD = {
@@ -11,6 +11,13 @@ AI_TOKEN_PRICES_USD = {
     ("openai", "gpt-4.1"): (Decimal("2.00"), Decimal("0.50"), Decimal("8.00")),
     ("openai", "gpt-4o-mini"): (Decimal("0.15"), Decimal("0.075"), Decimal("0.60")),
     ("openai", "gpt-4o"): (Decimal("2.50"), Decimal("1.25"), Decimal("10.00")),
+    # Haiku 5.5 usa estas tarifas para solicitudes de hasta 100.000 tokens,
+    # ampliamente por encima del contexto acotado que envía TaskBudget.
+    ("anthropic", "claude-haiku-5-5"): (Decimal("0.10"), Decimal("0.01"), Decimal("0.50")),
+    ("anthropic", "claude-sonnet-5"): (Decimal("2.00"), Decimal("0.20"), Decimal("10.00")),
+    ("anthropic", "claude-sonnet-4-6"): (Decimal("3.00"), Decimal("0.30"), Decimal("15.00")),
+    ("anthropic", "claude-opus-5"): (Decimal("5.00"), Decimal("0.50"), Decimal("25.00")),
+    ("anthropic", "claude-haiku-4-5-20251001"): (Decimal("1.00"), Decimal("0.10"), Decimal("5.00")),
     ("gemini", "gemini-3.8-flash"): (Decimal("0.75"), Decimal("0.075"), Decimal("3.75")),
     ("gemini", "gemini-3.7-flash"): (Decimal("0.75"), Decimal("0.075"), Decimal("3.75")),
     ("gemini", "gemini-3.5-flash-lite"): (Decimal("0.30"), Decimal("0.03"), Decimal("2.50")),

@@ -175,9 +175,10 @@ AI_MODEL_OPTIONS = {
     ],
     "anthropic": [
         ("claude-sonnet-5", "Claude Sonnet 5 — recomendado"),
+        ("claude-haiku-5-5", "Claude Haiku 5.5 — nuevo, rápido y económico"),
         ("claude-sonnet-4-6", "Claude Sonnet 4.6 — estable"),
         ("claude-opus-5", "Claude Opus 5 — máxima capacidad"),
-        ("claude-haiku-4-5-20251001", "Claude Haiku 4.5 — rápido y económico"),
+        ("claude-haiku-4-5-20251001", "Claude Haiku 4.5 — heredado"),
     ],
     "gemini": [
         ("gemini-3.8-flash", "Gemini 3.8 Flash — recomendado"),

@@ -1641,6 +1641,26 @@ def _anthropic_request_payload(messages, tools, model, max_tokens):
 
         blocks = _anthropic_content_blocks(message.get("content"))
         if role == "assistant":
+            provider_blocks = message.get("anthropic_content")
+            if isinstance(provider_blocks, list):
+                selected_tool_ids = {
+                    str(tool_call.get("id") or "")
+                    for tool_call in message.get("tool_calls") or []
+                }
+                # Claude 5.x firma sus bloques de razonamiento. Deben volver al
+                # proveedor sin modificaciones junto con los resultados de las
+                # herramientas; reconstruir solo texto y tool_use causa un 400.
+                blocks = [
+                    block
+                    for block in provider_blocks
+                    if isinstance(block, dict)
+                    and (
+                        block.get("type") != "tool_use"
+                        or str(block.get("id") or "") in selected_tool_ids
+                    )
+                ]
+                append_message(role, blocks)
+                continue
             for tool_call in message.get("tool_calls") or []:
                 function = tool_call.get("function") or {}
                 arguments = function.get("arguments") or "{}"
@@ -1700,7 +1720,11 @@ def _anthropic_response_message(provider_data):
                     },
                 }
             )
-    return {"content": "\n".join(text_parts), "tool_calls": tool_calls}
+    return {
+        "content": "\n".join(text_parts),
+        "tool_calls": tool_calls,
+        "anthropic_content": provider_data.get("content") or [],
+    }
 
 
 def _provider_message(
@@ -2053,7 +2077,14 @@ def ask_financial_assistant(user, question, history=None):
         if not selected_calls:
             break
         total_tool_calls += len(selected_calls)
-        messages.append({"role": "assistant", "content": message.get("content"), "tool_calls": selected_calls})
+        messages.append(
+            {
+                "role": "assistant",
+                "content": message.get("content"),
+                "tool_calls": selected_calls,
+                "anthropic_content": message.get("anthropic_content"),
+            }
+        )
         for tool_call in selected_calls:
             result = _execute_tool(user, tool_call, allow_writes=_has_explicit_confirmation(question, history))
             messages.append({"role": "tool", "tool_call_id": tool_call.get("id", ""), "content": json.dumps(result, ensure_ascii=False)})

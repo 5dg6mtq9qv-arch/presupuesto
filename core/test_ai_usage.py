@@ -187,6 +187,74 @@ class AIUsageTrackingTests(TestCase):
         self.assertEqual(payload["messages"][2]["content"][0]["type"], "tool_result")
         self.assertEqual(message["content"], '{"respuesta":"ok"}')
 
+    @patch("core.ai_assistant.urlopen")
+    def test_anthropic_conserva_razonamiento_firmado_al_devolver_herramientas(self, mocked_urlopen):
+        first_response = MagicMock()
+        first_response.status = 200
+        first_response.read.return_value = json.dumps(
+            {
+                "id": "msg_haiku_1",
+                "content": [
+                    {"type": "thinking", "thinking": "", "signature": "firma-claude"},
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_haiku",
+                        "name": "consultar_cuentas",
+                        "input": {},
+                    },
+                ],
+                "usage": {},
+            }
+        ).encode()
+        first_response.__enter__.return_value = first_response
+        second_response = MagicMock()
+        second_response.status = 200
+        second_response.read.return_value = b'{"id":"msg_haiku_2","content":[{"type":"text","text":"ok"}],"usage":{}}'
+        second_response.__enter__.return_value = second_response
+        mocked_urlopen.side_effect = [first_response, second_response]
+        config = AIRuntimeConfig(
+            True,
+            "anthropic",
+            "clave",
+            "claude-haiku-5-5",
+            "https://api.anthropic.com/v1",
+            25,
+            "database",
+        )
+
+        first_message = _provider_message(
+            [{"role": "user", "content": "Consulta mis cuentas"}],
+            config,
+            tools=[
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "consultar_cuentas",
+                        "description": "Consulta cuentas",
+                        "parameters": {"type": "object", "properties": {}},
+                    },
+                }
+            ],
+        )
+        _provider_message(
+            [
+                {"role": "user", "content": "Consulta mis cuentas"},
+                {
+                    "role": "assistant",
+                    "content": first_message["content"],
+                    "tool_calls": first_message["tool_calls"],
+                    "anthropic_content": first_message["anthropic_content"],
+                },
+                {"role": "tool", "tool_call_id": "toolu_haiku", "content": '{"cuentas": []}'},
+            ],
+            config,
+        )
+
+        second_payload = json.loads(mocked_urlopen.call_args.args[0].data)
+        assistant_blocks = second_payload["messages"][1]["content"]
+        self.assertEqual(assistant_blocks[0], {"type": "thinking", "thinking": "", "signature": "firma-claude"})
+        self.assertEqual(assistant_blocks[1]["type"], "tool_use")
+
     @patch("core.ai_assistant.time.sleep")
     @patch("core.ai_assistant.urlopen")
     def test_reintenta_una_vez_si_el_proveedor_falla_temporalmente(self, mocked_urlopen, mocked_sleep):
@@ -239,6 +307,10 @@ class AIUsageTrackingTests(TestCase):
     def test_calcula_costo_estimado_separando_tokens_cacheados(self):
         costo = estimate_ai_cost_usd("openai", "gpt-4.1-mini", 1000, 200, 400)
         self.assertEqual(costo, Decimal("0.000600"))
+
+    def test_calcula_costo_estimado_de_claude_haiku_5_5(self):
+        costo = estimate_ai_cost_usd("anthropic", "claude-haiku-5-5", 1000, 200, 400)
+        self.assertEqual(costo, Decimal("0.000164"))
 
     def test_modelo_sin_tarifa_no_inventa_un_costo(self):
         self.assertIsNone(estimate_ai_cost_usd("proveedor", "modelo-desconocido", 1000, 200))
