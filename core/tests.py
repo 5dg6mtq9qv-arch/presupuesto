@@ -1222,6 +1222,7 @@ class FinancialAssistantTests(TestCase):
         date = datetime(2026, 10, 8).date()
         debt = Deuda.objects.create(
             usuario=self.user,
+            categoria=self.category,
             acreedor="Pichincha Miles",
             concepto="Compra diferida",
             monto_inicial="4437.00",
@@ -1233,6 +1234,8 @@ class FinancialAssistantTests(TestCase):
             fecha_vencimiento=date + timedelta(days=160),
             estado=Deuda.Estado.ACTIVA,
         )
+        debt_tag = Etiqueta.objects.create(usuario=self.user, nombre="Compra planificada")
+        debt.etiquetas.add(debt_tag)
         PagoDeuda.objects.create(
             deuda=debt,
             cuota_numero=1,
@@ -1248,7 +1251,13 @@ class FinancialAssistantTests(TestCase):
         self.assertIn("no implica que todo sea exigible hoy", context["interpretacion_saldo_deudas"])
         self.assertEqual(context["pagos_pendientes_proximos_30_dias"]["total"], "745.00")
         self.assertTrue(debt_detail["es_diferida_en_cuotas"])
+        self.assertEqual(debt_detail["categoria"], "Alimentación")
+        self.assertEqual(debt_detail["subcategoria"], "Supermercado")
+        self.assertEqual(debt_detail["etiquetas"], ["Compra planificada"])
         self.assertEqual(debt_detail["valor_cuota_registrado"], "745.00")
+        self.assertEqual(debt_detail["resumen_calendario"]["cuotas_pendientes_programadas"], 1)
+        self.assertEqual(debt_detail["resumen_calendario"]["monto_vencido"], "0.00")
+        self.assertEqual(debt_detail["resumen_calendario"]["monto_proximos_30_dias"], "745.00")
         self.assertEqual(
             debt_detail["proximo_pago"],
             {
@@ -1265,12 +1274,14 @@ class FinancialAssistantTests(TestCase):
 
         self.assertIn("no implica que todo sea exigible hoy", result["interpretacion_saldo_total"])
         self.assertTrue(record["saldo_actual_es_capital_pendiente_no_pago_inmediato"])
+        self.assertEqual(record["etiquetas"], ["Compra planificada"])
         self.assertEqual(record["valor_cuota_registrado"], "745.00")
+        self.assertEqual(record["resumen_calendario"]["proximas_cuotas"][0]["naturaleza"], "pago_programado_registrado")
         self.assertEqual(record["proximo_pago_pendiente"]["monto"], "745.00")
         self.assertEqual(record["proximo_pago_pendiente"]["estado_temporal"], "futura")
 
     def test_herramienta_consulta_movimientos_por_fecha_sin_mezclar_usuarios(self):
-        MovimientoFinanciero.objects.create(
+        movement = MovimientoFinanciero.objects.create(
             usuario=self.user,
             tipo=MovimientoFinanciero.Tipo.GASTO,
             categoria=self.category,
@@ -1278,6 +1289,8 @@ class FinancialAssistantTests(TestCase):
             monto="25.00",
             fecha=datetime(2026, 8, 10).date(),
         )
+        tag = Etiqueta.objects.create(usuario=self.user, nombre="Compra semanal")
+        movement.etiquetas.add(tag)
         MovimientoFinanciero.objects.create(
             usuario=self.other,
             tipo=MovimientoFinanciero.Tipo.GASTO,
@@ -1293,7 +1306,12 @@ class FinancialAssistantTests(TestCase):
 
         self.assertEqual(result["cantidad_total"], 1)
         self.assertEqual(result["total_gastos"], "25.00")
+        self.assertEqual(
+            result["gastos_por_etiqueta"],
+            [{"etiqueta": "Compra semanal", "total": "25.00", "movimientos": 1}],
+        )
         self.assertEqual(result["registros"][0]["concepto"], "Compra propia")
+        self.assertEqual(result["registros"][0]["etiquetas"], ["Compra semanal"])
         self.assertNotIn("Compra ajena", json.dumps(result))
 
     def test_herramienta_pagos_devuelve_total_exacto_aunque_limite_detalle(self):

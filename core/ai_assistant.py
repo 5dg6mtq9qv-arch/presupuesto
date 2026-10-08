@@ -47,6 +47,7 @@ from .services import (
 MAX_UPCOMING_PAYMENT_DETAILS = 25
 MAX_QUERY_DETAILS = 50
 MAX_ANOMALY_DETAILS = 10
+MAX_DEBT_SCHEDULE_DETAILS = 6
 TRANSIENT_AI_HTTP_STATUSES = {500, 502, 503, 504}
 logger = logging.getLogger(__name__)
 
@@ -77,6 +78,48 @@ def user_can_use_ai(user):
 
 def _money(value):
     return f"{Decimal(value or 0):.2f}"
+
+
+def _category_labels(category):
+    if category is None:
+        return "Sin categoría", ""
+    if category.parent_id:
+        return category.parent.nombre, category.nombre
+    return category.nombre, ""
+
+
+def _payment_temporal_state(payment_date, today):
+    if payment_date < today:
+        return "vencida"
+    if payment_date == today:
+        return "vence_hoy"
+    return "futura"
+
+
+def _debt_schedule_summary(debt, today):
+    pending = debt.pagos_pendientes_ordenados
+    overdue = [payment for payment in pending if payment.fecha < today]
+    next_30_days = [payment for payment in pending if today <= payment.fecha <= today + timedelta(days=30)]
+    schedule = [
+        {
+            "fecha": payment.fecha.isoformat(),
+            "monto": _money(payment.monto),
+            "cuota": payment.cuota_numero,
+            "estado_temporal": _payment_temporal_state(payment.fecha, today),
+            "naturaleza": "pago_programado_registrado",
+        }
+        for payment in pending[:MAX_DEBT_SCHEDULE_DETAILS]
+    ]
+    return {
+        "cuotas_pendientes_programadas": len(pending),
+        "total_cuotas_programadas_pendientes": _money(sum((payment.monto for payment in pending), Decimal("0"))),
+        "cuotas_vencidas": len(overdue),
+        "monto_vencido": _money(sum((payment.monto for payment in overdue), Decimal("0"))),
+        "cuotas_proximos_30_dias": len(next_30_days),
+        "monto_proximos_30_dias": _money(sum((payment.monto for payment in next_30_days), Decimal("0"))),
+        "proximas_cuotas": schedule,
+        "calendario_completo": len(pending) <= len(schedule),
+    }
 
 
 def _shift_month(value, months):
@@ -338,6 +381,20 @@ def build_financial_context(user, today=None):
         }
         for row in category_rows
     ]
+    tag_rows = (
+        expenses.filter(etiquetas__isnull=False)
+        .values("etiquetas__nombre")
+        .annotate(total=Sum("monto"), movimientos=Count("id"))
+        .order_by("-total", "etiquetas__nombre")[:10]
+    )
+    expense_tags = [
+        {
+            "etiqueta": row["etiquetas__nombre"],
+            "total": _money(row["total"]),
+            "movimientos": row["movimientos"],
+        }
+        for row in tag_rows
+    ]
 
     active_debts = Deuda.objects.filter(usuario=user, estado=Deuda.Estado.ACTIVA)
     active_debt_count = active_debts.count()
@@ -355,13 +412,15 @@ def build_financial_context(user, today=None):
         .order_by("fecha", "deuda__acreedor", "cuota_numero")[:MAX_UPCOMING_PAYMENT_DETAILS]
     )
     active_debt_rows = list(
-        active_debts.annotate(
+        active_debts.select_related("categoria", "categoria__parent")
+        .annotate(
             cuotas_confirmadas_count=Count(
                 "pagos",
                 filter=Q(pagos__estado=PagoDeuda.Estado.CONFIRMADO, pagos__cuota_numero__isnull=False),
             )
         )
         .prefetch_related(
+            "etiquetas",
             Prefetch(
                 "pagos",
                 queryset=PagoDeuda.objects.filter(estado=PagoDeuda.Estado.PENDIENTE).order_by("fecha", "cuota_numero"),
@@ -400,6 +459,9 @@ def build_financial_context(user, today=None):
                 {
                     "acreedor": debt.acreedor,
                     "concepto": debt.concepto,
+                    "categoria": _category_labels(debt.categoria)[0],
+                    "subcategoria": _category_labels(debt.categoria)[1],
+                    "etiquetas": [tag.nombre for tag in debt.etiquetas.all()],
                     "saldo_total_pendiente": _money(debt.saldo_actual),
                     "es_diferida_en_cuotas": debt.numero_cuotas > 1,
                     "numero_cuotas": debt.numero_cuotas,
@@ -409,17 +471,14 @@ def build_financial_context(user, today=None):
                         debt.numero_cuotas - debt.cuotas_pagadas_previas - debt.cuotas_confirmadas_count,
                     ),
                     "valor_cuota_registrado": _money(debt.pago_minimo) if debt.pago_minimo is not None else None,
+                    "resumen_calendario": _debt_schedule_summary(debt, today),
                     "proximo_pago": (
                         {
                             "fecha": debt.pagos_pendientes_ordenados[0].fecha.isoformat(),
                             "monto": _money(debt.pagos_pendientes_ordenados[0].monto),
                             "cuota": debt.pagos_pendientes_ordenados[0].cuota_numero,
                             "estado_temporal": (
-                                "vencida"
-                                if debt.pagos_pendientes_ordenados[0].fecha < today
-                                else "vence_hoy"
-                                if debt.pagos_pendientes_ordenados[0].fecha == today
-                                else "futura"
+                                _payment_temporal_state(debt.pagos_pendientes_ordenados[0].fecha, today)
                             ),
                         }
                         if debt.pagos_pendientes_ordenados
@@ -449,6 +508,10 @@ def build_financial_context(user, today=None):
         },
         "presupuestos_del_mes": _money(budget_total),
         "principales_categorias_de_gasto": categories,
+        "gastos_por_etiqueta": {
+            "detalle": expense_tags,
+            "nota": "Cada etiqueta agrupa movimientos confirmados del periodo; un movimiento con varias etiquetas aparece en cada una.",
+        },
         "perfil_comportamiento_financiero": behavior_profile,
         "objetivos_financieros": serialize_goals(user),
         "memoria_recomendaciones": recommendation_memory(user, limit=8),
@@ -511,8 +574,15 @@ def query_movements(user, arguments):
     count = queryset.count()
     incomes = queryset.filter(tipo=MovimientoFinanciero.Tipo.INGRESO).aggregate(total=Sum("monto"))["total"] or Decimal("0")
     expenses = queryset.filter(tipo=MovimientoFinanciero.Tipo.GASTO).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    expense_tag_rows = list(
+        queryset.filter(tipo=MovimientoFinanciero.Tipo.GASTO, etiquetas__isnull=False)
+        .values("etiquetas__nombre")
+        .annotate(total=Sum("monto"), movimientos=Count("id"))
+        .order_by("-total", "etiquetas__nombre")
+    )
     rows = list(
         queryset.select_related("categoria", "categoria__parent", "cuenta", "metodo_pago")
+        .prefetch_related("etiquetas")
         .order_by("-fecha", "-creado")[:_query_limit(arguments)]
     )
     return {
@@ -525,6 +595,15 @@ def query_movements(user, arguments):
         "cantidad_total": count,
         "total_ingresos": _money(incomes),
         "total_gastos": _money(expenses),
+        "gastos_por_etiqueta": [
+            {
+                "etiqueta": row["etiquetas__nombre"],
+                "total": _money(row["total"]),
+                "movimientos": row["movimientos"],
+            }
+            for row in expense_tag_rows
+        ],
+        "nota_etiquetas": "Un movimiento con varias etiquetas se contabiliza dentro de cada etiqueta.",
         "detalle_completo": count <= len(rows),
         "registros": [
             {
@@ -539,6 +618,7 @@ def query_movements(user, arguments):
                     else item.categoria.nombre if item.categoria_id else "Sin categoría"
                 ),
                 "subcategoria": item.categoria.nombre if item.categoria_id and item.categoria.parent_id else "",
+                "etiquetas": [tag.nombre for tag in item.etiquetas.all()],
                 "cuenta": item.cuenta.nombre if item.cuenta_id else "",
                 "metodo_pago": item.metodo_pago.nombre if item.metodo_pago_id else "",
             }
@@ -621,12 +701,13 @@ def query_debts(user, arguments):
         queryset = queryset.filter(fecha_inicio__lte=generation_end)
     count = queryset.count()
     total = queryset.aggregate(total=Sum("saldo_actual"))["total"] or Decimal("0")
-    rows_queryset = queryset.annotate(
+    rows_queryset = queryset.select_related("categoria", "categoria__parent").annotate(
         cuotas_confirmadas_count=Count(
             "pagos",
             filter=Q(pagos__estado=PagoDeuda.Estado.CONFIRMADO, pagos__cuota_numero__isnull=False),
         )
     ).prefetch_related(
+        "etiquetas",
         Prefetch(
             "pagos",
             queryset=PagoDeuda.objects.filter(estado=PagoDeuda.Estado.PENDIENTE).order_by("fecha", "cuota_numero"),
@@ -648,12 +729,16 @@ def query_debts(user, arguments):
         record = {
             "acreedor": item.acreedor,
             "concepto": item.concepto,
+            "categoria": _category_labels(item.categoria)[0],
+            "subcategoria": _category_labels(item.categoria)[1],
+            "etiquetas": [tag.nombre for tag in item.etiquetas.all()],
             "estado": item.estado,
             "monto_inicial": _money(item.monto_inicial),
             "saldo_actual": _money(item.saldo_actual),
             "saldo_actual_es_capital_pendiente_no_pago_inmediato": True,
             "es_diferida_en_cuotas": item.numero_cuotas > 1,
             "valor_cuota_registrado": _money(item.pago_minimo) if item.pago_minimo is not None else None,
+            "resumen_calendario": _debt_schedule_summary(item, today),
             "numero_cuotas": item.numero_cuotas,
             "cuotas_pagadas": paid_installments,
             "cuotas_pendientes": max(0, item.numero_cuotas - paid_installments),
@@ -667,11 +752,7 @@ def query_debts(user, arguments):
                     "monto": _money(item.pagos_pendientes_ordenados[0].monto),
                     "cuota": item.pagos_pendientes_ordenados[0].cuota_numero,
                     "estado_temporal": (
-                        "vencida"
-                        if item.pagos_pendientes_ordenados[0].fecha < today
-                        else "vence_hoy"
-                        if item.pagos_pendientes_ordenados[0].fecha == today
-                        else "futura"
+                        _payment_temporal_state(item.pagos_pendientes_ordenados[0].fecha, today)
                     ),
                 }
                 if item.pagos_pendientes_ordenados
@@ -1438,7 +1519,7 @@ AI_TOOLS = [
         "type": "function",
         "function": {
             "name": "consultar_movimientos",
-            "description": "Consulta ingresos o gastos del usuario, incluidos registros recientes o de un rango de fechas. Devuelve totales exactos y hasta 50 registros.",
+            "description": "Consulta ingresos o gastos del usuario, incluidos registros recientes o de un rango de fechas. Devuelve totales exactos, categorías, etiquetas y hasta 50 registros.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1473,7 +1554,7 @@ AI_TOOLS = [
         "type": "function",
         "function": {
             "name": "consultar_deudas",
-            "description": "Consulta deudas activas, pagadas o canceladas, separando el capital total pendiente de las cuotas realmente vencidas o próximas. Distingue la fecha de generación u origen de la deuda de las fechas de pago de sus cuotas, y permite filtrar por ambos rangos.",
+            "description": "Consulta deudas activas, pagadas o canceladas con categoría, etiquetas, número de cuotas y resumen del calendario. Separa el capital total pendiente de las cuotas vencidas o próximas y permite filtrar por fechas de origen o pago.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -2097,6 +2178,7 @@ def ask_financial_assistant(user, question, history=None):
         "Para preguntas financieras, empieza con la respuesta concreta; evita sonar burocrático o repetir la pregunta. "
         "Usa frases breves y, cuando haya varios registros, una lista fácil de leer. "
         "Para cifras y registros usa exclusivamente CONTEXTO_FINANCIERO y los resultados de herramientas. "
+        "Distingue siempre datos registrados de estimaciones. Si haces una estimación, llámala estimación, muestra los supuestos y no la presentes como un vencimiento real. "
         "Usa perfil_comportamiento_financiero para comparar la situación actual con los hábitos del usuario y personalizar sugerencias. "
         "Usa objetivos_financieros para alinear el consejo con las metas y memoria_recomendaciones para dar seguimiento, aprender de lo aceptado o descartado y no repetir consejos sin motivo. "
         "Trata sus tendencias como patrones orientativos, no como certezas; si su calidad es baja, aclara que existe poco historial. "
@@ -2105,6 +2187,7 @@ def ask_financial_assistant(user, question, history=None):
         "Nunca inventes registros, importes, categorías ni causas. Distingue consumo de salida de caja. "
         "Distingue también saldo total de deuda de obligación inmediata: saldo_total_de_deudas_activas y saldo_actual son capital pendiente y no equivalen automáticamente a dinero exigible hoy. "
         "Si una deuda está diferida o tiene varias cuotas, evalúa la liquidez únicamente con cuotas vencidas, la próxima cuota y los pagos pendientes del periodo; no compares el saldo completo con el efectivo disponible ni recomiendes pagarlo íntegro, refinanciarlo o tratarlo como emergencia salvo que existan atrasos, una cuota impagable o el usuario lo solicite. "
+        "Antes de analizar una deuda, menciona a qué corresponde, cuántas cuotas tiene, cuántas quedan, cuánto está vencido y cuál es el siguiente pago según resumen_calendario. Si el calendario está incompleto, consulta deudas o pagos y reconoce lo que falte. "
         "Una variación negativa del saldo de deuda significa que está disminuyendo, no creciendo. Si faltan cuota o fechas, consulta las herramientas de deudas y pagos antes de concluir. "
         "Para registrar un ingreso o gasto expresado en lenguaje natural, usa inmediatamente preparar_movimiento_rapido cuando tengas tipo, monto y concepto; no consultes catálogos antes porque esa herramienta resuelve valores reales e inferencias seguras. "
         "Si preparar_movimiento_rapido devuelve un borrador, muestra exactamente sus datos, señala brevemente los campos inferidos y pide una única confirmación. "
