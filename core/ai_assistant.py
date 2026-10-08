@@ -339,7 +339,9 @@ def build_financial_context(user, today=None):
         for row in category_rows
     ]
 
-    active_debt = Deuda.objects.filter(usuario=user, estado=Deuda.Estado.ACTIVA).aggregate(total=Sum("saldo_actual"))["total"] or Decimal("0")
+    active_debts = Deuda.objects.filter(usuario=user, estado=Deuda.Estado.ACTIVA)
+    active_debt_count = active_debts.count()
+    active_debt = active_debts.aggregate(total=Sum("saldo_actual"))["total"] or Decimal("0")
     upcoming = PagoDeuda.objects.filter(
         deuda__usuario=user,
         deuda__estado=Deuda.Estado.ACTIVA,
@@ -351,6 +353,22 @@ def build_financial_context(user, today=None):
     upcoming_rows = list(
         upcoming.select_related("deuda")
         .order_by("fecha", "deuda__acreedor", "cuota_numero")[:MAX_UPCOMING_PAYMENT_DETAILS]
+    )
+    active_debt_rows = list(
+        active_debts.annotate(
+            cuotas_confirmadas_count=Count(
+                "pagos",
+                filter=Q(pagos__estado=PagoDeuda.Estado.CONFIRMADO, pagos__cuota_numero__isnull=False),
+            )
+        )
+        .prefetch_related(
+            Prefetch(
+                "pagos",
+                queryset=PagoDeuda.objects.filter(estado=PagoDeuda.Estado.PENDIENTE).order_by("fecha", "cuota_numero"),
+                to_attr="pagos_pendientes_ordenados",
+            )
+        )
+        .order_by("fecha_vencimiento", "acreedor")[:MAX_UPCOMING_PAYMENT_DETAILS]
     )
     budget_total = PresupuestoMensual.objects.filter(
         usuario=user,
@@ -372,6 +390,46 @@ def build_financial_context(user, today=None):
         "pagos_de_deuda_confirmados": _money(debt_payments),
         "balance_de_caja_del_periodo": _money(incomes - cash_outflow),
         "saldo_total_de_deudas_activas": _money(active_debt),
+        "interpretacion_saldo_deudas": (
+            "Es capital total pendiente; no implica que todo sea exigible hoy. "
+            "Para liquidez inmediata usa únicamente cuotas vencidas o próximas."
+        ),
+        "deudas_activas": {
+            "cantidad": active_debt_count,
+            "detalle": [
+                {
+                    "acreedor": debt.acreedor,
+                    "concepto": debt.concepto,
+                    "saldo_total_pendiente": _money(debt.saldo_actual),
+                    "es_diferida_en_cuotas": debt.numero_cuotas > 1,
+                    "numero_cuotas": debt.numero_cuotas,
+                    "cuotas_pagadas": debt.cuotas_pagadas_previas + debt.cuotas_confirmadas_count,
+                    "cuotas_pendientes": max(
+                        0,
+                        debt.numero_cuotas - debt.cuotas_pagadas_previas - debt.cuotas_confirmadas_count,
+                    ),
+                    "valor_cuota_registrado": _money(debt.pago_minimo) if debt.pago_minimo is not None else None,
+                    "proximo_pago": (
+                        {
+                            "fecha": debt.pagos_pendientes_ordenados[0].fecha.isoformat(),
+                            "monto": _money(debt.pagos_pendientes_ordenados[0].monto),
+                            "cuota": debt.pagos_pendientes_ordenados[0].cuota_numero,
+                            "estado_temporal": (
+                                "vencida"
+                                if debt.pagos_pendientes_ordenados[0].fecha < today
+                                else "vence_hoy"
+                                if debt.pagos_pendientes_ordenados[0].fecha == today
+                                else "futura"
+                            ),
+                        }
+                        if debt.pagos_pendientes_ordenados
+                        else None
+                    ),
+                }
+                for debt in active_debt_rows
+            ],
+            "detalle_completo": active_debt_count <= len(active_debt_rows),
+        },
         "saldo_disponible_total": _money(available_balance),
         "cuentas_activas": account_rows,
         "pagos_pendientes_proximos_30_dias": {
@@ -531,6 +589,7 @@ def query_debt_payments(user, arguments):
 
 
 def query_debts(user, arguments):
+    today = timezone.localdate()
     queryset = Deuda.objects.filter(usuario=user)
     payment_arguments = {
         "fecha_pago_desde": arguments.get("fecha_pago_desde", arguments.get("fecha_inicio")),
@@ -567,6 +626,12 @@ def query_debts(user, arguments):
             "pagos",
             filter=Q(pagos__estado=PagoDeuda.Estado.CONFIRMADO, pagos__cuota_numero__isnull=False),
         )
+    ).prefetch_related(
+        Prefetch(
+            "pagos",
+            queryset=PagoDeuda.objects.filter(estado=PagoDeuda.Estado.PENDIENTE).order_by("fecha", "cuota_numero"),
+            to_attr="pagos_pendientes_ordenados",
+        )
     ).order_by("estado", "fecha_vencimiento", "acreedor")
     if payment_start or payment_end:
         rows_queryset = rows_queryset.prefetch_related(
@@ -586,6 +651,9 @@ def query_debts(user, arguments):
             "estado": item.estado,
             "monto_inicial": _money(item.monto_inicial),
             "saldo_actual": _money(item.saldo_actual),
+            "saldo_actual_es_capital_pendiente_no_pago_inmediato": True,
+            "es_diferida_en_cuotas": item.numero_cuotas > 1,
+            "valor_cuota_registrado": _money(item.pago_minimo) if item.pago_minimo is not None else None,
             "numero_cuotas": item.numero_cuotas,
             "cuotas_pagadas": paid_installments,
             "cuotas_pendientes": max(0, item.numero_cuotas - paid_installments),
@@ -593,6 +661,22 @@ def query_debts(user, arguments):
             "fecha_generacion": item.fecha_inicio.isoformat(),
             "fecha_primera_cuota": item.fecha_primera_cuota.isoformat() if item.fecha_primera_cuota else None,
             "fecha_vencimiento": item.fecha_vencimiento.isoformat() if item.fecha_vencimiento else None,
+            "proximo_pago_pendiente": (
+                {
+                    "fecha_pago": item.pagos_pendientes_ordenados[0].fecha.isoformat(),
+                    "monto": _money(item.pagos_pendientes_ordenados[0].monto),
+                    "cuota": item.pagos_pendientes_ordenados[0].cuota_numero,
+                    "estado_temporal": (
+                        "vencida"
+                        if item.pagos_pendientes_ordenados[0].fecha < today
+                        else "vence_hoy"
+                        if item.pagos_pendientes_ordenados[0].fecha == today
+                        else "futura"
+                    ),
+                }
+                if item.pagos_pendientes_ordenados
+                else None
+            ),
         }
         if payment_start or payment_end:
             record["pagos_en_rango"] = [
@@ -616,6 +700,10 @@ def query_debts(user, arguments):
         },
         "cantidad_total": count,
         "saldo_total": _money(total),
+        "interpretacion_saldo_total": (
+            "Capital total pendiente de las deudas consultadas; no implica que todo sea exigible hoy. "
+            "La presión inmediata se determina con pagos pendientes y sus fechas."
+        ),
         "detalle_completo": count <= len(rows),
         "registros": records,
     }
@@ -1385,7 +1473,7 @@ AI_TOOLS = [
         "type": "function",
         "function": {
             "name": "consultar_deudas",
-            "description": "Consulta deudas activas, pagadas o canceladas y sus saldos. Distingue la fecha de generación u origen de la deuda de las fechas de pago de sus cuotas, y permite filtrar por ambos rangos.",
+            "description": "Consulta deudas activas, pagadas o canceladas, separando el capital total pendiente de las cuotas realmente vencidas o próximas. Distingue la fecha de generación u origen de la deuda de las fechas de pago de sus cuotas, y permite filtrar por ambos rangos.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -2015,6 +2103,9 @@ def ask_financial_assistant(user, question, history=None):
         "Para saldos de cuentas, registros recientes, periodos distintos al resumen actual, listados o fechas solicitadas, debes usar la herramienta adecuada. "
         "Las herramientas limitan los datos al usuario autenticado; nunca solicites SQL ni identificadores internos. "
         "Nunca inventes registros, importes, categorías ni causas. Distingue consumo de salida de caja. "
+        "Distingue también saldo total de deuda de obligación inmediata: saldo_total_de_deudas_activas y saldo_actual son capital pendiente y no equivalen automáticamente a dinero exigible hoy. "
+        "Si una deuda está diferida o tiene varias cuotas, evalúa la liquidez únicamente con cuotas vencidas, la próxima cuota y los pagos pendientes del periodo; no compares el saldo completo con el efectivo disponible ni recomiendes pagarlo íntegro, refinanciarlo o tratarlo como emergencia salvo que existan atrasos, una cuota impagable o el usuario lo solicite. "
+        "Una variación negativa del saldo de deuda significa que está disminuyendo, no creciendo. Si faltan cuota o fechas, consulta las herramientas de deudas y pagos antes de concluir. "
         "Para registrar un ingreso o gasto expresado en lenguaje natural, usa inmediatamente preparar_movimiento_rapido cuando tengas tipo, monto y concepto; no consultes catálogos antes porque esa herramienta resuelve valores reales e inferencias seguras. "
         "Si preparar_movimiento_rapido devuelve un borrador, muestra exactamente sus datos, señala brevemente los campos inferidos y pide una única confirmación. "
         "Si CONTEXTO_FINANCIERO contiene borrador_movimiento_pendiente y el último mensaje confirma, llama confirmar_movimiento_preparado con confirmado=true. Si pide cancelar, llama cancelar_movimiento_preparado. "

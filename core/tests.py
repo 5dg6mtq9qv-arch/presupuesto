@@ -1218,6 +1218,57 @@ class FinancialAssistantTests(TestCase):
         )
         self.assertTrue(payments["detalle_completo"])
 
+    def test_deuda_diferida_separa_capital_total_de_proxima_cuota(self):
+        date = datetime(2026, 10, 8).date()
+        debt = Deuda.objects.create(
+            usuario=self.user,
+            acreedor="Pichincha Miles",
+            concepto="Compra diferida",
+            monto_inicial="4437.00",
+            saldo_actual="4437.00",
+            pago_minimo="745.00",
+            numero_cuotas=6,
+            fecha_inicio=date,
+            fecha_primera_cuota=date + timedelta(days=10),
+            fecha_vencimiento=date + timedelta(days=160),
+            estado=Deuda.Estado.ACTIVA,
+        )
+        PagoDeuda.objects.create(
+            deuda=debt,
+            cuota_numero=1,
+            monto="745.00",
+            fecha=date + timedelta(days=10),
+            estado=PagoDeuda.Estado.PENDIENTE,
+        )
+
+        context = build_financial_context(self.user, today=date)
+        debt_detail = context["deudas_activas"]["detalle"][0]
+
+        self.assertEqual(context["saldo_total_de_deudas_activas"], "4437.00")
+        self.assertIn("no implica que todo sea exigible hoy", context["interpretacion_saldo_deudas"])
+        self.assertEqual(context["pagos_pendientes_proximos_30_dias"]["total"], "745.00")
+        self.assertTrue(debt_detail["es_diferida_en_cuotas"])
+        self.assertEqual(debt_detail["valor_cuota_registrado"], "745.00")
+        self.assertEqual(
+            debt_detail["proximo_pago"],
+            {
+                "fecha": "2026-10-18",
+                "monto": "745.00",
+                "cuota": 1,
+                "estado_temporal": "futura",
+            },
+        )
+
+        with patch("core.ai_assistant.timezone.localdate", return_value=date):
+            result = query_debts(self.user, {"estado": "activa"})
+        record = result["registros"][0]
+
+        self.assertIn("no implica que todo sea exigible hoy", result["interpretacion_saldo_total"])
+        self.assertTrue(record["saldo_actual_es_capital_pendiente_no_pago_inmediato"])
+        self.assertEqual(record["valor_cuota_registrado"], "745.00")
+        self.assertEqual(record["proximo_pago_pendiente"]["monto"], "745.00")
+        self.assertEqual(record["proximo_pago_pendiente"]["estado_temporal"], "futura")
+
     def test_herramienta_consulta_movimientos_por_fecha_sin_mezclar_usuarios(self):
         MovimientoFinanciero.objects.create(
             usuario=self.user,
