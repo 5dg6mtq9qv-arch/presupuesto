@@ -6,8 +6,18 @@ from io import BytesIO
 from PIL import Image, ImageOps
 from django.utils.dateparse import parse_date
 
-from .ai_assistant import AIAssistantError, _provider_message, user_can_use_ai
+from .ai_assistant import AIAssistantError, _parse_assistant_answer, _provider_message, user_can_use_ai
 from .ai_config import get_ai_runtime_config
+
+
+def receipt_error_for_display(value):
+    """Hide parser internals, including errors stored by older releases."""
+    text = str(value or "").strip()
+    lowered = text.lower()
+    technical_markers = ("expecting value", "jsondecodeerror", "line 1 column", "char 0")
+    if any(marker in lowered for marker in technical_markers):
+        return "No pudimos interpretar la respuesta de la IA. Completa los campos manualmente o prueba otra foto."
+    return text[:300]
 
 
 def analyze_receipt(user, image_field):
@@ -43,14 +53,26 @@ def analyze_receipt(user, image_field):
                 ],
             }],
             config,
-            max_tokens=300,
+            # Los modelos con razonamiento adaptativo comparten este límite
+            # entre razonamiento y respuesta. Dejar margen evita recibir solo
+            # bloques internos sin el JSON visible de la extracción.
+            max_tokens=900,
             usage_context={
                 "user": user,
                 "interaction_id": uuid.uuid4(),
                 "operation": "captura_comprobante",
             },
         )
-        data = json.loads(message.get("content") or "{}")
+        try:
+            data = _parse_assistant_answer(message.get("content"))
+        except AIAssistantError as exc:
+            raise AIAssistantError(
+                "No pudimos interpretar la respuesta de la IA. Completa los campos manualmente o prueba otra foto."
+            ) from exc
+        if not any(data.get(field) not in (None, "") for field in ("monto", "concepto", "fecha")):
+            raise AIAssistantError(
+                "No pudimos identificar datos legibles en el comprobante. Completa los campos manualmente."
+            )
         result = {
             "monto": data.get("monto"),
             "concepto": str(data.get("concepto") or "")[:160],
@@ -58,8 +80,10 @@ def analyze_receipt(user, image_field):
             "tipo": data.get("tipo") if data.get("tipo") in {"ingreso", "gasto"} else "gasto",
         }
         return result, ""
-    except (AIAssistantError, OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
-        return {}, str(exc)[:300] or "No se pudo analizar la imagen; completa los datos manualmente."
+    except AIAssistantError as exc:
+        return {}, receipt_error_for_display(exc) or "No se pudo analizar la imagen; completa los datos manualmente."
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return {}, "No se pudo analizar la imagen; completa los datos manualmente."
     finally:
         try:
             image_field.close()

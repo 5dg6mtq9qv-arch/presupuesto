@@ -16,7 +16,7 @@ from .ai_assistant import _provider_message
 from .ai_config import AIRuntimeConfig
 from .ai_pricing import estimate_ai_cost_usd
 from .models import ConsumoIA, PerfilUsuario, RegistroAuditoria
-from .receipt_capture import analyze_receipt
+from .receipt_capture import analyze_receipt, receipt_error_for_display
 
 
 class AIUsageTrackingTests(TestCase):
@@ -337,6 +337,56 @@ class AIUsageTrackingTests(TestCase):
         self.assertEqual(usage_context["user"], self.user)
         self.assertIsInstance(usage_context["interaction_id"], uuid.UUID)
         self.assertEqual(usage_context["operation"], "captura_comprobante")
+        self.assertEqual(mocked_provider.call_args.kwargs["max_tokens"], 900)
+
+    @patch("core.receipt_capture.user_can_use_ai", return_value=True)
+    @patch("core.receipt_capture.get_ai_runtime_config")
+    @patch("core.receipt_capture._provider_message")
+    def test_captura_acepta_json_envuelto_en_markdown(
+        self, mocked_provider, mocked_config, _mocked_can_use_ai
+    ):
+        mocked_config.return_value = self.config
+        mocked_provider.return_value = {
+            "content": 'Resultado:\n```json\n{"monto": 8.5, "concepto": "Almuerzo", "fecha": "2026-10-08", "tipo": "gasto"}\n```'
+        }
+        image_buffer = BytesIO()
+        Image.new("RGB", (4, 4), "white").save(image_buffer, format="PNG")
+        image = SimpleUploadedFile("comprobante.png", image_buffer.getvalue(), content_type="image/png")
+
+        resultado, error = analyze_receipt(self.user, image)
+
+        self.assertEqual(error, "")
+        self.assertEqual(resultado["monto"], 8.5)
+        self.assertEqual(resultado["concepto"], "Almuerzo")
+
+    @patch("core.receipt_capture.user_can_use_ai", return_value=True)
+    @patch("core.receipt_capture.get_ai_runtime_config")
+    @patch("core.receipt_capture._provider_message")
+    def test_captura_oculta_error_tecnico_si_la_respuesta_no_es_json(
+        self, mocked_provider, mocked_config, _mocked_can_use_ai
+    ):
+        mocked_config.return_value = self.config
+        mocked_provider.return_value = {"content": "No logro leer el comprobante."}
+        image_buffer = BytesIO()
+        Image.new("RGB", (4, 4), "white").save(image_buffer, format="PNG")
+        image = SimpleUploadedFile("comprobante.png", image_buffer.getvalue(), content_type="image/png")
+
+        resultado, error = analyze_receipt(self.user, image)
+
+        self.assertEqual(resultado, {})
+        self.assertEqual(
+            error,
+            "No pudimos interpretar la respuesta de la IA. Completa los campos manualmente o prueba otra foto.",
+        )
+        self.assertNotIn("Expecting value", error)
+
+    def test_oculta_error_json_guardado_por_version_anterior(self):
+        error = receipt_error_for_display("Expecting value: line 1 column 1 (char 0)")
+
+        self.assertEqual(
+            error,
+            "No pudimos interpretar la respuesta de la IA. Completa los campos manualmente o prueba otra foto.",
+        )
 
 
 class AIUsagePanelTests(TestCase):

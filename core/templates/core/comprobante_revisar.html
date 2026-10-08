@@ -7,7 +7,7 @@
     <img class="receipt-preview" src="{{ captura.archivo.url }}" alt="Comprobante cargado">
   </section>
   <section class="panel form-panel">
-    {% if captura.error_analisis %}<div class="alert alert-warning">{{ captura.error_analisis }}</div>{% endif %}
+    {% if analysis_error %}<div class="alert alert-warning">{{ analysis_error }}</div>{% endif %}
     <form class="form-grid" method="post" data-receipt-review-form>
       {% csrf_token %}
       {% include "core/includes/unfold_form_fields.html" %}

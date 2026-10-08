@@ -121,7 +121,7 @@ from .services import (
 )
 from .bank_import import CSVImportError, confirm_import, create_import_preview
 from .amortization_import import AmortizationImportError, parse_amortization_file as parse_amortization_pdf
-from .receipt_capture import analyze_receipt
+from .receipt_capture import analyze_receipt, receipt_error_for_display
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -4605,7 +4605,15 @@ def comprobante_revisar(request, pk):
         capture.estado = CapturaComprobante.Estado.BORRADOR
         capture.save(update_fields=("borrador", "estado", "actualizado"))
         return render(request, "core/comprobante_confirmar.html", {"captura": capture, "borrador": draft})
-    return render(request, "core/comprobante_revisar.html", {"form": form, "captura": capture})
+    return render(
+        request,
+        "core/comprobante_revisar.html",
+        {
+            "form": form,
+            "captura": capture,
+            "analysis_error": receipt_error_for_display(capture.error_analisis),
+        },
+    )
 
 
 @login_required
