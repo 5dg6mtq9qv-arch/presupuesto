@@ -1779,6 +1779,9 @@
     }
 
     @media (max-width: 640px) {
+      body.welcome-tour-open .sidebar {
+        padding-bottom: calc(min(58dvh, 500px) + 32px);
+      }
       .guided-tour-popover,
       .guided-tour-popover.is-centered {
         inset: auto 10px max(10px, env(safe-area-inset-bottom)) !important;
