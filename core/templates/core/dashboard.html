@@ -18,15 +18,17 @@
         <button class="guided-tour-skip" type="submit">Omitir</button>
       </form>
     </div>
-    <div class="guided-tour-icon"><span class="material-symbols-outlined" data-tour-icon>waving_hand</span></div>
-    <span class="eyebrow" data-tour-kicker>Bienvenido</span>
-    <h2 id="welcome-tour-title" data-tour-title>Hola, {{ user.first_name|default:user.username }}</h2>
-    <p data-tour-copy>Te mostraré cómo usar TaskBudget sin crear ni modificar ningún dato. Solo observa las zonas señaladas y avanza.</p>
-    <div class="guided-tour-details" data-tour-details hidden>
-      <strong data-tour-details-title>Qué debes completar</strong>
-      <ol data-tour-details-list></ol>
+    <div class="guided-tour-body">
+      <div class="guided-tour-icon"><span class="material-symbols-outlined" data-tour-icon>waving_hand</span></div>
+      <span class="eyebrow" data-tour-kicker>Bienvenido</span>
+      <h2 id="welcome-tour-title" data-tour-title>Hola, {{ user.first_name|default:user.username }}</h2>
+      <p data-tour-copy>Te mostraré cómo usar TaskBudget sin crear ni modificar ningún dato. Solo observa las zonas señaladas y avanza.</p>
+      <div class="guided-tour-details" data-tour-details hidden>
+        <strong data-tour-details-title>Qué debes completar</strong>
+        <ol data-tour-details-list></ol>
+      </div>
+      <div class="guided-tour-note" data-tour-note><span class="material-symbols-outlined">touch_app</span><span>Durante esta guía los controles señalados son solo demostrativos.</span></div>
     </div>
-    <div class="guided-tour-note" data-tour-note><span class="material-symbols-outlined">touch_app</span><span>Durante esta guía los controles señalados son solo demostrativos.</span></div>
     <div class="guided-tour-progress">
       <div><span data-tour-progress-bar></span></div>
       <small data-tour-progress-text>Preparando…</small>
@@ -486,6 +488,7 @@
     ];
     const steps = allSteps.filter(step => !step.target || document.querySelector(step.target));
     const popover = tour.querySelector("[data-tour-popover]");
+    const body = tour.querySelector(".guided-tour-body");
     const spotlight = tour.querySelector("[data-tour-spotlight]");
     const back = tour.querySelector("[data-tour-back]");
     const next = tour.querySelector("[data-tour-next]");
@@ -515,14 +518,12 @@
       const rect = target.getBoundingClientRect();
       const gap = 18;
       spotlight.style.cssText = `top:${rect.top - 6}px;left:${rect.left - 6}px;width:${rect.width + 12}px;height:${rect.height + 12}px`;
-      const popoverRect = popover.getBoundingClientRect();
       if (window.innerWidth <= 640) {
-        popover.style.left = "12px";
-        popover.style.top = rect.top > window.innerHeight / 2
-          ? "12px"
-          : `${Math.max(12, window.innerHeight - popoverRect.height - 12)}px`;
+        popover.style.removeProperty("top");
+        popover.style.removeProperty("left");
         return;
       }
+      const popoverRect = popover.getBoundingClientRect();
       const roomRight = window.innerWidth - rect.right;
       let left = roomRight >= popoverRect.width + gap ? rect.right + gap : rect.left - popoverRect.width - gap;
       let top = rect.top + (rect.height - popoverRect.height) / 2;
@@ -540,7 +541,15 @@
       const targetInSidebar = target?.closest(".sidebar");
       document.body.classList.toggle("sidebar-open", Boolean(targetInSidebar) && window.innerWidth <= 1024);
       if (targetInSidebar) {
-        target.scrollIntoView({block: "center", behavior: "auto"});
+        if (window.innerWidth <= 640) {
+          const sidebar = target.closest(".sidebar");
+          await new Promise(resolve => setTimeout(resolve, 190));
+          const targetRect = target.getBoundingClientRect();
+          const sidebarRect = sidebar.getBoundingClientRect();
+          sidebar.scrollTop += targetRect.top - sidebarRect.top - 74;
+        } else {
+          target.scrollIntoView({block: "center", behavior: "auto"});
+        }
         await new Promise(resolve => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)));
       }
       icon.textContent = step.icon;
@@ -548,6 +557,7 @@
       title.textContent = step.title;
       copy.textContent = step.copy;
       details.hidden = !step.details?.length;
+      body.scrollTop = 0;
       detailsTitle.textContent = step.detailsTitle || "Qué debes completar";
       detailsList.replaceChildren();
       (step.details || []).forEach((item, index) => {
