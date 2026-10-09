@@ -49,6 +49,18 @@ class ProductFeaturesTests(TestCase):
         self.assertContains(worker, "event.request.mode === 'navigate'")
         self.assertContains(worker, "url.pathname.startsWith('/static/')")
 
+    def test_public_home_explains_the_product_and_links_to_access(self):
+        self.client.logout()
+
+        response = self.client.get(reverse("inicio"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Tu dinero, claro")
+        self.assertContains(response, "Tres pasos para ver tus finanzas con claridad")
+        self.assertContains(response, reverse("login"))
+        self.assertContains(response, reverse("registro"))
+        self.assertContains(response, "/static/core/branding/finanzas-claras-logo.png")
+
     def test_dashboard_uses_pdf_as_primary_report(self):
         dashboard = self.client.get(reverse("dashboard"))
         self.assertContains(dashboard, "Informe PDF")

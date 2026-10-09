@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f766e">
+  <meta name="description" content="Finanzas Claras reúne tus cuentas, ingresos, gastos, presupuestos y deudas para ayudarte a entender y controlar tu dinero.">
+  <link rel="icon" href="/static/core/branding/finanzas-claras-icon.png" type="image/png">
+  <link rel="apple-touch-icon" href="/static/core/branding/finanzas-claras-icon.png">
+  <link rel="manifest" href="{% url 'app_manifest' %}">
+  <title>Finanzas Claras · Organiza, entiende y controla tu dinero</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..24,400,0,0">
+  <style>
+    :root { --ink:#10233f; --muted:#607087; --primary:#0f8f83; --primary-dark:#0b6f68; --primary-soft:#e9f8f5; --navy:#07366b; --line:#dfe8ef; --surface:#fff; --background:#f6f9fb; --shadow:0 24px 70px rgba(16,35,63,.12); }
+    * { box-sizing:border-box; }
+    html { scroll-behavior:smooth; }
+    body { margin:0; background:var(--background); color:var(--ink); font:15px/1.6 Inter,sans-serif; }
+    a { color:inherit; text-decoration:none; }
+    button, a { -webkit-tap-highlight-color:transparent; }
+    .material-symbols-outlined { font-size:22px; line-height:1; }
+    .container { width:min(1140px, calc(100% - 36px)); margin-inline:auto; }
+    .landing-header { position:sticky; top:0; z-index:30; padding:14px 0; background:rgba(246,249,251,.84); backdrop-filter:blur(16px); }
+    .nav { min-height:68px; display:flex; align-items:center; gap:26px; padding:9px 12px 9px 18px; border:1px solid rgba(223,232,239,.92); border-radius:22px; background:rgba(255,255,255,.94); box-shadow:0 10px 35px rgba(16,35,63,.07); }
+    .nav-logo { width:206px; height:auto; display:block; }
+    .nav-links { display:flex; align-items:center; gap:28px; margin-left:auto; color:var(--muted); font-size:13px; font-weight:700; }
+    .nav-links a:hover { color:var(--primary); }
+    .nav-actions { display:flex; gap:9px; }
+    .button { min-height:44px; display:inline-flex; align-items:center; justify-content:center; gap:8px; border:1px solid transparent; border-radius:12px; padding:10px 18px; font-weight:800; line-height:1.2; transition:transform .18s, box-shadow .18s, background .18s; }
+    .button:hover { transform:translateY(-2px); }
+    .button-primary { color:#fff; background:var(--ink); box-shadow:0 10px 24px rgba(16,35,63,.18); }
+    .button-primary:hover { background:var(--navy); }
+    .button-light { border-color:var(--line); background:#fff; color:var(--ink); }
+    .hero { position:relative; overflow:hidden; padding:82px 0 76px; }
+    .hero::before { content:""; position:absolute; width:620px; height:620px; right:-180px; top:-240px; border-radius:50%; background:radial-gradient(circle, rgba(15,143,131,.16), transparent 68%); pointer-events:none; }
+    .hero-grid { display:grid; grid-template-columns:minmax(0,.9fr) minmax(500px,1.1fr); gap:68px; align-items:center; }
+    .eyebrow { display:inline-flex; align-items:center; gap:8px; margin-bottom:22px; border:1px solid #bfe7e2; border-radius:999px; background:#fff; color:var(--primary-dark); padding:7px 12px; font-size:12px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; }
+    .eyebrow::before { content:""; width:8px; height:8px; border-radius:50%; background:var(--primary); box-shadow:0 0 0 5px rgba(15,143,131,.12); }
+    .hero h1 { max-width:670px; margin:0; font-size:clamp(42px,6vw,72px); line-height:1.04; letter-spacing:-.055em; }
+    .hero h1 span { color:var(--primary); }
+    .hero-copy { max-width:610px; margin:24px 0 30px; color:var(--muted); font-size:18px; }
+    .hero-actions { display:flex; flex-wrap:wrap; gap:12px; }
+    .hero-note { display:flex; flex-wrap:wrap; gap:18px; margin-top:25px; color:var(--muted); font-size:12px; font-weight:650; }
+    .hero-note span { display:inline-flex; align-items:center; gap:6px; }
+    .hero-note .material-symbols-outlined { color:var(--primary); font-size:17px; }
+    .dashboard-preview { position:relative; padding:14px; border:1px solid rgba(255,255,255,.8); border-radius:28px; background:linear-gradient(145deg, rgba(255,255,255,.92), rgba(233,248,245,.8)); box-shadow:var(--shadow); transform:rotate(1deg); }
+    .dashboard-window { overflow:hidden; border:1px solid var(--line); border-radius:20px; background:#fff; transform:rotate(-1deg); }
+    .window-top { height:45px; display:flex; align-items:center; gap:7px; padding:0 16px; border-bottom:1px solid var(--line); background:#fbfcfd; }
+    .window-top i { width:8px; height:8px; display:block; border-radius:50%; background:#d8e1e9; }
+    .window-top strong { margin-left:6px; font-size:11px; }
+    .window-body { display:grid; grid-template-columns:116px minmax(0,1fr); min-height:380px; }
+    .preview-sidebar { padding:20px 12px; background:#10233f; }
+    .preview-brand { width:76px; height:auto; display:block; margin:0 auto 25px; filter:brightness(0) invert(1); opacity:.92; }
+    .preview-link { height:9px; margin:0 5px 17px; border-radius:99px; background:rgba(255,255,255,.18); }
+    .preview-link.active { background:#36b8aa; }
+    .preview-main { padding:22px; background:#f8fafc; }
+    .preview-heading { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
+    .preview-heading h3 { margin:0; font-size:16px; }
+    .preview-avatar { width:28px; height:28px; border-radius:9px; background:var(--primary-soft); }
+    .preview-metrics { display:grid; grid-template-columns:repeat(3,1fr); gap:9px; }
+    .preview-metric { border:1px solid #e5ebf0; border-radius:12px; background:#fff; padding:12px; }
+    .preview-metric small { display:block; color:#8491a1; font-size:8px; font-weight:800; text-transform:uppercase; }
+    .preview-metric strong { display:block; margin-top:5px; font-size:14px; }
+    .preview-metric.positive strong { color:#169873; }
+    .preview-chart { height:150px; display:flex; align-items:end; gap:11px; margin-top:12px; border:1px solid #e5ebf0; border-radius:14px; background:repeating-linear-gradient(to top,#fff 0,#fff 36px,#edf1f5 37px); padding:22px 18px 16px; }
+    .bar-pair { height:100%; flex:1; display:flex; align-items:end; justify-content:center; gap:4px; }
+    .bar { width:16px; border-radius:6px 6px 2px 2px; background:#4dbb83; }
+    .bar.expense { background:#f3a13b; }
+    .preview-list { display:grid; grid-template-columns:1fr 1fr; gap:9px; margin-top:12px; }
+    .preview-row { display:flex; align-items:center; gap:8px; border:1px solid #e5ebf0; border-radius:11px; background:#fff; padding:9px; }
+    .preview-row i { width:26px; height:26px; border-radius:8px; background:var(--primary-soft); }
+    .preview-row span { height:6px; flex:1; border-radius:99px; background:#e6ebef; }
+    .benefit-strip { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-top:36px; }
+    .benefit { display:flex; align-items:center; gap:12px; border:1px solid var(--line); border-radius:16px; background:rgba(255,255,255,.8); padding:15px; }
+    .benefit-icon, .feature-icon, .step-number { flex:none; display:grid; place-items:center; color:var(--primary); background:var(--primary-soft); }
+    .benefit-icon { width:38px; height:38px; border-radius:12px; }
+    .benefit strong, .benefit small { display:block; }
+    .benefit strong { font-size:13px; }
+    .benefit small { color:var(--muted); font-size:11px; }
+    .section { padding:94px 0; }
+    .section-white { background:#fff; }
+    .section-heading { max-width:690px; margin:0 auto 48px; text-align:center; }
+    .section-heading > span { color:var(--primary); font-size:12px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
+    .section-heading h2 { margin:8px 0 12px; font-size:clamp(30px,4vw,46px); line-height:1.12; letter-spacing:-.035em; }
+    .section-heading p { margin:0; color:var(--muted); font-size:17px; }
+    .feature-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:18px; }
+    .feature-card { min-height:245px; border:1px solid var(--line); border-radius:24px; background:#fff; padding:27px; transition:transform .2s, box-shadow .2s, border-color .2s; }
+    .feature-card:hover { transform:translateY(-5px); border-color:#bfe7e2; box-shadow:0 18px 40px rgba(16,35,63,.08); }
+    .feature-card.featured { grid-column:span 2; color:#fff; border-color:transparent; background:var(--ink); }
+    .feature-icon { width:48px; height:48px; margin-bottom:22px; border-radius:15px; }
+    .featured .feature-icon { color:#7ce0d5; background:rgba(255,255,255,.1); }
+    .feature-card h3 { margin:0 0 9px; font-size:20px; }
+    .feature-card p { margin:0; color:var(--muted); }
+    .featured p { max-width:620px; color:#b9c5d3; }
+    .feature-points { display:flex; flex-wrap:wrap; gap:8px; margin-top:24px; }
+    .feature-points span { border:1px solid rgba(255,255,255,.14); border-radius:999px; background:rgba(255,255,255,.07); padding:6px 10px; color:#d7e1eb; font-size:11px; font-weight:700; }
+    .steps { display:grid; grid-template-columns:repeat(3,1fr); gap:34px; }
+    .step { position:relative; padding:25px; text-align:center; }
+    .step:not(:last-child)::after { content:""; position:absolute; width:42%; right:-21%; top:48px; border-top:2px dashed #cddbe4; }
+    .step-number { width:54px; height:54px; margin:0 auto 20px; border-radius:18px; font-size:18px; font-weight:850; }
+    .step h3 { margin:0 0 8px; font-size:19px; }
+    .step p { margin:0; color:var(--muted); }
+    .trust-panel { display:grid; grid-template-columns:1fr auto; gap:40px; align-items:center; overflow:hidden; border-radius:30px; background:linear-gradient(135deg,#10233f,#07366b); color:#fff; padding:52px; box-shadow:var(--shadow); }
+    .trust-panel h2 { max-width:700px; margin:0 0 12px; font-size:clamp(28px,4vw,42px); line-height:1.15; }
+    .trust-panel p { max-width:720px; margin:0; color:#c0ccda; }
+    .trust-icon { width:100px; height:100px; display:grid; place-items:center; border-radius:28px; background:rgba(255,255,255,.1); color:#74d9ce; }
+    .trust-icon .material-symbols-outlined { font-size:52px; }
+    .final-cta { text-align:center; }
+    .final-cta h2 { max-width:780px; margin:0 auto 15px; font-size:clamp(34px,5vw,54px); line-height:1.08; letter-spacing:-.04em; }
+    .final-cta p { margin:0 auto 28px; color:var(--muted); font-size:17px; }
+    .final-cta .hero-actions { justify-content:center; }
+    .landing-footer { padding:30px 0 44px; }
+    .footer-inner { display:flex; align-items:center; justify-content:space-between; gap:24px; padding-top:25px; border-top:1px solid var(--line); color:var(--muted); font-size:12px; }
+    .footer-brand { width:175px; height:auto; }
+    @media (max-width:960px) {
+      .nav-links { display:none; }
+      .hero-grid { grid-template-columns:1fr; gap:54px; }
+      .hero-copy { max-width:720px; }
+      .dashboard-preview { max-width:700px; margin:auto; }
+      .benefit-strip { grid-template-columns:repeat(2,1fr); }
+      .feature-grid { grid-template-columns:repeat(2,1fr); }
+      .feature-card.featured { grid-column:span 2; }
+    }
+    @media (max-width:640px) {
+      .container { width:min(100% - 24px,1140px); }
+      .landing-header { padding:8px 0; }
+      .nav { min-height:60px; padding:8px 9px 8px 13px; border-radius:17px; }
+      .nav-logo { width:145px; }
+      .nav-actions .button-light { display:none; }
+      .nav-actions .button { min-height:40px; padding:8px 13px; font-size:12px; }
+      .hero { padding:55px 0 62px; }
+      .hero h1 { font-size:43px; }
+      .hero-copy { font-size:16px; }
+      .hero-actions .button { width:100%; }
+      .dashboard-preview { padding:7px; border-radius:20px; }
+      .window-body { grid-template-columns:64px minmax(0,1fr); min-height:320px; }
+      .preview-sidebar { padding:15px 8px; }
+      .preview-brand { width:42px; }
+      .preview-main { padding:14px 10px; }
+      .preview-metrics { gap:5px; }
+      .preview-metric { padding:8px 6px; }
+      .preview-metric strong { font-size:10px; }
+      .preview-chart { gap:5px; padding-inline:8px; }
+      .bar { width:9px; }
+      .preview-list { grid-template-columns:1fr; }
+      .benefit-strip, .feature-grid, .steps { grid-template-columns:1fr; }
+      .feature-card.featured { grid-column:auto; }
+      .step:not(:last-child)::after { display:none; }
+      .section { padding:72px 0; }
+      .trust-panel { grid-template-columns:1fr; padding:32px 25px; }
+      .trust-icon { display:none; }
+      .footer-inner { flex-direction:column; text-align:center; }
+    }
+    @media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } * { transition:none !important; } }
+  </style>
+</head>
+<body>
+  <header class="landing-header">
+    <nav class="container nav" aria-label="Navegación principal">
+      <a href="{% url 'inicio' %}" aria-label="Finanzas Claras, inicio"><img class="nav-logo" src="/static/core/branding/finanzas-claras-logo.png" alt="Finanzas Claras"></a>
+      <div class="nav-links"><a href="#funciones">Funciones</a><a href="#como-funciona">Cómo funciona</a><a href="#confianza">Confianza</a></div>
+      <div class="nav-actions">
+        {% if user.is_authenticated %}<a class="button button-primary" href="{% url 'dashboard' %}">Ir a mi panel<span class="material-symbols-outlined">arrow_forward</span></a>
+        {% else %}<a class="button button-light" href="{% url 'login' %}">Iniciar sesión</a><a class="button button-primary" href="{% url 'registro' %}">Solicitar acceso</a>{% endif %}
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="container">
+        <div class="hero-grid">
+          <div>
+            <span class="eyebrow">Tu panorama financiero en un solo lugar</span>
+            <h1>Tu dinero, claro. <span>Tus decisiones, mejores.</span></h1>
+            <p class="hero-copy">Reúne cuentas, ingresos, gastos, presupuestos y deudas para saber cuánto tienes, en qué se va y qué puedes mejorar.</p>
+            <div class="hero-actions">
+              {% if user.is_authenticated %}<a class="button button-primary" href="{% url 'dashboard' %}">Abrir mi panel<span class="material-symbols-outlined">arrow_forward</span></a>
+              {% else %}<a class="button button-primary" href="{% url 'registro' %}">Empezar a organizarme<span class="material-symbols-outlined">arrow_forward</span></a><a class="button button-light" href="{% url 'login' %}">Ya tengo una cuenta</a>{% endif %}
+            </div>
+            <div class="hero-note"><span><span class="material-symbols-outlined">check_circle</span>Información separada por usuario</span><span><span class="material-symbols-outlined">check_circle</span>IA opcional</span><span><span class="material-symbols-outlined">check_circle</span>Diseñado en español</span></div>
+          </div>
+          <div class="dashboard-preview" aria-label="Vista previa ilustrativa del panel financiero">
+            <div class="dashboard-window">
+              <div class="window-top"><i></i><i></i><i></i><strong>Mi panorama financiero</strong></div>
+              <div class="window-body">
+                <aside class="preview-sidebar"><img class="preview-brand" src="/static/core/branding/finanzas-claras-icon.png" alt=""><div class="preview-link active"></div><div class="preview-link"></div><div class="preview-link"></div><div class="preview-link"></div><div class="preview-link"></div></aside>
+                <div class="preview-main">
+                  <div class="preview-heading"><h3>Balance general</h3><span class="preview-avatar"></span></div>
+                  <div class="preview-metrics"><div class="preview-metric positive"><small>Disponible</small><strong>$2.840</strong></div><div class="preview-metric"><small>Ingresos</small><strong>$1.630</strong></div><div class="preview-metric"><small>Gastos</small><strong>$778</strong></div></div>
+                  <div class="preview-chart"><div class="bar-pair"><span class="bar" style="height:38%"></span><span class="bar expense" style="height:20%"></span></div><div class="bar-pair"><span class="bar" style="height:54%"></span><span class="bar expense" style="height:35%"></span></div><div class="bar-pair"><span class="bar" style="height:44%"></span><span class="bar expense" style="height:28%"></span></div><div class="bar-pair"><span class="bar" style="height:82%"></span><span class="bar expense" style="height:48%"></span></div><div class="bar-pair"><span class="bar" style="height:72%"></span><span class="bar expense" style="height:56%"></span></div></div>
+                  <div class="preview-list"><div class="preview-row"><i></i><span></span></div><div class="preview-row"><i></i><span></span></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="benefit-strip">
+          <div class="benefit"><span class="benefit-icon material-symbols-outlined">account_balance_wallet</span><span><strong>Cuentas y saldos</strong><small>Tu dinero disponible</small></span></div>
+          <div class="benefit"><span class="benefit-icon material-symbols-outlined">monitoring</span><span><strong>Análisis visual</strong><small>Tendencias comprensibles</small></span></div>
+          <div class="benefit"><span class="benefit-icon material-symbols-outlined">receipt_long</span><span><strong>Deudas y cuotas</strong><small>Pagos bajo control</small></span></div>
+          <div class="benefit"><span class="benefit-icon material-symbols-outlined">picture_as_pdf</span><span><strong>Informes PDF</strong><small>Resumen para descargar</small></span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section section-white" id="funciones">
+      <div class="container">
+        <div class="section-heading"><span>Todo conectado</span><h2>Las herramientas necesarias para entender tu situación real</h2><p>Cada registro alimenta automáticamente tu balance, análisis y proyecciones.</p></div>
+        <div class="feature-grid">
+          <article class="feature-card featured"><span class="feature-icon material-symbols-outlined">smart_toy</span><h3>Asistente financiero con IA opcional</h3><p>Consulta tus datos con lenguaje natural, recibe explicaciones y prepara movimientos. Tú revisas y confirmas cualquier acción que modifique información.</p><div class="feature-points"><span>Preguntas claras</span><span>Recomendaciones</span><span>Confirmación humana</span></div></article>
+          <article class="feature-card"><span class="feature-icon material-symbols-outlined">sync_alt</span><h3>Ingresos y gastos</h3><p>Registra cada movimiento con cuenta, categoría, forma de pago y comprobante.</p></article>
+          <article class="feature-card"><span class="feature-icon material-symbols-outlined">price_check</span><h3>Presupuestos</h3><p>Define límites por categoría y detecta a tiempo dónde necesitas ajustar.</p></article>
+          <article class="feature-card"><span class="feature-icon material-symbols-outlined">event_repeat</span><h3>Movimientos recurrentes</h3><p>Organiza pagos e ingresos que se repiten sin comenzar desde cero cada mes.</p></article>
+          <article class="feature-card"><span class="feature-icon material-symbols-outlined">credit_score</span><h3>Deudas y cuotas</h3><p>Consulta saldos, próximos vencimientos y confirma desde qué cuenta pagaste.</p></article>
+          <article class="feature-card"><span class="feature-icon material-symbols-outlined">analytics</span><h3>Reportes y proyección</h3><p>Compara periodos, revisa tendencias y descarga informes financieros en PDF.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="como-funciona">
+      <div class="container">
+        <div class="section-heading"><span>Simple desde el inicio</span><h2>Tres pasos para ver tus finanzas con claridad</h2><p>La guía inicial te acompaña sin modificar datos hasta que decidas registrar información.</p></div>
+        <div class="steps"><article class="step"><span class="step-number">1</span><h3>Configura tus cuentas</h3><p>Indica dónde guardas tu dinero y con qué saldo comienzas.</p></article><article class="step"><span class="step-number">2</span><h3>Registra tus movimientos</h3><p>Añade ingresos, gastos, transferencias, deudas y pagos.</p></article><article class="step"><span class="step-number">3</span><h3>Entiende y decide</h3><p>Consulta el balance, identifica patrones y ajusta tu presupuesto.</p></article></div>
+      </div>
+    </section>
+
+    <section class="section section-white" id="confianza">
+      <div class="container"><div class="trust-panel"><div><h2>Tu información financiera permanece dentro de tu espacio personal</h2><p>Cada usuario accede únicamente a sus propios registros. El asistente de IA es opcional y las acciones que cambian datos requieren revisión o confirmación.</p></div><span class="trust-icon"><span class="material-symbols-outlined">shield_lock</span></span></div></div>
+    </section>
+
+    <section class="section final-cta">
+      <div class="container"><h2>Deja de adivinar qué pasó con tu dinero</h2><p>Construye un panorama claro, movimiento por movimiento.</p><div class="hero-actions">{% if user.is_authenticated %}<a class="button button-primary" href="{% url 'dashboard' %}">Continuar a mi panel<span class="material-symbols-outlined">arrow_forward</span></a>{% else %}<a class="button button-primary" href="{% url 'registro' %}">Solicitar acceso<span class="material-symbols-outlined">arrow_forward</span></a><a class="button button-light" href="{% url 'login' %}">Iniciar sesión</a>{% endif %}</div></div>
+    </section>
+  </main>
+
+  <footer class="landing-footer"><div class="container footer-inner"><img class="footer-brand" src="/static/core/branding/finanzas-claras-logo.png" alt="Finanzas Claras"><span>Organiza, entiende y controla tu dinero.</span><span>Desarrollado por Félix IoT</span></div></footer>
+</body>
+</html>

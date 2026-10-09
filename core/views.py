@@ -1291,6 +1291,10 @@ def _destinatario_contacto():
     return "contacto@felixiot.site"
 
 
+def inicio(request):
+    return render(request, "core/inicio.html")
+
+
 @login_required
 def contacto(request):
     form = ContactoForm(request.POST or None)
@@ -4627,7 +4631,7 @@ def app_manifest(request):
             "name": "Finanzas Claras",
             "short_name": "Finanzas Claras",
             "description": "Organiza, entiende y controla tus ingresos, gastos, cuentas y deudas.",
-            "start_url": "/",
+            "start_url": reverse("dashboard"),
             "scope": "/",
             "display": "standalone",
             "background_color": "#f5f6fa",
