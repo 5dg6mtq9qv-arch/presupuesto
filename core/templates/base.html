@@ -247,11 +247,28 @@
 
     .footer {
       grid-column: 2;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
       border-top: 1px solid var(--line);
       background: var(--surface);
       color: var(--muted);
       padding: 16px 24px;
     }
+    .footer-company, .footer-actions { display: flex; align-items: center; gap: 10px; }
+    .footer-company-copy strong, .footer-company-copy span { display: block; }
+    .footer-company-copy span { margin-top: 2px; font-size: 11px; }
+    .contact-layout { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(260px, .8fr); gap: 20px; align-items: start; }
+    .contact-layout .panel { margin-bottom: 0; }
+    .contact-icon { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 14px; color: var(--primary); background: var(--primary-soft); }
+    .contact-icon .material-symbols-outlined { font-size: 27px; }
+    .company-card { display: grid; justify-items: start; gap: 10px; background: linear-gradient(145deg, #fff, #effbf9); }
+    .company-card .brand-mark { width: 48px; height: 48px; margin-bottom: 8px; }
+    .company-card h2, .company-card p { margin: 0; }
+    .company-card p { color: var(--muted); line-height: 1.55; }
+    .company-card a { display: inline-flex; align-items: center; gap: 7px; font-weight: 750; overflow-wrap: anywhere; }
+    .company-card small { color: var(--muted); }
 
     .panel {
       background: var(--surface);
@@ -339,59 +356,57 @@
     .onboarding-step.is-done { border-color:#bbf7d0; background:#f0fdf4; }
     .onboarding-step.is-done .step-status { color:var(--success); }
     body.welcome-tour-open { overflow: hidden; }
-    .welcome-tour-overlay {
+    .guided-tour { position: fixed; inset: 0; z-index: 120; pointer-events: none; }
+    .guided-tour-spotlight {
       position: fixed;
-      inset: 0;
-      z-index: 120;
-      display: grid;
-      place-items: center;
-      padding: 20px;
-      background: rgba(15, 23, 42, .58);
-      backdrop-filter: blur(7px);
+      z-index: 121;
+      border: 3px solid #5eead4;
+      border-radius: 14px;
+      background: transparent;
+      box-shadow: 0 0 0 9999px rgba(15, 23, 42, .68), 0 0 0 7px rgba(45, 212, 191, .2);
+      transition: top .22s ease, left .22s ease, width .22s ease, height .22s ease;
     }
-    .welcome-tour-card {
-      width: min(620px, 100%);
-      max-height: min(760px, calc(100dvh - 40px));
+    .guided-tour-spotlight[hidden] { display: block !important; inset: 50% auto auto 50%; width: 1px; height: 1px; border: 0; border-radius: 999px; box-shadow: 0 0 0 9999px rgba(15, 23, 42, .68); }
+    .guided-tour-popover {
+      position: fixed;
+      z-index: 122;
+      width: min(460px, calc(100vw - 24px));
+      max-height: calc(100dvh - 24px);
       overflow-y: auto;
-      border: 1px solid rgba(255, 255, 255, .55);
-      border-radius: 22px;
+      border: 1px solid rgba(255, 255, 255, .7);
+      border-radius: 20px;
       background: var(--surface);
-      box-shadow: 0 28px 90px rgba(15, 23, 42, .28);
+      box-shadow: 0 24px 70px rgba(15, 23, 42, .34);
+      padding: 22px;
+      pointer-events: auto;
+      animation: guided-tour-enter .2s ease;
     }
-    .welcome-tour-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-      padding: 18px 22px;
-      border-bottom: 1px solid var(--line);
-    }
-    .welcome-tour-brand { display: flex; align-items: center; gap: 10px; font-weight: 800; }
-    .welcome-tour-brand .brand-mark { width: 32px; height: 32px; margin: 0; border: 0; border-radius: 10px; }
-    .welcome-tour-skip { margin: 0; }
-    .welcome-tour-skip button { border: 0; background: transparent; color: var(--muted); cursor: pointer; font: inherit; font-weight: 700; padding: 7px; }
-    .welcome-tour-skip button:hover { color: var(--text); }
-    .welcome-tour-progress { display: flex; align-items: center; gap: 8px; padding: 20px 24px 0; }
-    .welcome-tour-progress-bar { height: 6px; flex: 1; overflow: hidden; border-radius: 99px; background: var(--line); }
-    .welcome-tour-progress-bar span { display: block; width: 33.333%; height: 100%; border-radius: inherit; background: var(--primary); transition: width .2s ease; }
-    .welcome-tour-progress small { min-width: 45px; color: var(--muted); font-weight: 750; text-align: right; }
-    .welcome-tour-content { padding: 30px 34px 24px; text-align: center; }
-    .welcome-tour-panel { display: none; }
-    .welcome-tour-panel.is-active { display: block; animation: welcome-tour-enter .2s ease; }
-    .welcome-tour-icon { width: 78px; height: 78px; display: grid; place-items: center; margin: 0 auto 20px; border-radius: 24px; color: var(--primary); background: var(--primary-soft); }
-    .welcome-tour-icon .material-symbols-outlined { font-size: 40px; }
-    .welcome-tour-panel h2 { margin: 0; font-size: 25px; }
-    .welcome-tour-panel > p { max-width: 480px; margin: 12px auto 0; color: var(--muted); font-size: 15px; line-height: 1.6; }
-    .welcome-tour-points { display: grid; gap: 10px; margin: 24px 0 0; text-align: left; }
-    .welcome-tour-point { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 11px; align-items: start; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-soft); padding: 12px 14px; }
-    .welcome-tour-point .material-symbols-outlined { color: var(--primary); margin-top: 1px; }
-    .welcome-tour-point strong, .welcome-tour-point small { display: block; }
-    .welcome-tour-point small { margin-top: 3px; color: var(--muted); line-height: 1.4; }
-    .welcome-tour-actions { display: flex; justify-content: space-between; gap: 10px; padding: 0 24px 24px; }
-    .welcome-tour-actions .btn { min-width: 120px; justify-content: center; }
-    .welcome-tour-start { display: none; margin: 0; }
-    .welcome-tour-start.is-visible { display: block; }
-    @keyframes welcome-tour-enter { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: translateX(0); } }
+    .guided-tour-popover.is-centered { top: 50%; left: 50%; transform: translate(-50%, -50%); }
+    .guided-tour-topline, .guided-tour-actions, .guided-tour-progress { display: flex; align-items: center; }
+    .guided-tour-topline { justify-content: space-between; gap: 16px; }
+    .guided-tour-topline form, .guided-tour-actions form { margin: 0; }
+    .guided-tour-label { display: inline-flex; align-items: center; gap: 6px; color: var(--primary); font-size: 12px; font-weight: 850; text-transform: uppercase; }
+    .guided-tour-label .material-symbols-outlined { font-size: 18px; }
+    .guided-tour-skip { border: 0; background: transparent; color: var(--muted); cursor: pointer; font: inherit; font-weight: 750; padding: 5px; }
+    .guided-tour-skip:hover { color: var(--text); }
+    .guided-tour-icon { width: 54px; height: 54px; display: grid; place-items: center; margin: 22px 0 16px; border-radius: 16px; color: var(--primary); background: var(--primary-soft); }
+    .guided-tour-icon .material-symbols-outlined { font-size: 30px; }
+    .guided-tour-popover h2 { margin: 5px 0 9px; font-size: 23px; line-height: 1.18; }
+    .guided-tour-popover > p { margin: 0; color: var(--muted); line-height: 1.55; }
+    .guided-tour-details { margin-top: 16px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface-soft); padding: 12px; }
+    .guided-tour-details > strong { display: block; margin-bottom: 9px; font-size: 12px; }
+    .guided-tour-details ol { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+    .guided-tour-details li { display: grid; grid-template-columns: 23px minmax(0, 1fr); gap: 8px; align-items: start; color: var(--text); font-size: 12px; line-height: 1.4; }
+    .guided-tour-details li > span:first-child { width: 21px; height: 21px; display: grid; place-items: center; border-radius: 7px; color: var(--primary); background: var(--primary-soft); font-size: 10px; font-weight: 850; }
+    .guided-tour-note { display: grid; grid-template-columns: auto 1fr; gap: 9px; align-items: start; margin-top: 16px; border-radius: 12px; color: #115e59; background: #ecfdf5; padding: 11px 12px; font-size: 13px; line-height: 1.45; }
+    .guided-tour-note .material-symbols-outlined { font-size: 20px; }
+    .guided-tour-progress { gap: 10px; margin-top: 20px; }
+    .guided-tour-progress > div { height: 6px; flex: 1; overflow: hidden; border-radius: 99px; background: var(--line); }
+    .guided-tour-progress > div span { display: block; width: 20%; height: 100%; border-radius: inherit; background: var(--primary); transition: width .2s ease; }
+    .guided-tour-progress small { min-width: 42px; color: var(--muted); font-weight: 750; text-align: right; }
+    .guided-tour-actions { justify-content: flex-end; gap: 10px; margin-top: 16px; }
+    .guided-tour-actions [data-tour-back] { margin-right: auto; }
+    @keyframes guided-tour-enter { from { opacity: 0; } to { opacity: 1; } }
 
     .actions {
       justify-content: space-between;
@@ -1716,13 +1731,11 @@
       .expense-step-line { margin: 0 6px; }
       .expense-summary { grid-template-columns: 1fr; }
       .onboarding-grid { grid-template-columns: 1fr; }
-      .welcome-tour-overlay { padding: 10px; }
-      .welcome-tour-card { max-height: calc(100dvh - 20px); border-radius: 18px; }
-      .welcome-tour-head { padding: 14px 16px; }
-      .welcome-tour-progress { padding: 16px 18px 0; }
-      .welcome-tour-content { padding: 24px 20px 20px; }
-      .welcome-tour-panel h2 { font-size: 22px; }
-      .welcome-tour-actions { padding: 0 18px 18px; }
+      .guided-tour-popover { padding: 18px; border-radius: 18px; }
+      .guided-tour-popover h2 { font-size: 21px; }
+      .contact-layout { grid-template-columns: 1fr; }
+      .footer { flex-direction: column; align-items: flex-start; }
+      .footer-actions { width: 100%; justify-content: space-between; flex-wrap: wrap; }
       .chart-panel-wide { grid-column: auto; }
       .chart-panel .panel-heading { flex-direction: column; }
       .chart-toolbar { width: 100%; justify-content: flex-start; }
@@ -1826,7 +1839,7 @@
         <ul class="nav-list">
           <li><a class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" href="{% url 'dashboard' %}"><span class="material-symbols-outlined">dashboard</span> Inicio</a></li>
           <li><a class="nav-link {% if request.resolver_match.url_name == 'analisis_financiero' %}active{% endif %}" href="{% url 'analisis_financiero' %}"><span class="material-symbols-outlined">monitoring</span> Análisis</a></li>
-          {% if can_use_ai %}<li><a class="nav-link {% if 'asistente_financiero' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'asistente_financiero' %}"><span class="material-symbols-outlined">smart_toy</span> Asistente IA</a></li>{% endif %}
+          {% if can_use_ai %}<li><a class="nav-link {% if 'asistente_financiero' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'asistente_financiero' %}" data-tour-target="assistant"><span class="material-symbols-outlined">smart_toy</span> Asistente IA</a></li>{% endif %}
         </ul>
         <div class="nav-section">Mi dinero</div>
         <ul class="nav-list">
@@ -1835,19 +1848,20 @@
           {% endif %}
           <li><a class="nav-link {% if 'movimiento' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'movimiento_list' %}"><span class="material-symbols-outlined">sync_alt</span> Ingresos y gastos</a></li>
           <li><a class="nav-link {% if request.resolver_match.url_name == 'actividad_financiera' %}active{% endif %}" href="{% url 'actividad_financiera' %}"><span class="material-symbols-outlined">history</span> Actividad</a></li>
-          <li><a class="nav-link {% if request.resolver_match.url_name == 'cuenta_transferir' %}active{% endif %}" href="{% url 'cuenta_transferir' %}"><span class="material-symbols-outlined">swap_horiz</span> Transferir</a></li>
-          <li><a class="nav-link {% if 'deuda' in request.resolver_match.url_name or 'pago' in request.resolver_match.url_name or 'importacion_amortizacion' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'deuda_list' %}"><span class="material-symbols-outlined">receipt_long</span> Deudas</a></li>
+          <li><a class="nav-link {% if request.resolver_match.url_name == 'cuenta_transferir' %}active{% endif %}" href="{% url 'cuenta_transferir' %}" data-tour-target="internal-moves"><span class="material-symbols-outlined">swap_horiz</span> Movimientos entre cuentas</a></li>
+          <li><a class="nav-link {% if 'deuda' in request.resolver_match.url_name or 'pago' in request.resolver_match.url_name or 'importacion_amortizacion' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'deuda_list' %}" data-tour-target="debts"><span class="material-symbols-outlined">receipt_long</span> Deudas y cuotas</a></li>
           <li><a class="nav-link {% if 'presupuesto' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'presupuesto_list' %}"><span class="material-symbols-outlined">price_check</span> Presupuestos</a></li>
-          <li><a class="nav-link {% if 'recurrente' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'recurrente_list' %}"><span class="material-symbols-outlined">event_repeat</span> Recurrentes</a></li>
+          <li><a class="nav-link {% if 'recurrente' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'recurrente_list' %}" data-tour-target="recurring"><span class="material-symbols-outlined">event_repeat</span> Gastos e ingresos recurrentes</a></li>
         </ul>
         <div class="nav-section">Organizar</div>
         <ul class="nav-list">
-          <li><a class="nav-link {% if request.resolver_match.url_name == 'cuenta_list' or request.resolver_match.url_name == 'cuenta_ajustar_saldo' %}active{% endif %}" href="{% url 'cuenta_list' %}"><span class="material-symbols-outlined">account_balance_wallet</span> Cuentas</a></li>
-          <li><a class="nav-link {% if 'metodo_pago' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'metodo_pago_list' %}"><span class="material-symbols-outlined">payments</span> Métodos</a></li>
-          <li><a class="nav-link {% if 'etiqueta' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'etiqueta_list' %}"><span class="material-symbols-outlined">label</span> Etiquetas</a></li>
-          <li><a class="nav-link {% if 'categoria' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'categoria_list' %}"><span class="material-symbols-outlined">sell</span> Categorías</a></li>
+          <li><a class="nav-link {% if request.resolver_match.url_name == 'cuenta_list' or request.resolver_match.url_name == 'cuenta_ajustar_saldo' %}active{% endif %}" href="{% url 'cuenta_list' %}" data-tour-target="accounts"><span class="material-symbols-outlined">account_balance_wallet</span> Cuentas</a></li>
+          <li><a class="nav-link {% if 'metodo_pago' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'metodo_pago_list' %}" data-tour-target="payment-methods"><span class="material-symbols-outlined">payments</span> Métodos de pago</a></li>
+          <li><a class="nav-link {% if 'etiqueta' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'etiqueta_list' %}" data-tour-target="tags"><span class="material-symbols-outlined">label</span> Etiquetas</a></li>
+          <li><a class="nav-link {% if 'categoria' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'categoria_list' %}" data-tour-target="categories"><span class="material-symbols-outlined">sell</span> Categorías</a></li>
           <li><a class="nav-link {% if request.resolver_match.url_name == 'subcategoria_list' %}active{% endif %}" href="{% url 'subcategoria_list' %}"><span class="material-symbols-outlined">category</span> Subcategorías</a></li>
           <li><a class="nav-link {% if request.resolver_match.url_name == 'perfil_update' %}active{% endif %}" href="{% url 'perfil_update' %}"><span class="material-symbols-outlined">account_circle</span> Perfil</a></li>
+          <li><a class="nav-link {% if request.resolver_match.url_name == 'contacto' %}active{% endif %}" href="{% url 'contacto' %}"><span class="material-symbols-outlined">contact_support</span> Contacto y sugerencias</a></li>
         </ul>
         {% if user.is_staff %}
           <div class="nav-section">Administración</div>
@@ -1874,13 +1888,16 @@
       {% if user.is_authenticated %}
         <div class="topbar-actions">
           <div class="quick-actions" aria-label="Acciones rápidas">
-            <a class="btn btn-primary" href="{% url 'movimiento_ingreso_create' %}" title="Registrar ingreso">
+            <a class="btn btn-primary" href="{% url 'movimiento_ingreso_create' %}" title="Registrar ingreso" data-tour-target="income">
               <span class="material-symbols-outlined">add</span><span class="quick-action-label">Ingreso</span>
             </a>
-            <a class="btn btn-outline-primary" href="{% url 'movimiento_gasto_create' %}" title="Registrar gasto">
+            <a class="btn btn-outline-primary" href="{% url 'movimiento_gasto_create' %}" title="Registrar gasto" data-tour-target="expense">
               <span class="material-symbols-outlined">remove</span><span class="quick-action-label">Gasto</span>
             </a>
           </div>
+          <a class="btn btn-light btn-icon" href="{% url 'dashboard' %}?guia=1" title="Ver recorrido guiado" aria-label="Abrir ayuda y repetir el recorrido guiado">
+            <span class="material-symbols-outlined">help</span>
+          </a>
           <a class="btn btn-light btn-icon notification-button" href="{% url 'notificacion_list' %}" title="Avisos" aria-label="Avisos">
             <span class="material-symbols-outlined">notifications</span>
             {% if notification_count %}<span class="notification-badge">{{ notification_count }}</span>{% endif %}
@@ -1919,8 +1936,14 @@
     </main>
 
     <footer class="footer">
-      <strong>Gestor de Finanzas Personales</strong>
-      <span class="text-muted">Agenda diaria y finanzas personales</span>
+      <div class="footer-company">
+        <span class="brand-mark">FI</span>
+        <span class="footer-company-copy"><strong>TaskBudget · Félix IoT</strong><span>Gestor de Finanzas Personales</span></span>
+      </div>
+      <div class="footer-actions">
+        <a href="mailto:contacto@felixiot.site">contacto@felixiot.site</a>
+        {% if user.is_authenticated %}<a class="btn btn-outline-primary" href="{% url 'contacto' %}"><span class="material-symbols-outlined">chat</span>Sugerencias y contacto</a>{% endif %}
+      </div>
     </footer>
   </div>
 

@@ -43,6 +43,7 @@ from .autonomous_finance import generate_proactive_recommendations
 from .ai_config import get_ai_runtime_config
 
 from .forms import (
+    ContactoForm,
     AjusteSaldoForm,
     AcreedorForm,
     AI_MODEL_OPTIONS,
@@ -1281,6 +1282,60 @@ def onboarding_bienvenida_completar(request):
     return redirect(destinos.get(request.POST.get("destino"), "dashboard"))
 
 
+def _destinatario_contacto():
+    config = ConfiguracionCorreo.objects.order_by("pk").first()
+    if config and config.usuario:
+        return config.usuario.strip()
+    if settings.EMAIL_HOST_USER:
+        return settings.EMAIL_HOST_USER.strip()
+    return "contacto@felixiot.site"
+
+
+@login_required
+def contacto(request):
+    form = ContactoForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        user = request.user
+        full_name = user.get_full_name() or "No indicado"
+        tipo = dict(ContactoForm.TIPO_CHOICES)[form.cleaned_data["tipo"]]
+        body = (
+            "Se recibió un mensaje desde TaskBudget.\n\n"
+            f"Tipo: {tipo}\n"
+            f"Asunto: {form.cleaned_data['asunto']}\n\n"
+            f"Usuario: {user.username}\n"
+            f"ID de usuario: {user.pk}\n"
+            f"Nombre: {full_name}\n"
+            f"Correo: {user.email or 'No indicado'}\n\n"
+            f"Mensaje:\n{form.cleaned_data['mensaje']}"
+        )
+        message = EmailMessage(
+            subject=f"[TaskBudget · {tipo}] {form.cleaned_data['asunto']}",
+            body=body,
+            to=[_destinatario_contacto()],
+            reply_to=[user.email] if user.email else None,
+        )
+        try:
+            sent = message.send(fail_silently=False)
+            if sent != 1:
+                raise RuntimeError("El servidor no confirmó el envío.")
+        except Exception:
+            logger.exception("No se pudo enviar el mensaje de contacto del usuario %s", user.pk)
+            form.add_error(None, "No pudimos enviar el mensaje en este momento. Inténtalo nuevamente más tarde.")
+        else:
+            messages.success(request, "Mensaje enviado a Félix IoT. Te responderemos al correo de tu cuenta.")
+            return redirect("contacto")
+
+    return render(
+        request,
+        "core/contacto.html",
+        {
+            "form": form,
+            "contact_email": _destinatario_contacto(),
+            "company_name": "Félix IoT",
+        },
+    )
+
+
 @login_required
 def perfil_update(request):
     perfil, _ = PerfilUsuario.objects.get_or_create(usuario=request.user)
@@ -1502,7 +1557,7 @@ def cuenta_transferir(request):
                 transferencia,
                 cambios={"monto": str(transferencia.monto)},
             )
-            messages.success(request, "Transferencia realizada.")
+            messages.success(request, "Movimiento entre cuentas realizado. No se registró como gasto ni ingreso.")
             return redirect("cuenta_list")
 
     return render(
@@ -2911,29 +2966,29 @@ def dashboard(request):
 
     onboarding_steps = [
         {
-            "title": "Revisa tus cuentas",
-            "description": "Ajusta el saldo inicial de General, Efectivo o agrega tu banco.",
+            "title": "Configura tus cuentas",
+            "description": "Usa General o Efectivo, o agrega el banco donde manejas tu dinero.",
             "url": reverse("cuenta_list"),
             "done": CuentaFinanciera.objects.filter(usuario=request.user).exclude(saldo_inicial=0).exists(),
         },
         {
-            "title": "Registra un ingreso",
-            "description": "Empieza con salario, venta u otro dinero que hayas recibido.",
-            "url": reverse("movimiento_ingreso_create"),
-            "done": MovimientoFinanciero.objects.filter(
-                usuario=request.user,
-                estado=MovimientoFinanciero.Estado.CONFIRMADO,
-                tipo=MovimientoFinanciero.Tipo.INGRESO,
-            ).exists(),
-        },
-        {
             "title": "Registra un gasto",
-            "description": "Clasifica una compra para activar el análisis por categorías.",
+            "description": "Aprende cómo una compra descuenta saldo de la cuenta elegida.",
             "url": reverse("movimiento_gasto_create"),
             "done": MovimientoFinanciero.objects.filter(
                 usuario=request.user,
                 estado=MovimientoFinanciero.Estado.CONFIRMADO,
                 tipo=MovimientoFinanciero.Tipo.GASTO,
+            ).exists(),
+        },
+        {
+            "title": "Registra un ingreso",
+            "description": "Indica de dónde viene el dinero y en qué cuenta lo recibiste.",
+            "url": reverse("movimiento_ingreso_create"),
+            "done": MovimientoFinanciero.objects.filter(
+                usuario=request.user,
+                estado=MovimientoFinanciero.Estado.CONFIRMADO,
+                tipo=MovimientoFinanciero.Tipo.INGRESO,
             ).exists(),
         },
     ]
@@ -2972,7 +3027,7 @@ def dashboard(request):
             "ultimos_movimientos": ultimos_movimientos,
             "onboarding_steps": onboarding_steps,
             "onboarding_done": sum(step["done"] for step in onboarding_steps),
-            "mostrar_bienvenida": not perfil.bienvenida_vista,
+            "mostrar_bienvenida": not perfil.bienvenida_vista or request.GET.get("guia") == "1",
         },
     )
 
@@ -4647,7 +4702,7 @@ def actividad_financiera(request):
             })
     if kind in {"todos", "transferencia"}:
         for transfer in transfers:
-            entries.append({"fecha": transfer.fecha, "creado": transfer.creado, "tipo": "transferencia", "icono": "swap_horiz", "titulo": "Transferencia", "detalle": f"{transfer.cuenta_origen.nombre} → {transfer.cuenta_destino.nombre}", "estado": "Confirmada", "monto": transfer.monto, "url": reverse("cuenta_transferir")})
+            entries.append({"fecha": transfer.fecha, "creado": transfer.creado, "tipo": "transferencia", "icono": "swap_horiz", "titulo": "Entre mis cuentas", "detalle": f"{transfer.cuenta_origen.nombre} → {transfer.cuenta_destino.nombre}", "estado": "Confirmado", "monto": transfer.monto, "url": reverse("cuenta_transferir")})
     if kind in {"todos", "deuda"}:
         for payment in payments:
             pending = payment.estado == PagoDeuda.Estado.PENDIENTE

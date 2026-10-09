@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block page_title %}Contacto y sugerencias{% endblock %}
+{% block page_subtitle %}Habla directamente con el equipo responsable de TaskBudget{% endblock %}
+
+{% block content %}
+<div class="contact-layout">
+  <section class="panel form-panel">
+    <div class="panel-heading">
+      <div>
+        <span class="eyebrow">Escríbenos</span>
+        <h2>¿Cómo podemos ayudarte?</h2>
+        <p class="muted mb-0">Envía una sugerencia, una pregunta o el detalle de un problema.</p>
+      </div>
+      <span class="contact-icon"><span class="material-symbols-outlined">mark_email_read</span></span>
+    </div>
+    <form class="form-grid" method="post">
+      {% csrf_token %}
+      {% include "core/includes/unfold_form_fields.html" %}
+      <div class="guided-tour-note">
+        <span class="material-symbols-outlined">privacy_tip</span>
+        <span>Para poder responderte, el correo incluirá automáticamente tu nombre, usuario, identificador y correo registrado. No incluye información financiera.</span>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" type="submit"><span class="material-symbols-outlined">send</span><span>Enviar mensaje</span></button>
+        <a class="btn btn-outline-secondary" href="{% url 'dashboard' %}">Volver al inicio</a>
+      </div>
+    </form>
+  </section>
+
+  <aside class="panel company-card">
+    <span class="brand-mark">FI</span>
+    <span class="eyebrow">Empresa responsable</span>
+    <h2>{{ company_name }}</h2>
+    <p>Desarrollo y soporte de TaskBudget, Gestor de Finanzas Personales.</p>
+    <a href="mailto:{{ contact_email }}"><span class="material-symbols-outlined">mail</span>{{ contact_email }}</a>
+    <small>Responderemos al correo asociado a tu cuenta.</small>
+  </aside>
+</div>
+{% endblock %}

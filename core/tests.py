@@ -121,6 +121,46 @@ class PrimerUsoTests(TestCase):
         response = self.client.post(reverse("onboarding_bienvenida_completar"))
         self.assertEqual(response.status_code, 302)
 
+    def test_primera_visita_muestra_guia_demostrativa_sin_crear_datos(self):
+        user = get_user_model().objects.create_user(username="guia", password="test")
+        self.client.force_login(user)
+        movimientos_antes = MovimientoFinanciero.objects.filter(usuario=user).count()
+
+        response = self.client.get(reverse("dashboard"))
+
+        self.assertContains(response, "Te mostraré cómo usar TaskBudget sin crear ni modificar ningún dato")
+        self.assertContains(response, 'data-tour-target="accounts"')
+        self.assertContains(response, 'data-tour-target="expense"')
+        self.assertContains(response, 'data-tour-target="income"')
+        self.assertContains(response, 'data-tour-target="internal-moves"')
+        self.assertContains(response, 'data-tour-target="categories"')
+        self.assertContains(response, "Cómo crear un gasto")
+        self.assertContains(response, "Método de pago y cuenta de donde sale el dinero")
+        self.assertContains(response, "No envía dinero desde la aplicación")
+        self.assertEqual(MovimientoFinanciero.objects.filter(usuario=user).count(), movimientos_antes)
+
+    def test_finalizar_guia_la_oculta_en_siguientes_visitas(self):
+        user = get_user_model().objects.create_user(username="guia_final", password="test")
+        self.client.force_login(user)
+
+        response = self.client.post(reverse("onboarding_bienvenida_completar"))
+
+        self.assertRedirects(response, reverse("dashboard"))
+        self.assertTrue(PerfilUsuario.objects.get(usuario=user).bienvenida_vista)
+        dashboard = self.client.get(reverse("dashboard"))
+        self.assertNotContains(dashboard, 'class="guided-tour"')
+        self.assertContains(dashboard, "Abrir ayuda y repetir el recorrido guiado")
+
+    def test_boton_ayuda_permite_repetir_la_guia(self):
+        user = get_user_model().objects.create_user(username="repetir_guia", password="test")
+        PerfilUsuario.objects.filter(usuario=user).update(bienvenida_vista=True)
+        self.client.force_login(user)
+
+        response = self.client.get(reverse("dashboard"), {"guia": "1"})
+
+        self.assertContains(response, 'class="guided-tour"')
+        self.assertContains(response, "Te mostraré cómo usar TaskBudget sin crear ni modificar ningún dato")
+
     def test_registro_rechaza_correo_duplicado_sin_importar_mayusculas(self):
         get_user_model().objects.create_user(
             username="existente",
@@ -167,6 +207,49 @@ class PrimerUsoTests(TestCase):
         self.assertIn("Revisar y decidir:", mail.outbox[0].body)
         self.assertEqual(len(re.findall(r"/usuarios/solicitudes/decision/[^\s]+", mail.outbox[0].body)), 1)
 
+
+@override_settings(
+    EMAIL_BACKEND="core.email_backend.ConfiguredEmailBackend",
+    EMAIL_FALLBACK_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    EMAIL_HOST_USER="contacto@felixiot.site",
+)
+class ContactoTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="cliente",
+            first_name="Cristian",
+            last_name="Pérez",
+            email="cliente@example.com",
+            password="test",
+        )
+        self.client.force_login(self.user)
+
+    def test_pagina_muestra_empresa_y_transparencia_de_datos(self):
+        response = self.client.get(reverse("contacto"))
+
+        self.assertContains(response, "Félix IoT")
+        self.assertContains(response, "contacto@felixiot.site")
+        self.assertContains(response, "No incluye información financiera")
+
+    def test_envia_sugerencia_con_datos_del_usuario(self):
+        response = self.client.post(
+            reverse("contacto"),
+            {
+                "tipo": "sugerencia",
+                "asunto": "Mejorar el panel",
+                "mensaje": "Sería útil personalizar el orden de las tarjetas.",
+            },
+        )
+
+        self.assertRedirects(response, reverse("contacto"))
+        self.assertEqual(len(mail.outbox), 1)
+        message = mail.outbox[0]
+        self.assertEqual(message.to, ["contacto@felixiot.site"])
+        self.assertEqual(message.reply_to, ["cliente@example.com"])
+        self.assertIn("Usuario: cliente", message.body)
+        self.assertIn("Nombre: Cristian Pérez", message.body)
+        self.assertIn("Sería útil personalizar", message.body)
+        self.assertNotIn("saldo", message.body.lower())
 
 @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
 class AutorizacionRegistroTests(TestCase):
@@ -702,7 +785,8 @@ class TransferenciaCuentaTests(TestCase):
 
         self.assertContains(response, "¿Desde dónde sale el dinero?")
         self.assertContains(response, "¿Hacia dónde lo moverás?")
-        self.assertContains(response, "Revisa la transferencia")
+        self.assertContains(response, "Revisa el movimiento")
+        self.assertContains(response, "Esto no es un gasto")
         self.assertContains(response, f'"{self.origen.pk}": 100.0', html=False)
 
     def test_transferencia_mueve_saldo_sin_crear_ingreso_o_gasto(self):

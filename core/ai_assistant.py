@@ -54,7 +54,7 @@ logger = logging.getLogger(__name__)
 SYSTEM_HELP = """
 Tu gestor financiero permite registrar ingresos y gastos, clasificarlos por categoría, cuenta,
 método de pago y etiquetas; manejar compras a crédito y sus cuotas; crear presupuestos
-mensuales; administrar deudas y pagos; transferir dinero entre cuentas; configurar
+mensuales; administrar deudas y pagos; mover saldo entre cuentas propias sin tratarlo como gasto; configurar
 movimientos recurrentes; consultar análisis, reportes y el calendario financiero.
 Los movimientos confirmados afectan los saldos y análisis. Los pendientes no afectan
 el saldo hasta confirmarse. Una compra confirmada con método de crédito genera la deuda

@@ -4,7 +4,7 @@
 {% block content %}
 <section class="panel"><form class="filter-form" method="get">
   <div><label for="q">Buscar</label><input class="form-control" id="q" name="q" value="{{ filtros.q }}" placeholder="Concepto, cuenta o acreedor"></div>
-  <div><label for="tipo">Tipo</label><select class="form-select" id="tipo" name="tipo"><option value="todos">Todos</option><option value="ingreso"{% if filtros.tipo == 'ingreso' %} selected{% endif %}>Ingresos</option><option value="gasto"{% if filtros.tipo == 'gasto' %} selected{% endif %}>Gastos</option><option value="transferencia"{% if filtros.tipo == 'transferencia' %} selected{% endif %}>Transferencias</option><option value="deuda"{% if filtros.tipo == 'deuda' %} selected{% endif %}>Pagos de deuda</option></select></div>
+  <div><label for="tipo">Tipo</label><select class="form-select" id="tipo" name="tipo"><option value="todos">Todos</option><option value="ingreso"{% if filtros.tipo == 'ingreso' %} selected{% endif %}>Ingresos</option><option value="gasto"{% if filtros.tipo == 'gasto' %} selected{% endif %}>Gastos</option><option value="transferencia"{% if filtros.tipo == 'transferencia' %} selected{% endif %}>Entre mis cuentas</option><option value="deuda"{% if filtros.tipo == 'deuda' %} selected{% endif %}>Pagos de deuda</option></select></div>
   <div><label for="desde">Desde</label><input class="form-control" type="date" id="desde" name="desde" value="{{ filtros.desde }}"></div>
   <div><label for="hasta">Hasta</label><input class="form-control" type="date" id="hasta" name="hasta" value="{{ filtros.hasta }}"></div>
   <button class="btn btn-primary" type="submit"><span class="material-symbols-outlined">filter_alt</span>Filtrar</button>

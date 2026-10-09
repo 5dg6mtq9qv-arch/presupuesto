@@ -66,6 +66,34 @@ def enable_flexible_decimal_inputs(fields):
             field.widget = forms.TextInput(attrs=attrs)
 
 
+class ContactoForm(forms.Form):
+    TIPO_CHOICES = [
+        ("sugerencia", "Sugerencia"),
+        ("problema", "Reportar un problema"),
+        ("pregunta", "Pregunta o ayuda"),
+    ]
+
+    tipo = forms.ChoiceField(label="¿En qué podemos ayudarte?", choices=TIPO_CHOICES)
+    asunto = forms.CharField(
+        label="Asunto",
+        max_length=120,
+        widget=forms.TextInput(attrs={"placeholder": "Resume tu mensaje"}),
+    )
+    mensaje = forms.CharField(
+        label="Mensaje",
+        min_length=10,
+        max_length=3000,
+        widget=forms.Textarea(
+            attrs={"rows": 7, "placeholder": "Cuéntanos tu sugerencia, duda o problema con el mayor detalle posible."}
+        ),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs["class"] = "form-select" if isinstance(field.widget, forms.Select) else "form-control"
+
+
 class ConfiguracionCorreoForm(forms.ModelForm):
     password = forms.CharField(
         label="Contraseña del buzón",

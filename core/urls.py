@@ -11,6 +11,7 @@ urlpatterns = [
     path("registro/", views.registro, name="registro"),
     path("registro/solicitud-enviada/", views.registro_solicitado, name="registro_solicitado"),
     path("bienvenida/completar/", views.onboarding_bienvenida_completar, name="onboarding_bienvenida_completar"),
+    path("contacto/", views.contacto, name="contacto"),
     path("analisis/", views.analisis_financiero, name="analisis_financiero"),
     path("asistente/", views.asistente_financiero, name="asistente_financiero"),
     path("asistente/preguntar/", views.asistente_financiero_preguntar, name="asistente_financiero_preguntar"),

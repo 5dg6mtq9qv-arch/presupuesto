@@ -1,14 +1,15 @@
 {% extends "base.html" %}
 
-{% block page_title %}Transferir entre cuentas{% endblock %}
-{% block page_subtitle %}Mueve tu dinero entre cuentas sin registrarlo como ingreso ni gasto{% endblock %}
+{% block page_title %}Movimiento entre mis cuentas{% endblock %}
+{% block page_subtitle %}Reorganiza tu propio saldo: no envía dinero ni se registra como ingreso o gasto{% endblock %}
 
 {% block content %}
 {{ saldos_cuenta|json_script:"saldos-cuenta-data" }}
 <section class="panel form-panel">
   <form class="expense-flow-form" id="transfer-flow-form" method="post">
     {% csrf_token %}
-    <nav class="expense-steps" aria-label="Pasos para transferir entre cuentas">
+    <div class="guided-tour-note mb-3"><span class="material-symbols-outlined">info</span><span><strong>Esto no es un gasto.</strong> Solo mueve saldo entre dos cuentas tuyas y no cambia el dinero total disponible.</span></div>
+    <nav class="expense-steps" aria-label="Pasos para mover saldo entre mis cuentas">
       <button class="expense-step-tab is-active" type="button" data-transfer-go="1"><span>1</span><strong>Cuenta de origen</strong></button>
       <span class="expense-step-line"></span>
       <button class="expense-step-tab" type="button" data-transfer-go="2"><span>2</span><strong>Destino e importe</strong></button>
@@ -36,7 +37,7 @@
     <section class="expense-step-panel" data-transfer-panel="2" hidden>
       <div class="expense-step-copy">
         <span class="material-symbols-outlined">swap_horiz</span>
-        <div><h2>¿Hacia dónde lo moverás?</h2><p>Selecciona otra cuenta e indica el importe de la transferencia.</p></div>
+        <div><h2>¿Hacia dónde lo moverás?</h2><p>Selecciona otra cuenta propia e indica el importe que cambiará de lugar.</p></div>
       </div>
       <div class="form-grid" data-transfer-target="2"></div>
       <div class="expense-summary" aria-live="polite">
@@ -49,7 +50,7 @@
     <section class="expense-step-panel" data-transfer-panel="3" hidden>
       <div class="expense-step-copy">
         <span class="material-symbols-outlined">fact_check</span>
-        <div><h2>Revisa la transferencia</h2><p>Confirma las cuentas y el importe antes de mover el dinero.</p></div>
+        <div><h2>Revisa el movimiento</h2><p>Confirma las dos cuentas propias y el importe antes de reorganizar el saldo.</p></div>
       </div>
       <div class="expense-summary" aria-live="polite">
         <span><small>Movimiento</small><strong data-review-route>Sin completar</strong></span>
@@ -71,7 +72,7 @@
         <span>Siguiente</span><span class="material-symbols-outlined">arrow_forward</span>
       </button>
       <button class="btn btn-primary" type="submit" data-transfer-submit hidden>
-        <span class="material-symbols-outlined">swap_horiz</span><span>Transferir</span>
+        <span class="material-symbols-outlined">swap_horiz</span><span>Mover saldo</span>
       </button>
     </div>
   </form>
@@ -144,7 +145,7 @@
         if (!Number.isFinite(amount()) || amount() <= 0) return [monto, "Indica un importe mayor que cero."];
         if (available() !== null && amount() > available()) return [monto, `El saldo disponible es ${money(available())}. Reduce el importe para continuar.`];
       }
-      if (step === 3 && !fecha?.value) return [fecha, "Indica la fecha de la transferencia."];
+      if (step === 3 && !fecha?.value) return [fecha, "Indica la fecha del movimiento entre cuentas."];
       return null;
     };
 

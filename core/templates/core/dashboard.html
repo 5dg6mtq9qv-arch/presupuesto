@@ -8,62 +8,35 @@
 {{ periodos_reporte|json_script:"dashboard-report-periods" }}
 
 {% if mostrar_bienvenida %}
-<div class="welcome-tour-overlay" data-welcome-tour>
-  <section class="welcome-tour-card" role="dialog" aria-modal="true" aria-labelledby="welcome-tour-title">
-    <header class="welcome-tour-head">
-      <div class="welcome-tour-brand"><span class="brand-mark">TB</span><span>TaskBudget</span></div>
-      <form class="welcome-tour-skip" method="post" action="{% url 'onboarding_bienvenida_completar' %}">
+<div class="guided-tour" data-welcome-tour>
+  <div class="guided-tour-spotlight" data-tour-spotlight aria-hidden="true"></div>
+  <section class="guided-tour-popover is-centered" data-tour-popover role="dialog" aria-modal="true" aria-labelledby="welcome-tour-title">
+    <div class="guided-tour-topline">
+      <span class="guided-tour-label"><span class="material-symbols-outlined">explore</span> Guía inicial</span>
+      <form method="post" action="{% url 'onboarding_bienvenida_completar' %}">
         {% csrf_token %}
-        <button type="submit">Omitir recorrido</button>
+        <button class="guided-tour-skip" type="submit">Omitir</button>
       </form>
-    </header>
-
-    <div class="welcome-tour-progress">
-      <div class="welcome-tour-progress-bar" aria-hidden="true"><span data-tour-progress-bar></span></div>
-      <small data-tour-progress-text>1 de 3</small>
     </div>
-
-    <div class="welcome-tour-content">
-      <article class="welcome-tour-panel is-active" data-tour-panel>
-        <div class="welcome-tour-icon"><span class="material-symbols-outlined">waving_hand</span></div>
-        <h2 id="welcome-tour-title">¡Bienvenido, {{ user.first_name|default:user.username }}!</h2>
-        <p>Vamos a preparar tu espacio financiero. Son tres pasos rápidos y después el sistema organizará automáticamente tu balance.</p>
-        <div class="welcome-tour-points">
-          <div class="welcome-tour-point"><span class="material-symbols-outlined">account_balance_wallet</span><span><strong>Tus datos son personales</strong><small>Cada usuario consulta únicamente sus propias cuentas, movimientos y deudas.</small></span></div>
-          <div class="welcome-tour-point"><span class="material-symbols-outlined">verified_user</span><span><strong>Tú mantienes el control</strong><small>Los comprobantes y las sugerencias siempre se revisan antes de guardarse.</small></span></div>
-        </div>
-      </article>
-
-      <article class="welcome-tour-panel" data-tour-panel>
-        <div class="welcome-tour-icon"><span class="material-symbols-outlined">currency_exchange</span></div>
-        <h2>Primero, configura dónde está tu dinero</h2>
-        <p>Agrega tus cuentas reales o ajusta las cuentas iniciales. El saldo se actualizará con cada ingreso, gasto, transferencia y pago de deuda.</p>
-        <div class="welcome-tour-points">
-          <div class="welcome-tour-point"><span class="material-symbols-outlined">add_card</span><span><strong>Gasto normal</strong><small>Descuenta el dinero de la cuenta seleccionada al confirmarlo.</small></span></div>
-          <div class="welcome-tour-point"><span class="material-symbols-outlined">credit_card</span><span><strong>Compra a crédito</strong><small>Crea una deuda y sus cuotas; la cuenta disminuye cuando confirmas cada pago.</small></span></div>
-        </div>
-      </article>
-
-      <article class="welcome-tour-panel" data-tour-panel>
-        <div class="welcome-tour-icon"><span class="material-symbols-outlined">route</span></div>
-        <h2>Tu ruta recomendada</h2>
-        <p>Empieza con estos datos mínimos. La lista de primeros pasos seguirá visible en el dashboard hasta que la completes.</p>
-        <div class="welcome-tour-points">
-          <div class="welcome-tour-point"><span class="material-symbols-outlined">looks_one</span><span><strong>Revisa tus cuentas</strong><small>Indica el saldo con el que comienzas.</small></span></div>
-          <div class="welcome-tour-point"><span class="material-symbols-outlined">looks_two</span><span><strong>Registra un ingreso</strong><small>Por ejemplo, salario, venta o dinero recibido.</small></span></div>
-          <div class="welcome-tour-point"><span class="material-symbols-outlined">looks_3</span><span><strong>Registra un gasto</strong><small>Así se activan el análisis y los presupuestos por categoría.</small></span></div>
-        </div>
-      </article>
+    <div class="guided-tour-icon"><span class="material-symbols-outlined" data-tour-icon>waving_hand</span></div>
+    <span class="eyebrow" data-tour-kicker>Bienvenido</span>
+    <h2 id="welcome-tour-title" data-tour-title>Hola, {{ user.first_name|default:user.username }}</h2>
+    <p data-tour-copy>Te mostraré cómo usar TaskBudget sin crear ni modificar ningún dato. Solo observa las zonas señaladas y avanza.</p>
+    <div class="guided-tour-details" data-tour-details hidden>
+      <strong data-tour-details-title>Qué debes completar</strong>
+      <ol data-tour-details-list></ol>
     </div>
-
-    <footer class="welcome-tour-actions">
-      <button class="btn btn-light" type="button" data-tour-back hidden>Anterior</button>
-      <span></span>
-      <button class="btn btn-primary" type="button" data-tour-next>Siguiente</button>
-      <form class="welcome-tour-start" data-tour-start method="post" action="{% url 'onboarding_bienvenida_completar' %}">
+    <div class="guided-tour-note" data-tour-note><span class="material-symbols-outlined">touch_app</span><span>Durante esta guía los controles señalados son solo demostrativos.</span></div>
+    <div class="guided-tour-progress">
+      <div><span data-tour-progress-bar></span></div>
+      <small data-tour-progress-text>Preparando…</small>
+    </div>
+    <footer class="guided-tour-actions">
+      <button class="btn btn-light" type="button" data-tour-back hidden><span class="material-symbols-outlined">arrow_back</span>Anterior</button>
+      <button class="btn btn-primary" type="button" data-tour-next>Siguiente<span class="material-symbols-outlined">arrow_forward</span></button>
+      <form data-tour-finish hidden method="post" action="{% url 'onboarding_bienvenida_completar' %}">
         {% csrf_token %}
-        <input type="hidden" name="destino" value="cuentas">
-        <button class="btn btn-primary" type="submit">Configurar mis cuentas</button>
+        <button class="btn btn-primary" type="submit">Entendido, comenzar</button>
       </form>
     </footer>
   </section>
@@ -410,28 +383,208 @@
     const tour = document.querySelector("[data-welcome-tour]");
     if (!tour) return;
 
-    const panels = [...tour.querySelectorAll("[data-tour-panel]")];
+    const allSteps = [
+      {
+        icon: "waving_hand",
+        kicker: "Bienvenido",
+        title: "Hola, {{ user.first_name|default:user.username|escapejs }}",
+        copy: "Te mostraré cómo usar TaskBudget sin crear ni modificar ningún dato. Solo observa las zonas señaladas y avanza.",
+        note: "Durante esta guía los controles señalados son solo demostrativos.",
+      },
+      {
+        target: '[data-tour-target="accounts"]',
+        icon: "account_balance_wallet",
+        kicker: "Paso 1 · Cuentas",
+        title: "Primero indica dónde está tu dinero",
+        copy: "En Cuentas puedes usar General o Efectivo, agregar tu banco y colocar el saldo con el que comienzas.",
+        details: ["Nombre y tipo de cuenta", "Saldo inicial disponible", "Color para identificarla en las gráficas"],
+        note: "Una cuenta representa un lugar donde guardas dinero; todavía no es un ingreso ni un gasto.",
+      },
+      {
+        target: '[data-tour-target="expense"]',
+        icon: "north_east",
+        kicker: "Paso 2 · Gastos",
+        title: "Después registra lo que pagas",
+        copy: "El formulario te lleva por tres pantallas y revisa cada dato antes de guardar.",
+        detailsTitle: "Cómo crear un gasto",
+        details: ["Categoría, descripción y etiquetas opcionales", "Método de pago y cuenta de donde sale el dinero", "Monto, fecha y comprobante opcional"],
+        note: "Si eliges Crédito, indicarás acreedor, cuotas y primera fecha de pago; se crea una deuda y todavía no se descuenta una cuenta.",
+      },
+      {
+        target: '[data-tour-target="income"]',
+        icon: "south_west",
+        kicker: "Paso 3 · Ingresos",
+        title: "Luego registra el dinero que recibes",
+        copy: "Registra sueldo, ventas u otro dinero recibido siguiendo el mismo formulario guiado.",
+        detailsTitle: "Cómo crear un ingreso",
+        details: ["Categoría y descripción del origen", "Cuenta donde recibiste el dinero", "Monto, fecha y comprobante opcional"],
+        note: "Un ingreso aumenta el saldo y permite calcular tu balance real.",
+      },
+      {
+        target: '[data-tour-target="internal-moves"]',
+        icon: "swap_horiz",
+        kicker: "Importante · No es un gasto",
+        title: "Movimientos entre tus cuentas",
+        copy: "Úsalo solo cuando pasas dinero de una cuenta propia a otra, por ejemplo del banco a efectivo.",
+        details: ["Cuenta propia de origen", "Cuenta propia de destino", "Monto y fecha del movimiento"],
+        note: "No envía dinero desde la aplicación y no se registra como gasto ni ingreso; tu dinero total sigue siendo el mismo.",
+      },
+      {
+        target: '[data-tour-target="tags"]',
+        icon: "label",
+        kicker: "Organización · Etiquetas",
+        title: "Agrupa movimientos a tu manera",
+        copy: "Las etiquetas complementan las categorías. Puedes marcar gastos e ingresos como Viaje, Trabajo o Compartido y luego encontrarlos juntos.",
+        details: ["Crea un nombre fácil de reconocer", "Elige un color", "Puedes aplicar varias etiquetas al mismo movimiento"],
+        note: "Una etiqueta no cambia el saldo ni sustituye la categoría; sirve para buscar y comparar.",
+      },
+      {
+        target: '[data-tour-target="categories"]',
+        icon: "sell",
+        kicker: "Organización · Categorías",
+        title: "Clasifica para entender en qué gastas",
+        copy: "Cada gasto o ingreso necesita una categoría. Las subcategorías permiten un análisis más específico sin llenar el menú principal.",
+        details: ["Categoría principal: Alimentación", "Subcategoría: Supermercado o Restaurantes", "Etiqueta adicional: Viaje, Trabajo o Compartido"],
+        note: "Categoría responde qué tipo de movimiento es; etiqueta responde en qué contexto ocurrió.",
+      },
+      {
+        target: '[data-tour-target="payment-methods"]',
+        icon: "payments",
+        kicker: "Organización · Forma de pago",
+        title: "Indica cómo pagaste un gasto",
+        copy: "Los métodos distinguen efectivo, débito, transferencia o crédito para que el registro refleje lo que realmente ocurrió.",
+        details: ["Efectivo, débito u otro: elige también la cuenta", "Crédito: registra acreedor y número de cuotas", "El método explica cómo ocurrió; la cuenta indica de dónde salió"],
+        note: "Si eliges crédito, TaskBudget crea la deuda y sus cuotas; no descuenta una cuenta hasta registrar el pago.",
+      },
+      {
+        target: '[data-tour-target="recurring"]',
+        icon: "event_repeat",
+        kicker: "Automatización · Recurrentes",
+        title: "No repitas cada gasto mensual",
+        copy: "Configura arriendo, servicios, sueldo u otros movimientos que se repiten. Pueden crearse pendientes para que los revises o confirmarse automáticamente.",
+        details: ["Define si es ingreso o gasto, concepto y monto", "Elige frecuencia, día y cuenta", "Decide entre confirmar manualmente o aplicar automáticamente"],
+        note: "Un recurrente pendiente no cambia el saldo hasta que lo apruebas y eliges la cuenta.",
+      },
+      {
+        target: '[data-tour-target="debts"]',
+        icon: "receipt_long",
+        kicker: "Deudas · Pagos y cuotas",
+        title: "Registra el pago cuando realmente ocurre",
+        copy: "Aquí ves el plan de cuotas y confirmas cada pago indicando de qué cuenta salió el dinero.",
+        details: ["Revisa la cuota y su fecha de vencimiento", "Pulsa pagar o confirmar", "Elige la cuenta que realmente financió el pago"],
+        note: "La deuda total puede estar diferida y ser manejable; el saldo de la cuenta baja solo al confirmar una cuota.",
+      },
+      {% if can_use_ai %}{
+        target: '[data-tour-target="assistant"]',
+        icon: "smart_toy",
+        kicker: "Ayuda · Asistente IA",
+        title: "Pregunta usando tus datos financieros",
+        copy: "El asistente puede explicar tu balance, buscar gastos, revisar próximas cuotas y guiarte para registrar información.",
+        details: ["Pregunta con lenguaje normal", "Revisa la explicación o el borrador propuesto", "Confirma tú cualquier acción que cambie información"],
+        note: "La IA propone y explica; las acciones que modifican tus datos siempre requieren tu revisión o confirmación.",
+      },{% endif %}
+    ];
+    const steps = allSteps.filter(step => !step.target || document.querySelector(step.target));
+    const popover = tour.querySelector("[data-tour-popover]");
+    const spotlight = tour.querySelector("[data-tour-spotlight]");
     const back = tour.querySelector("[data-tour-back]");
     const next = tour.querySelector("[data-tour-next]");
-    const start = tour.querySelector("[data-tour-start]");
+    const finish = tour.querySelector("[data-tour-finish]");
+    const icon = tour.querySelector("[data-tour-icon]");
+    const kicker = tour.querySelector("[data-tour-kicker]");
+    const title = tour.querySelector("[data-tour-title]");
+    const copy = tour.querySelector("[data-tour-copy]");
+    const details = tour.querySelector("[data-tour-details]");
+    const detailsTitle = tour.querySelector("[data-tour-details-title]");
+    const detailsList = tour.querySelector("[data-tour-details-list]");
+    const note = tour.querySelector("[data-tour-note] span:last-child");
     const progressBar = tour.querySelector("[data-tour-progress-bar]");
     const progressText = tour.querySelector("[data-tour-progress-text]");
     let current = 0;
 
     document.body.classList.add("welcome-tour-open");
 
-    const render = () => {
-      panels.forEach((panel, index) => panel.classList.toggle("is-active", index === current));
+    const fit = (value, minimum, maximum) => Math.max(minimum, Math.min(value, maximum));
+    const positionPopover = target => {
+      popover.classList.toggle("is-centered", !target);
+      if (!target) {
+        popover.style.removeProperty("top");
+        popover.style.removeProperty("left");
+        return;
+      }
+      const rect = target.getBoundingClientRect();
+      const gap = 18;
+      spotlight.style.cssText = `top:${rect.top - 6}px;left:${rect.left - 6}px;width:${rect.width + 12}px;height:${rect.height + 12}px`;
+      const popoverRect = popover.getBoundingClientRect();
+      if (window.innerWidth <= 640) {
+        popover.style.left = "12px";
+        popover.style.top = rect.top > window.innerHeight / 2
+          ? "12px"
+          : `${Math.max(12, window.innerHeight - popoverRect.height - 12)}px`;
+        return;
+      }
+      const roomRight = window.innerWidth - rect.right;
+      let left = roomRight >= popoverRect.width + gap ? rect.right + gap : rect.left - popoverRect.width - gap;
+      let top = rect.top + (rect.height - popoverRect.height) / 2;
+      if (rect.top < 90 && rect.width < 240) {
+        left = rect.left + rect.width / 2 - popoverRect.width / 2;
+        top = rect.bottom + gap;
+      }
+      popover.style.left = `${fit(left, 12, window.innerWidth - popoverRect.width - 12)}px`;
+      popover.style.top = `${fit(top, 12, window.innerHeight - popoverRect.height - 12)}px`;
+    };
+
+    const render = async () => {
+      const step = steps[current];
+      const target = step.target ? document.querySelector(step.target) : null;
+      const targetInSidebar = target?.closest(".sidebar");
+      document.body.classList.toggle("sidebar-open", Boolean(targetInSidebar) && window.innerWidth <= 1024);
+      if (targetInSidebar) {
+        target.scrollIntoView({block: "center", behavior: "auto"});
+        await new Promise(resolve => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)));
+      }
+      icon.textContent = step.icon;
+      kicker.textContent = step.kicker;
+      title.textContent = step.title;
+      copy.textContent = step.copy;
+      details.hidden = !step.details?.length;
+      detailsTitle.textContent = step.detailsTitle || "Qué debes completar";
+      detailsList.replaceChildren();
+      (step.details || []).forEach((item, index) => {
+        const row = document.createElement("li");
+        const number = document.createElement("span");
+        const text = document.createElement("span");
+        number.textContent = String(index + 1);
+        text.textContent = item;
+        row.append(number, text);
+        detailsList.append(row);
+      });
+      note.textContent = step.note;
       back.hidden = current === 0;
-      next.hidden = current === panels.length - 1;
-      start.classList.toggle("is-visible", current === panels.length - 1);
-      progressBar.style.width = `${((current + 1) / panels.length) * 100}%`;
-      progressText.textContent = `${current + 1} de ${panels.length}`;
-      (current === panels.length - 1 ? start.querySelector("button") : next).focus({preventScroll: true});
+      next.hidden = current === steps.length - 1;
+      finish.hidden = current !== steps.length - 1;
+      spotlight.hidden = !target;
+      progressBar.style.width = `${((current + 1) / steps.length) * 100}%`;
+      progressText.textContent = `${current + 1} de ${steps.length}`;
+      positionPopover(target);
+      (current === steps.length - 1 ? finish.querySelector("button") : next).focus({preventScroll: true});
     };
 
     back.addEventListener("click", () => { current = Math.max(0, current - 1); render(); });
-    next.addEventListener("click", () => { current = Math.min(panels.length - 1, current + 1); render(); });
+    next.addEventListener("click", () => { current = Math.min(steps.length - 1, current + 1); render(); });
+    const syncPosition = () => window.requestAnimationFrame(() => {
+      const selector = steps[current]?.target;
+      positionPopover(selector ? document.querySelector(selector) : null);
+    });
+    window.addEventListener("resize", syncPosition);
+    window.addEventListener("scroll", syncPosition, {passive: true});
+    document.querySelector(".sidebar")?.addEventListener("scroll", syncPosition, {passive: true});
+    document.addEventListener("click", event => {
+      if (!event.target.closest("[data-welcome-tour]")) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    }, true);
     render();
   })();
 </script>
