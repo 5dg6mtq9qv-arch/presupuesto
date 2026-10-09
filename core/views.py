@@ -1358,6 +1358,8 @@ def _destinatario_contacto():
 
 
 def inicio(request):
+    if request.user.is_authenticated:
+        return redirect("dashboard")
     return render(request, "core/inicio.html")
 
 

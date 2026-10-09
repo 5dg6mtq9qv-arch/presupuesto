@@ -74,6 +74,15 @@ from .services import (
 
 
 class PrimerUsoTests(TestCase):
+    def test_usuario_autenticado_entra_directamente_al_panel_desde_la_portada(self):
+        user = get_user_model().objects.create_user(username="con-sesion", password="test")
+        self.client.force_login(user)
+
+        response = self.client.get(reverse("inicio"))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse("dashboard"))
+
     def test_setup_financiero_es_completo_e_idempotente(self):
         user = get_user_model().objects.create_user(username="nuevo", password="test")
 
