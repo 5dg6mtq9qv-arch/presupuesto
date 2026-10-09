@@ -67,6 +67,7 @@ from .forms import (
     CategoriaPrincipalForm,
     CapturaComprobanteForm,
     ConfiguracionCorreoForm,
+    ConfiguracionApoyoForm,
     ConfiguracionIAForm,
     ConfiguracionTelegramForm,
     ConfirmarImportacionAmortizacionForm,
@@ -88,6 +89,7 @@ from .models import (
     CapturaComprobante,
     Categoria,
     ConfiguracionCorreo,
+    ConfiguracionApoyo,
     ConfiguracionIA,
     ConfiguracionTelegram,
     ConsumoIA,
@@ -1136,6 +1138,17 @@ def configuracion_telegram(request):
     )
 
 
+@superuser_required
+def configuracion_apoyo(request):
+    config = ConfiguracionApoyo.objects.order_by("pk").first() or ConfiguracionApoyo()
+    form = ConfiguracionApoyoForm(request.POST or None, instance=config)
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, "Configuración de apoyo guardada.")
+        return redirect("configuracion_apoyo")
+    return render(request, "core/configuracion_apoyo.html", {"form": form, "config": config})
+
+
 @admin_required
 def consumo_ia_panel(request):
     from .ai_pricing import estimate_ai_cost_usd
@@ -1361,6 +1374,16 @@ def inicio(request):
     if request.user.is_authenticated:
         return redirect("dashboard")
     return render(request, "core/inicio.html")
+
+
+def apoyar_proyecto(request):
+    config = ConfiguracionApoyo.objects.order_by("pk").first()
+    paypal_disponible = bool(config and config.activo and config.paypal_url)
+    return render(
+        request,
+        "core/apoyar_proyecto.html",
+        {"config": config, "paypal_disponible": paypal_disponible},
+    )
 
 
 @login_required

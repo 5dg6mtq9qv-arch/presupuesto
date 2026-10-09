@@ -159,7 +159,7 @@
   <header class="landing-header">
     <nav class="container nav" aria-label="Navegación principal">
       <a href="{% url 'inicio' %}" aria-label="Finanzas Claras, inicio"><img class="nav-logo" src="/static/core/branding/finanzas-claras-logo.png" alt="Finanzas Claras"></a>
-      <div class="nav-links"><a href="#funciones">Funciones</a><a href="#como-funciona">Cómo funciona</a><a href="#confianza">Confianza</a></div>
+      <div class="nav-links"><a href="#funciones">Funciones</a><a href="#como-funciona">Cómo funciona</a><a href="#confianza">Confianza</a><a href="{% url 'apoyar_proyecto' %}">Apoyar</a></div>
       <div class="nav-actions">
         {% if user.is_authenticated %}<a class="button button-primary" href="{% url 'dashboard' %}">Ir a mi panel<span class="material-symbols-outlined">arrow_forward</span></a>
         {% else %}<a class="button button-light" href="{% url 'login' %}">Iniciar sesión</a><a class="button button-primary" href="{% url 'registro' %}">Solicitar acceso</a>{% endif %}
@@ -235,6 +235,6 @@
     </section>
   </main>
 
-  <footer class="landing-footer"><div class="container footer-inner"><img class="footer-brand" src="/static/core/branding/finanzas-claras-logo.png" alt="Finanzas Claras"><span>Organiza, entiende y controla tu dinero.</span><span>Desarrollado por Félix IoT</span></div></footer>
+  <footer class="landing-footer"><div class="container footer-inner"><img class="footer-brand" src="/static/core/branding/finanzas-claras-logo.png" alt="Finanzas Claras"><span>Organiza, entiende y controla tu dinero.</span><a href="{% url 'apoyar_proyecto' %}">Apoyar el proyecto</a><span>Desarrollado por Félix IoT</span></div></footer>
 </body>
 </html>

@@ -1917,6 +1917,7 @@
           <li><a class="nav-link {% if request.resolver_match.url_name == 'subcategoria_list' %}active{% endif %}" href="{% url 'subcategoria_list' %}"><span class="material-symbols-outlined">category</span> Subcategorías</a></li>
           <li><a class="nav-link {% if request.resolver_match.url_name == 'perfil_update' %}active{% endif %}" href="{% url 'perfil_update' %}"><span class="material-symbols-outlined">account_circle</span> Perfil</a></li>
           <li><a class="nav-link {% if request.resolver_match.url_name == 'contacto' %}active{% endif %}" href="{% url 'contacto' %}"><span class="material-symbols-outlined">contact_support</span> Contacto y sugerencias</a></li>
+          <li><a class="nav-link {% if request.resolver_match.url_name == 'apoyar_proyecto' %}active{% endif %}" href="{% url 'apoyar_proyecto' %}"><span class="material-symbols-outlined">volunteer_activism</span> Apoyar el proyecto</a></li>
         </ul>
         {% if user.is_staff %}
           <div class="nav-section">Administración</div>
@@ -1926,6 +1927,7 @@
             <li><a class="nav-link {% if request.resolver_match.url_name == 'configuracion_ia' %}active{% endif %}" href="{% url 'configuracion_ia' %}"><span class="material-symbols-outlined">tune</span> Conectar IA</a></li>
             <li><a class="nav-link {% if request.resolver_match.url_name == 'configuracion_correo' %}active{% endif %}" href="{% url 'configuracion_correo' %}"><span class="material-symbols-outlined">forward_to_inbox</span> Configurar correo</a></li>
             {% if user.is_superuser %}<li><a class="nav-link {% if request.resolver_match.url_name == 'configuracion_telegram' %}active{% endif %}" href="{% url 'configuracion_telegram' %}"><span class="material-symbols-outlined">send</span> Configurar Telegram</a></li>{% endif %}
+            {% if user.is_superuser %}<li><a class="nav-link {% if request.resolver_match.url_name == 'configuracion_apoyo' %}active{% endif %}" href="{% url 'configuracion_apoyo' %}"><span class="material-symbols-outlined">volunteer_activism</span> Configurar apoyo</a></li>{% endif %}
             <li><a class="nav-link {% if request.resolver_match.url_name == 'consumo_ia_panel' or request.resolver_match.url_name == 'usuario_ia_toggle' %}active{% endif %}" href="{% url 'consumo_ia_panel' %}"><span class="material-symbols-outlined">admin_panel_settings</span> Control IA</a></li>
             <li><a class="nav-link" href="{% url 'admin:index' %}"><span class="material-symbols-outlined">admin_panel_settings</span> Admin Django</a></li>
           </ul>

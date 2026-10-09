@@ -12,6 +12,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from .forms import (
+    ConfiguracionApoyoForm,
     ConfiguracionCorreoForm,
     ConfiguracionIAForm,
     ConfiguracionTelegramForm,
@@ -43,6 +44,7 @@ from .models import (
     Acreedor,
     AjusteSaldo,
     Categoria,
+    ConfiguracionApoyo,
     ConfiguracionCorreo,
     CuentaFinanciera,
     ConfiguracionIA,
@@ -661,6 +663,80 @@ class ConfiguracionTelegramTests(TestCase):
         telegram_text = send_message.call_args.args[0]
         self.assertIn("No se pudo enviar el correo", telegram_text)
         self.assertNotIn("solicitante-sin-correo", telegram_text)
+
+
+class ConfiguracionApoyoTests(TestCase):
+    def test_solo_acepta_enlaces_oficiales_de_paypal(self):
+        form = ConfiguracionApoyoForm(
+            data={"activo": "on", "paypal_url": "https://ejemplo.com/cobrar"}
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("paypal_url", form.errors)
+
+        paypal_form = ConfiguracionApoyoForm(
+            data={"activo": "on", "paypal_url": "https://paypal.me/finanzasclaras"}
+        )
+        self.assertTrue(paypal_form.is_valid(), paypal_form.errors)
+
+    def test_pagina_publica_muestra_paypal_cuando_esta_activo(self):
+        ConfiguracionApoyo.objects.create(
+            activo=True,
+            paypal_url="https://paypal.me/finanzasclaras",
+        )
+
+        response = self.client.get(reverse("apoyar_proyecto"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Apoyar con PayPal")
+        self.assertContains(response, "https://paypal.me/finanzasclaras")
+
+    def test_pagina_publica_no_expone_enlace_si_esta_desactivado(self):
+        ConfiguracionApoyo.objects.create(
+            activo=False,
+            paypal_url="https://paypal.me/finanzasclaras",
+        )
+
+        response = self.client.get(reverse("apoyar_proyecto"))
+
+        self.assertContains(response, "Aportes próximamente")
+        self.assertNotContains(response, "https://paypal.me/finanzasclaras")
+
+    def test_configuracion_solo_permite_superusuarios(self):
+        normal = get_user_model().objects.create_user(username="apoyo-normal", password="test")
+        superuser = get_user_model().objects.create_superuser(
+            username="apoyo-super",
+            email="super@example.com",
+            password="test",
+        )
+
+        self.client.force_login(normal)
+        denied = self.client.get(reverse("configuracion_apoyo"))
+        self.assertRedirects(denied, reverse("dashboard"))
+
+        self.client.force_login(superuser)
+        allowed = self.client.get(reverse("configuracion_apoyo"))
+        self.assertEqual(allowed.status_code, 200)
+        self.assertContains(allowed, "Aportes por PayPal")
+
+    def test_superusuario_guarda_configuracion(self):
+        superuser = get_user_model().objects.create_superuser(
+            username="apoyo-guardar",
+            email="super@example.com",
+            password="test",
+        )
+        self.client.force_login(superuser)
+
+        response = self.client.post(
+            reverse("configuracion_apoyo"),
+            {"activo": "on", "paypal_url": "https://www.paypal.com/donate/example"},
+            follow=True,
+        )
+
+        self.assertContains(response, "Configuración de apoyo guardada")
+        config = ConfiguracionApoyo.objects.get()
+        self.assertTrue(config.activo)
+        self.assertEqual(config.paypal_url, "https://www.paypal.com/donate/example")
 
 class GastoTarjetaCreditoTests(TestCase):
     def setUp(self):

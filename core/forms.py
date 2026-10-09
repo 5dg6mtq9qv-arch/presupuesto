@@ -1,5 +1,6 @@
 import calendar
 from decimal import Decimal
+from urllib.parse import urlsplit
 
 from django import forms
 from django.contrib.auth import get_user_model
@@ -11,6 +12,7 @@ from .models import (
     Acreedor,
     CapturaComprobante,
     Categoria,
+    ConfiguracionApoyo,
     ConfiguracionCorreo,
     ConfiguracionIA,
     ConfiguracionTelegram,
@@ -213,6 +215,39 @@ class ConfiguracionTelegramForm(forms.ModelForm):
         if cleaned_data.get("activo") and not self.instance.token_cifrado:
             self.add_error("token", "Configura el token antes de activar Telegram.")
         return cleaned_data
+
+
+class ConfiguracionApoyoForm(forms.ModelForm):
+    class Meta:
+        model = ConfiguracionApoyo
+        fields = ["paypal_url", "activo"]
+        widgets = {
+            "paypal_url": forms.URLInput(
+                attrs={"placeholder": "https://paypal.me/tuusuario", "autocomplete": "url"}
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            if isinstance(field.widget, forms.CheckboxInput):
+                field.widget.attrs["class"] = "form-check-input"
+            else:
+                field.widget.attrs["class"] = "form-control"
+
+    def clean_paypal_url(self):
+        value = (self.cleaned_data.get("paypal_url") or "").strip()
+        if not value:
+            return ""
+        parsed = urlsplit(value)
+        hostname = (parsed.hostname or "").lower()
+        if parsed.scheme != "https" or not (
+            hostname in {"paypal.com", "paypal.me"}
+            or hostname.endswith(".paypal.com")
+            or hostname.endswith(".paypal.me")
+        ):
+            raise forms.ValidationError("Ingresa un enlace HTTPS oficial de PayPal o PayPal.Me.")
+        return value
 
 
 class ObjetivoFinancieroForm(forms.ModelForm):

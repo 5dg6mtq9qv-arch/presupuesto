@@ -364,6 +364,31 @@ class ConfiguracionTelegram(models.Model):
         return f"Telegram · {destino}"
 
 
+class ConfiguracionApoyo(models.Model):
+    unico = models.BooleanField(default=True, unique=True, editable=False)
+    activo = models.BooleanField(default=False, verbose_name="Mostrar aportes por PayPal")
+    paypal_url = models.URLField(
+        max_length=500,
+        blank=True,
+        verbose_name="Enlace público de PayPal",
+        help_text="Usa un enlace PayPal.Me o un enlace oficial de pago/donación de PayPal.",
+    )
+    actualizado = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = '"configuracion"."configuracion_apoyo"'
+        verbose_name = "configuración de apoyo"
+        verbose_name_plural = "configuración de apoyo"
+
+    def clean(self):
+        super().clean()
+        if self.activo and not self.paypal_url.strip():
+            raise ValidationError({"paypal_url": "Configura el enlace de PayPal antes de activar los aportes."})
+
+    def __str__(self):
+        return "Aportes por PayPal"
+
+
 class ConsumoIA(models.Model):
     usuario = models.ForeignKey(
         settings.AUTH_USER_MODEL,

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block page_title %}Configurar apoyo{% endblock %}
+{% block page_subtitle %}Publica un enlace de PayPal para recibir aportes voluntarios{% endblock %}
+
+{% block content %}
+<style>
+  .support-config { max-width: 760px; margin: 0 auto; }
+  .support-form { display: grid; gap: 18px; }
+  .support-note { display: flex; gap: 10px; padding: 14px; border-radius: 14px; background: var(--surface-soft); color: var(--muted); }
+  .support-note .material-symbols-outlined { color: var(--primary); }
+  .support-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+</style>
+
+<div class="support-config">
+  <section class="panel">
+    <div class="panel-heading">
+      <div><h2>Aportes por PayPal</h2><p class="muted mb-0">Solo se guarda el enlace público; Finanzas Claras nunca solicita tu contraseña de PayPal.</p></div>
+    </div>
+
+    <div class="support-note">
+      <span class="material-symbols-outlined">shield_lock</span>
+      <span>Puedes usar <code>https://paypal.me/tuusuario</code> o un enlace oficial de pago o donación generado por PayPal.</span>
+    </div>
+
+    <form method="post" class="support-form">
+      {% csrf_token %}
+      {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+      {% include "core/partials/form_field.html" with field=form.paypal_url %}
+      <div class="unfold-field unfold-check">
+        <div class="form-check">{{ form.activo }} <label class="form-check-label" for="{{ form.activo.id_for_label }}">{{ form.activo.label }}</label></div>
+        {% for error in form.activo.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+      </div>
+      <div class="support-actions">
+        <button class="btn btn-primary" type="submit"><span class="material-symbols-outlined">save</span><span>Guardar configuración</span></button>
+        <a class="btn btn-outline-secondary" href="{% url 'apoyar_proyecto' %}" target="_blank" rel="noopener"><span class="material-symbols-outlined">open_in_new</span><span>Ver página pública</span></a>
+      </div>
+    </form>
+  </section>
+</div>
+{% endblock %}
