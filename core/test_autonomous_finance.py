@@ -43,6 +43,36 @@ class AutonomousFinanceTests(TestCase):
         self.assertTrue(first[0].requiere_aclaracion)
         self.assertIn("ingreso", first[0].pregunta_aclaratoria.lower())
 
+    def test_deuda_diferida_manejable_no_se_presenta_como_emergencia(self):
+        context = {
+            "ingresos_confirmados": "2000.00",
+            "salidas_de_caja_confirmadas": "900.00",
+            "balance_de_caja_del_periodo": "1100.00",
+            "saldo_disponible_total": "2500.00",
+            "saldo_total_de_deudas_activas": "8000.00",
+            "pagos_pendientes_proximos_30_dias": {"total": "400.00"},
+            "evaluacion_plan_de_deudas": {
+                "estado": "manejable_segun_datos_registrados",
+                "cuotas_vencidas": 0,
+                "monto_vencido": "0.00",
+            },
+            "calidad": {"movimientos_confirmados": 5},
+            "perfil_comportamiento_financiero": {"calidad": {"nivel": "media"}},
+        }
+
+        recommendations = generate_proactive_recommendations(
+            self.user,
+            today=date(2026, 10, 8),
+            context=context,
+        )
+        codes = {item.codigo for item in recommendations}
+
+        self.assertIn("deuda_diferida_manejable", codes)
+        self.assertNotIn("deuda_alta_ingreso", codes)
+        manageable = next(item for item in recommendations if item.codigo == "deuda_diferida_manejable")
+        self.assertEqual(manageable.prioridad, 3)
+        self.assertIn("no presenta atrasos", manageable.resumen)
+
     def test_simulador_es_deterministico_y_expone_supuestos(self):
         context = {
             "balance_de_caja_del_periodo": "-100.00",

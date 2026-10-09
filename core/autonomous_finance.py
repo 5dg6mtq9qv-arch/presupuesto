@@ -107,6 +107,9 @@ def generate_proactive_recommendations(user, *, today=None, context=None):
     available = _decimal(context.get("saldo_disponible_total"))
     debt = _decimal(context.get("saldo_total_de_deudas_activas"))
     upcoming = _decimal(context.get("pagos_pendientes_proximos_30_dias", {}).get("total"))
+    debt_assessment = context.get("evaluacion_plan_de_deudas", {})
+    overdue_count = int(debt_assessment.get("cuotas_vencidas") or 0)
+    overdue_amount = _decimal(debt_assessment.get("monto_vencido"))
     movements = int(context.get("calidad", {}).get("movimientos_confirmados", 0))
     proposals = []
 
@@ -136,8 +139,34 @@ def generate_proactive_recommendations(user, *, today=None, context=None):
     elif upcoming > 0 and available > 0 and upcoming / available >= Decimal("0.50"):
         add("cuotas_presion_saldo", "Reserva saldo para cuotas", f"Las cuotas próximas representan {(upcoming / available * 100):.1f}% del saldo disponible.", [f"Separa {_money(upcoming)} para evitar usarlo en otros gastos."], {"cuotas_30_dias": _money(upcoming), "saldo_disponible": _money(available)}, 8)
 
-    if income > 0 and debt > income * Decimal("3"):
-        add("deuda_alta_ingreso", "Define una estrategia de deuda", "El saldo de deuda supera tres meses de ingresos confirmados del periodo actual.", ["Compara tasas y pagos mínimos.", "Simula un pago adicional antes de comprometerlo."], {"deuda": _money(debt), "ingresos_mes": _money(income)}, 8)
+    if overdue_count:
+        add(
+            "cuotas_vencidas",
+            "Regulariza primero las cuotas vencidas",
+            f"Hay {overdue_count} cuotas vencidas por {_money(overdue_amount)}; el saldo total de la deuda no es exigible de inmediato.",
+            ["Revisa la cuota más antigua y confirma desde qué cuenta se pagará."],
+            {"cuotas_vencidas": overdue_count, "monto_vencido": _money(overdue_amount)},
+            10,
+        )
+    elif income > 0 and debt > income * Decimal("3"):
+        if debt_assessment.get("estado") == "manejable_segun_datos_registrados":
+            add(
+                "deuda_diferida_manejable",
+                "Mantén el plan de cuotas",
+                "El capital total pendiente es alto frente al ingreso mensual, pero está diferido y no presenta atrasos ni presión inmediata según los datos registrados.",
+                ["Conserva saldo para las próximas cuotas y evita asumir nuevas obligaciones que eleven la carga mensual."],
+                {"capital_pendiente": _money(debt), "cuotas_30_dias": _money(upcoming)},
+                3,
+            )
+        else:
+            add(
+                "deuda_alta_ingreso",
+                "Revisa la carga mensual de la deuda",
+                "El capital está diferido; la atención debe centrarse en las cuotas próximas y no en cancelar todo el saldo.",
+                ["Compara las próximas cuotas con tus ingresos y saldo disponible."],
+                {"capital_pendiente": _money(debt), "cuotas_30_dias": _money(upcoming)},
+                6,
+            )
 
     for goal in ObjetivoFinanciero.objects.filter(usuario=user, estado=ObjetivoFinanciero.Estado.ACTIVO).order_by("-prioridad")[:5]:
         missing = max(Decimal("0"), goal.monto_objetivo - goal.monto_actual)

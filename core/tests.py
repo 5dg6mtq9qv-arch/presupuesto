@@ -1220,6 +1220,20 @@ class FinancialAssistantTests(TestCase):
 
     def test_deuda_diferida_separa_capital_total_de_proxima_cuota(self):
         date = datetime(2026, 10, 8).date()
+        account = CuentaFinanciera.objects.create(
+            usuario=self.user,
+            nombre="Cuenta principal",
+            tipo=CuentaFinanciera.Tipo.BANCO,
+            saldo_inicial="1000.00",
+        )
+        MovimientoFinanciero.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.INGRESO,
+            cuenta=account,
+            concepto="Ingreso mensual",
+            monto="3000.00",
+            fecha=date,
+        )
         debt = Deuda.objects.create(
             usuario=self.user,
             categoria=self.category,
@@ -1250,6 +1264,10 @@ class FinancialAssistantTests(TestCase):
         self.assertEqual(context["saldo_total_de_deudas_activas"], "4437.00")
         self.assertIn("no implica que todo sea exigible hoy", context["interpretacion_saldo_deudas"])
         self.assertEqual(context["pagos_pendientes_proximos_30_dias"]["total"], "745.00")
+        self.assertEqual(context["evaluacion_plan_de_deudas"]["estado"], "manejable_segun_datos_registrados")
+        self.assertEqual(context["evaluacion_plan_de_deudas"]["cuotas_vencidas"], 0)
+        self.assertEqual(context["evaluacion_plan_de_deudas"]["carga_proximos_30_dias_sobre_ingresos_porcentaje"], "24.8")
+        self.assertTrue(context["evaluacion_plan_de_deudas"]["cubiertas_por_saldo_disponible"])
         self.assertTrue(debt_detail["es_diferida_en_cuotas"])
         self.assertEqual(debt_detail["categoria"], "Alimentación")
         self.assertEqual(debt_detail["subcategoria"], "Supermercado")
@@ -2319,6 +2337,11 @@ class MovimientoRecurrenteServiceTests(TestCase):
             fecha=datetime(2026, 7, 5).date(),
         )
         self.client.force_login(self.user)
+
+        listado = self.client.get(reverse("movimiento_list"), {"tipo": "ingreso", "estado": "pendiente"})
+        self.assertContains(listado, "data-confirm-movement", html=False)
+        self.assertContains(listado, "¿Dónde recibiste el dinero?")
+        self.assertContains(listado, "Saldo después de aprobar")
 
         response = self.client.post(
             reverse("movimiento_confirmar", args=[movimiento.pk]),

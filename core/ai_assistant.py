@@ -407,6 +407,14 @@ def build_financial_context(user, today=None):
     )
     upcoming_total = upcoming.aggregate(total=Sum("monto"))["total"] or Decimal("0")
     upcoming_count = upcoming.count()
+    overdue = PagoDeuda.objects.filter(
+        deuda__usuario=user,
+        deuda__estado=Deuda.Estado.ACTIVA,
+        estado=PagoDeuda.Estado.PENDIENTE,
+        fecha__lt=today,
+    )
+    overdue_total = overdue.aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    overdue_count = overdue.count()
     upcoming_rows = list(
         upcoming.select_related("deuda")
         .order_by("fecha", "deuda__acreedor", "cuota_numero")[:MAX_UPCOMING_PAYMENT_DETAILS]
@@ -439,6 +447,23 @@ def build_financial_context(user, today=None):
     account_rows = [_account_result(account) for account in active_accounts]
     available_balance = sum((Decimal(row["saldo_actual"]) for row in account_rows), Decimal("0"))
     behavior_profile = get_financial_behavior_profile(user, today=today)
+    debt_burden = (upcoming_total / incomes * Decimal("100")) if incomes else None
+    deferred_debt_count = active_debts.filter(numero_cuotas__gt=1).count()
+    if overdue_count:
+        debt_plan_status = "requiere_atencion_por_atrasos"
+        debt_plan_explanation = "Existen cuotas vencidas; la prioridad es regularizar esos pagos, no cancelar todo el capital pendiente."
+    elif upcoming_total > available_balance:
+        debt_plan_status = "requiere_atencion_por_liquidez"
+        debt_plan_explanation = "Las cuotas de los próximos 30 días superan el saldo disponible registrado."
+    elif debt_burden is not None and debt_burden > Decimal("30"):
+        debt_plan_status = "carga_mensual_alta"
+        debt_plan_explanation = "No hay atrasos, pero las próximas cuotas superan el 30% de los ingresos confirmados del mes."
+    elif incomes:
+        debt_plan_status = "manejable_segun_datos_registrados"
+        debt_plan_explanation = "No hay cuotas vencidas y las obligaciones próximas caben dentro del saldo y los ingresos registrados."
+    else:
+        debt_plan_status = "sin_ingresos_suficientes_para_evaluar"
+        debt_plan_explanation = "No hay atrasos registrados, pero faltan ingresos confirmados para medir la carga mensual con fiabilidad."
 
     return {
         "moneda": "USD",
@@ -453,6 +478,23 @@ def build_financial_context(user, today=None):
             "Es capital total pendiente; no implica que todo sea exigible hoy. "
             "Para liquidez inmediata usa únicamente cuotas vencidas o próximas."
         ),
+        "evaluacion_plan_de_deudas": {
+            "estado": debt_plan_status,
+            "explicacion": debt_plan_explanation,
+            "deudas_diferidas_en_cuotas": deferred_debt_count,
+            "cuotas_vencidas": overdue_count,
+            "monto_vencido": _money(overdue_total),
+            "cuotas_proximos_30_dias": upcoming_count,
+            "monto_proximos_30_dias": _money(upcoming_total),
+            "carga_proximos_30_dias_sobre_ingresos_porcentaje": (
+                f"{debt_burden:.1f}" if debt_burden is not None else None
+            ),
+            "cubiertas_por_saldo_disponible": upcoming_total <= available_balance,
+            "criterio": (
+                "La manejabilidad se evalúa con atrasos, cuotas próximas, ingresos y saldo disponible; "
+                "nunca únicamente con el capital total pendiente."
+            ),
+        },
         "deudas_activas": {
             "cantidad": active_debt_count,
             "detalle": [
@@ -2187,6 +2229,7 @@ def ask_financial_assistant(user, question, history=None):
         "Nunca inventes registros, importes, categorías ni causas. Distingue consumo de salida de caja. "
         "Distingue también saldo total de deuda de obligación inmediata: saldo_total_de_deudas_activas y saldo_actual son capital pendiente y no equivalen automáticamente a dinero exigible hoy. "
         "Si una deuda está diferida o tiene varias cuotas, evalúa la liquidez únicamente con cuotas vencidas, la próxima cuota y los pagos pendientes del periodo; no compares el saldo completo con el efectivo disponible ni recomiendes pagarlo íntegro, refinanciarlo o tratarlo como emergencia salvo que existan atrasos, una cuota impagable o el usuario lo solicite. "
+        "Usa evaluacion_plan_de_deudas como diagnóstico principal: si su estado es manejable_segun_datos_registrados, dilo explícitamente y presenta el saldo total solo como contexto de largo plazo, no como alerta. "
         "Antes de analizar una deuda, menciona a qué corresponde, cuántas cuotas tiene, cuántas quedan, cuánto está vencido y cuál es el siguiente pago según resumen_calendario. Si el calendario está incompleto, consulta deudas o pagos y reconoce lo que falte. "
         "Una variación negativa del saldo de deuda significa que está disminuyendo, no creciendo. Si faltan cuota o fechas, consulta las herramientas de deudas y pagos antes de concluir. "
         "Para registrar un ingreso o gasto expresado en lenguaje natural, usa inmediatamente preparar_movimiento_rapido cuando tengas tipo, monto y concepto; no consultes catálogos antes porque esa herramienta resuelve valores reales e inferencias seguras. "

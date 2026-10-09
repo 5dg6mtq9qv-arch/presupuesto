@@ -3,6 +3,7 @@ from io import BytesIO
 import tempfile
 
 from PIL import Image
+from pypdf import PdfReader
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
@@ -57,6 +58,62 @@ class ProductFeaturesTests(TestCase):
         self.assertEqual(report["Content-Type"], "application/pdf")
         self.assertTrue(report.content.startswith(b"%PDF"))
         self.assertGreater(len(report.content), 5000)
+        report_text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(report.content)).pages)
+        self.assertIn("Resultado de consumo", report_text)
+        self.assertIn("Resultado de caja", report_text)
+        self.assertNotIn("Lectura: flujo de caja", report_text)
+
+    def test_dashboard_exposes_interactive_financial_charts(self):
+        dashboard = self.client.get(reverse("dashboard"))
+
+        self.assertEqual(dashboard.status_code, 200)
+        self.assertEqual(len(dashboard.context["chart_data"]["flujo"]["labels"]), 6)
+        self.assertEqual(len(dashboard.context["chart_data"]["flujoAnual"]["labels"]), 12)
+        self.assertContains(dashboard, 'data-flow-range="12"', html=False)
+        self.assertContains(dashboard, 'data-expense-mode="percent"', html=False)
+        self.assertContains(dashboard, 'data-budget-filter="alert"', html=False)
+        self.assertContains(dashboard, 'data-projection-mode="detail"', html=False)
+        self.assertContains(dashboard, "dashboard-report-periods")
+        self.assertContains(dashboard, "data-dashboard-report-open", html=False)
+        self.assertNotContains(dashboard, "dashboard-report-view")
+
+    def test_pdf_explains_when_deferred_debt_plan_is_manageable(self):
+        today = timezone.localdate()
+        account = self.user.cuentafinanciera_set.filter(activa=True).first()
+        MovimientoFinanciero.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.INGRESO,
+            cuenta=account,
+            concepto="Ingreso mensual",
+            monto="1000.00",
+            fecha=today,
+        )
+        debt = Deuda.objects.create(
+            usuario=self.user,
+            acreedor="Banco",
+            concepto="Compra diferida",
+            monto_inicial="600.00",
+            saldo_actual="600.00",
+            numero_cuotas=6,
+            fecha_inicio=today,
+        )
+        PagoDeuda.objects.create(
+            deuda=debt,
+            monto="100.00",
+            fecha=today + timedelta(days=10),
+            cuota_numero=1,
+            estado=PagoDeuda.Estado.PENDIENTE,
+        )
+
+        report = self.client.get(
+            reverse("reporte_financiero_pdf"),
+            {"fecha_inicio": today.replace(day=1).isoformat(), "fecha_fin": today.isoformat()},
+        )
+        report_text = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(report.content)).pages)
+
+        self.assertIn("no equivale a un pago inmediato", report_text)
+        self.assertIn("el plan es manejable", report_text)
+        self.assertIn("0/6 cuotas", report_text)
 
     def test_csv_preview_confirmation_and_duplicate_detection(self):
         account = self.user.cuentafinanciera_set.filter(activa=True).first()

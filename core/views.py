@@ -23,6 +23,7 @@ from django.core.mail import EmailMessage, EmailMultiAlternatives
 from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
 from django.db import transaction
 from django.db.models import Count, Max, Min, Prefetch, Q, Sum
+from django.db.models.functions import TruncMonth
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -1833,26 +1834,22 @@ def reporte_financiero_pdf(request):
     fecha_fin = parse_date(request.GET.get("fecha_fin", "")) or hoy
     if fecha_inicio > fecha_fin:
         fecha_inicio, fecha_fin = fecha_fin, fecha_inicio
-    vista = request.GET.get("vista", "caja")
-    if vista not in {"caja", "consumo"}:
-        vista = "caja"
-
     movimientos = MovimientoFinanciero.objects.filter(
         usuario=request.user,
         estado=MovimientoFinanciero.Estado.CONFIRMADO,
         fecha__range=(fecha_inicio, fecha_fin),
     ).select_related("categoria__parent")
     ingresos = movimientos.filter(tipo=MovimientoFinanciero.Tipo.INGRESO).aggregate(total=Sum("monto"))["total"] or Decimal("0")
-    gastos_qs = movimientos.filter(tipo=MovimientoFinanciero.Tipo.GASTO)
-    if vista == "caja":
-        gastos_qs = gastos_qs.exclude(metodo_pago__tipo=MetodoPago.Tipo.CREDITO)
-    gastos = gastos_qs.aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    gastos_consumo_qs = movimientos.filter(tipo=MovimientoFinanciero.Tipo.GASTO)
+    gastos_caja_qs = gastos_consumo_qs.exclude(metodo_pago__tipo=MetodoPago.Tipo.CREDITO)
+    gastos_consumo = gastos_consumo_qs.aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    gastos_caja = gastos_caja_qs.aggregate(total=Sum("monto"))["total"] or Decimal("0")
     recurrentes = MovimientoRecurrente.objects.filter(usuario=request.user, activo=True).select_related("categoria__parent").order_by("tipo", "dia_mes", "concepto")
-    gastos_categoria = gastos_por_categoria(gastos_qs, 8)
+    gastos_categoria = gastos_por_categoria(gastos_consumo_qs, 8)
     saldo_deudas = Deuda.objects.filter(usuario=request.user, estado=Deuda.Estado.ACTIVA).aggregate(total=Sum("saldo_actual"))["total"] or Decimal("0")
     pagos_deuda = PagoDeuda.objects.filter(deuda__usuario=request.user, estado=PagoDeuda.Estado.CONFIRMADO, fecha__range=(fecha_inicio, fecha_fin)).aggregate(total=Sum("monto"))["total"] or Decimal("0")
-    pagos_aplicados = pagos_deuda if vista == "caja" else Decimal("0")
-    margen = ingresos - gastos - pagos_aplicados
+    resultado_caja = ingresos - gastos_caja - pagos_deuda
+    resultado_consumo = ingresos - gastos_consumo
     cuentas_reporte = saldos_por_cuenta(request.user)
     saldo_disponible = sum((item["saldo"] for item in cuentas_reporte), Decimal("0"))
     patrimonio_neto = saldo_disponible - saldo_deudas
@@ -1866,17 +1863,18 @@ def reporte_financiero_pdf(request):
         fecha__range=(fecha_inicio_anterior, fecha_fin_anterior),
     )
     ingresos_anteriores = movimientos_anteriores.filter(tipo=MovimientoFinanciero.Tipo.INGRESO).aggregate(total=Sum("monto"))["total"] or Decimal("0")
-    gastos_anteriores_qs = movimientos_anteriores.filter(tipo=MovimientoFinanciero.Tipo.GASTO)
-    if vista == "caja":
-        gastos_anteriores_qs = gastos_anteriores_qs.exclude(metodo_pago__tipo=MetodoPago.Tipo.CREDITO)
-    gastos_anteriores = gastos_anteriores_qs.aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    gastos_consumo_anteriores_qs = movimientos_anteriores.filter(tipo=MovimientoFinanciero.Tipo.GASTO)
+    gastos_caja_anteriores_qs = gastos_consumo_anteriores_qs.exclude(metodo_pago__tipo=MetodoPago.Tipo.CREDITO)
+    gastos_consumo_anteriores = gastos_consumo_anteriores_qs.aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    gastos_caja_anteriores = gastos_caja_anteriores_qs.aggregate(total=Sum("monto"))["total"] or Decimal("0")
     pagos_anteriores = PagoDeuda.objects.filter(
         deuda__usuario=request.user,
         estado=PagoDeuda.Estado.CONFIRMADO,
         fecha__range=(fecha_inicio_anterior, fecha_fin_anterior),
     ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
-    resultado_anterior = ingresos_anteriores - gastos_anteriores - (pagos_anteriores if vista == "caja" else Decimal("0"))
-    tasa_resultado = (margen / ingresos * Decimal("100")).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP) if ingresos else Decimal("0")
+    resultado_caja_anterior = ingresos_anteriores - gastos_caja_anteriores - pagos_anteriores
+    resultado_consumo_anterior = ingresos_anteriores - gastos_consumo_anteriores
+    tasa_resultado_caja = (resultado_caja / ingresos * Decimal("100")).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP) if ingresos else Decimal("0")
 
     recurrentes_gasto = [item for item in recurrentes if item.tipo == MovimientoFinanciero.Tipo.GASTO]
     inicio_proximas_cuotas = max(hoy, fecha_fin)
@@ -1897,11 +1895,62 @@ def reporte_financiero_pdf(request):
         [item for item in cuotas_proximas_detalle if item["estado"] == PagoDeuda.Estado.PENDIENTE],
         key=lambda item: (item["fecha"], item["cuota_numero"] or 0),
     )
-    presupuesto_resumen = None
-    presupuesto_reporte = []
-    if fecha_inicio.year == fecha_fin.year and fecha_inicio.month == fecha_fin.month:
-        presupuesto_resumen = resumen_presupuesto(request.user, fecha_inicio)
-        presupuesto_reporte = presupuesto_resumen["items"]
+    pagos_vencidos_reporte = PagoDeuda.objects.filter(
+        deuda__usuario=request.user,
+        deuda__estado=Deuda.Estado.ACTIVA,
+        estado=PagoDeuda.Estado.PENDIENTE,
+        fecha__lt=hoy,
+    )
+    cuotas_vencidas_count = pagos_vencidos_reporte.count()
+    monto_vencido = pagos_vencidos_reporte.aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    carga_cuotas_proximas = (cuotas_proximas / ingresos * Decimal("100")) if ingresos else None
+    resumenes_presupuesto = []
+    mes_presupuesto = fecha_inicio.replace(day=1)
+    ultimo_mes_presupuesto = fecha_fin.replace(day=1)
+    while mes_presupuesto <= ultimo_mes_presupuesto:
+        resumenes_presupuesto.append(resumen_presupuesto(request.user, mes_presupuesto))
+        if mes_presupuesto.month == 12:
+            mes_presupuesto = mes_presupuesto.replace(year=mes_presupuesto.year + 1, month=1)
+        else:
+            mes_presupuesto = mes_presupuesto.replace(month=mes_presupuesto.month + 1)
+
+    presupuesto_acumulado = {}
+    for resumen_mes in resumenes_presupuesto:
+        for item in resumen_mes["items"]:
+            if item.get("solapado"):
+                continue
+            acumulado = presupuesto_acumulado.setdefault(
+                item["detalle_categoria"],
+                {
+                    "detalle_categoria": item["detalle_categoria"],
+                    "presupuesto": Decimal("0"),
+                    "usado": Decimal("0"),
+                    "restante": Decimal("0"),
+                    "proyectado": Decimal("0"),
+                    "estado": "bien",
+                    "solapado": False,
+                },
+            )
+            for campo in ("presupuesto", "usado", "restante", "proyectado"):
+                acumulado[campo] += item[campo]
+    presupuesto_reporte = sorted(
+        presupuesto_acumulado.values(),
+        key=lambda item: item["presupuesto"],
+        reverse=True,
+    )
+    for item in presupuesto_reporte:
+        if item["usado"] > item["presupuesto"]:
+            item["estado"] = "excedido"
+        elif item["proyectado"] > item["presupuesto"]:
+            item["estado"] = "riesgo"
+        elif item["presupuesto"] and item["usado"] / item["presupuesto"] >= Decimal("0.8"):
+            item["estado"] = "atencion"
+    presupuesto_resumen = {
+        "total_presupuesto": sum((item["total_presupuesto"] for item in resumenes_presupuesto), Decimal("0")),
+        "total_usado": sum((item["total_usado"] for item in resumenes_presupuesto), Decimal("0")),
+        "total_restante": sum((item["total_restante"] for item in resumenes_presupuesto), Decimal("0")),
+        "gasto_sin_presupuesto": sum((item["gasto_sin_presupuesto"] for item in resumenes_presupuesto), Decimal("0")),
+    }
     deuda_prioritaria_reporte = Deuda.objects.filter(
         usuario=request.user,
         estado=Deuda.Estado.ACTIVA,
@@ -1914,8 +1963,8 @@ def reporte_financiero_pdf(request):
     ).first()
     sugerencias = generar_recomendaciones_financieras(
         ingresos=ingresos,
-        gastos=gastos,
-        pagos_deuda=pagos_aplicados,
+        gastos=gastos_caja,
+        pagos_deuda=pagos_deuda,
         cuotas_proximas=cuotas_proximas,
         saldo_deudas=saldo_deudas,
         gastos_categoria=gastos_categoria,
@@ -1928,7 +1977,18 @@ def reporte_financiero_pdf(request):
     deudas_reporte = Deuda.objects.filter(
         usuario=request.user,
         estado=Deuda.Estado.ACTIVA,
-    ).select_related("categoria__parent").order_by("fecha_vencimiento", "acreedor")
+    ).select_related("categoria__parent").annotate(
+        cuotas_confirmadas_reporte=Count(
+            "pagos",
+            filter=Q(pagos__estado=PagoDeuda.Estado.CONFIRMADO, pagos__cuota_numero__isnull=False),
+        )
+    ).prefetch_related(
+        Prefetch(
+            "pagos",
+            queryset=PagoDeuda.objects.filter(estado=PagoDeuda.Estado.PENDIENTE).order_by("fecha", "cuota_numero"),
+            to_attr="pagos_pendientes_reporte",
+        )
+    ).order_by("fecha_vencimiento", "acreedor")
     proyeccion_reporte = proyeccion_recurrente(request.user, hoy, saldo_inicial=saldo_disponible)
     movimientos_destacados = movimientos.select_related("categoria__parent", "cuenta").order_by("-monto", "-fecha")[:12]
 
@@ -1973,41 +2033,57 @@ def reporte_financiero_pdf(request):
     story = [
         Paragraph("Informe financiero personal", styles["ReportTitle"]),
         Paragraph(escape(user_name), ParagraphStyle(name="ReportUser", parent=styles["BodyCompact"], alignment=TA_CENTER, textColor=colors.HexColor("#1b2431"))),
-        Paragraph(f"Periodo: {fecha_inicio.strftime('%d/%m/%Y')} al {fecha_fin.strftime('%d/%m/%Y')} | Lectura: {'flujo de caja' if vista == 'caja' else 'consumo'} | Generado: {hoy.strftime('%d/%m/%Y')}", styles["SmallMuted"]),
+        Paragraph(f"Periodo: {fecha_inicio.strftime('%d/%m/%Y')} al {fecha_fin.strftime('%d/%m/%Y')} | Informe integral | Generado: {hoy.strftime('%d/%m/%Y')}", styles["SmallMuted"]),
         Spacer(1, 4 * mm),
     ]
     resumen = [
-        ["Ingresos", "Gastos", "Pagos de deuda" if vista == "caja" else "Pagos informativos", "Resultado"],
-        [f"{ingresos:.2f}", f"{gastos:.2f}", f"{pagos_deuda:.2f}", f"{margen:.2f}"],
+        ["Ingresos", "Compras y consumo", "Salidas operativas", "Pagos de deuda"],
+        [f"{ingresos:.2f}", f"{gastos_consumo:.2f}", f"{gastos_caja:.2f}", f"{pagos_deuda:.2f}"],
     ]
     summary_table = report_table(resumen, [44.5 * mm] * 4, aligns=["CENTER"] * 4)
     summary_table.setStyle(TableStyle([("FONTSIZE", (0, 1), (-1, 1), 12), ("FONTNAME", (0, 1), (-1, 1), "Helvetica-Bold")]))
     story.append(summary_table)
+    resultados = [
+        ["Resultado de consumo", "Resultado de caja"],
+        [f"{resultado_consumo:.2f}", f"{resultado_caja:.2f}"],
+    ]
+    result_table = report_table(resultados, [89 * mm] * 2, aligns=["CENTER"] * 2)
+    result_table.setStyle(TableStyle([("FONTSIZE", (0, 1), (-1, 1), 12), ("FONTNAME", (0, 1), (-1, 1), "Helvetica-Bold")]))
+    story.extend([
+        Spacer(1, 2 * mm),
+        result_table,
+        Paragraph(
+            "Consumo reconoce las compras en la fecha en que se realizaron, incluidas las compras a crédito. "
+            "Caja refleja el dinero efectivamente recibido y pagado, incluyendo los pagos de deuda confirmados.",
+            styles["SmallMuted"],
+        ),
+    ])
 
-    change = margen - resultado_anterior
+    change = resultado_caja - resultado_caja_anterior
     direction = "mejoró" if change >= 0 else "disminuyó"
     top_text = f" La categoría con mayor gasto fue {gastos_categoria[0]['categoria']} ({Decimal(str(gastos_categoria[0]['total'])):.2f})." if gastos_categoria else ""
     story.extend([
         Paragraph("Lectura ejecutiva", styles["Section"]),
         Paragraph(
             escape(
-                f"El resultado del periodo fue {margen:.2f}, equivalente al {tasa_resultado:.1f}% de los ingresos. "
+                f"El resultado de caja fue {resultado_caja:.2f}, equivalente al {tasa_resultado_caja:.1f}% de los ingresos; "
+                f"el resultado de consumo fue {resultado_consumo:.2f}. "
                 f"Frente al periodo anterior ({fecha_inicio_anterior:%d/%m/%Y} a {fecha_fin_anterior:%d/%m/%Y}), "
-                f"el resultado {direction} en {abs(change):.2f}.{top_text}"
+                f"la caja {direction} en {abs(change):.2f}.{top_text}"
             ),
             styles["Callout"],
         ),
     ])
 
     chart_values = [
-        [float(ingresos), float(gastos), float(pagos_deuda), float(margen)],
-        [float(ingresos_anteriores), float(gastos_anteriores), float(pagos_anteriores), float(resultado_anterior)],
+        [float(ingresos), float(gastos_consumo), float(gastos_caja), float(pagos_deuda), float(resultado_caja)],
+        [float(ingresos_anteriores), float(gastos_consumo_anteriores), float(gastos_caja_anteriores), float(pagos_anteriores), float(resultado_caja_anterior)],
     ]
     drawing = Drawing(178 * mm, 58 * mm)
     chart = VerticalBarChart()
     chart.x, chart.y, chart.width, chart.height = 14 * mm, 12 * mm, 158 * mm, 39 * mm
     chart.data = chart_values
-    chart.categoryAxis.categoryNames = ["Ingresos", "Gastos", "Deudas", "Resultado"]
+    chart.categoryAxis.categoryNames = ["Ingresos", "Consumo", "Salidas", "Deudas", "Caja"]
     flat_values = [value for series in chart_values for value in series]
     chart.valueAxis.valueMin = float(min(Decimal("0"), Decimal(str(min(flat_values or [0])))) * Decimal("1.15"))
     chart.valueAxis.valueMax = float(max(Decimal("1"), Decimal(str(max(flat_values or [1])))) * Decimal("1.15"))
@@ -2064,7 +2140,7 @@ def reporte_financiero_pdf(request):
     category_data = [["Categoría", "Gasto", "% del total"]]
     for item in gastos_categoria:
         total = Decimal(str(item["total"]))
-        percentage = total / gastos * Decimal("100") if gastos else Decimal("0")
+        percentage = total / gastos_consumo * Decimal("100") if gastos_consumo else Decimal("0")
         category_data.append([Paragraph(escape(item["categoria"]), styles["SmallMuted"]), f"{total:.2f}", f"{percentage:.1f}%"])
     if len(category_data) == 1:
         category_data.append(["Sin gastos en el periodo", "0.00", "0.0%"])
@@ -2086,18 +2162,42 @@ def reporte_financiero_pdf(request):
 
     story.append(PageBreak())
     story.append(Paragraph("Deudas y próximos compromisos", styles["Section"]))
-    debt_data = [["Acreedor", "Concepto", "Saldo", "Tasa", "Vencimiento"]]
+    if cuotas_vencidas_count:
+        lectura_deuda = (
+            f"El capital pendiente total es {saldo_deudas:.2f}, pero no es exigible de inmediato. "
+            f"Requieren atención {cuotas_vencidas_count} cuotas vencidas por {monto_vencido:.2f}."
+        )
+    elif cuotas_proximas > saldo_disponible:
+        lectura_deuda = (
+            f"No hay cuotas vencidas. El capital pendiente total es {saldo_deudas:.2f}; sin embargo, "
+            f"las cuotas de los próximos 30 días ({cuotas_proximas:.2f}) superan el saldo disponible registrado."
+        )
+    elif carga_cuotas_proximas is not None and carga_cuotas_proximas <= Decimal("30"):
+        lectura_deuda = (
+            f"El capital pendiente total es {saldo_deudas:.2f}; no equivale a un pago inmediato y está distribuido en sus planes de cuotas. "
+            f"No hay atrasos; los próximos 30 días requieren {cuotas_proximas:.2f}, equivalentes al "
+            f"{carga_cuotas_proximas:.1f}% de los ingresos del periodo. Con los datos registrados, el plan es manejable si se mantienen las cuotas al día."
+        )
+    else:
+        lectura_deuda = (
+            f"El capital pendiente total es {saldo_deudas:.2f} y no equivale a un pago inmediato. "
+            f"No hay atrasos; las cuotas de los próximos 30 días suman {cuotas_proximas:.2f}."
+        )
+    story.append(Paragraph(escape(lectura_deuda), styles["Callout"]))
+    debt_data = [["Acreedor", "Concepto", "Saldo", "Plan", "Próxima cuota"]]
     for debt in deudas_reporte:
+        cuotas_pagadas = debt.cuotas_pagadas_previas + debt.cuotas_confirmadas_reporte
+        proximo_pago = debt.pagos_pendientes_reporte[0] if debt.pagos_pendientes_reporte else None
         debt_data.append([
             Paragraph(escape(debt.acreedor), styles["SmallMuted"]),
             Paragraph(escape(debt.concepto), styles["SmallMuted"]),
             f"{debt.saldo_actual:.2f}",
-            f"{debt.tasa_interes_anual:.2f}%" if debt.tasa_interes_anual is not None else "Sin tasa",
-            debt.fecha_vencimiento.strftime("%d/%m/%Y") if debt.fecha_vencimiento else "Sin fecha",
+            f"{cuotas_pagadas}/{debt.numero_cuotas} cuotas",
+            f"{proximo_pago.fecha:%d/%m/%Y} · {proximo_pago.monto:.2f}" if proximo_pago else "Sin cuota pendiente",
         ])
     if len(debt_data) == 1:
         debt_data.append(["Sin deudas activas", "", "0.00", "", ""])
-    story.append(report_table(debt_data, [40 * mm, 62 * mm, 26 * mm, 24 * mm, 26 * mm], aligns=["LEFT", "LEFT", "RIGHT", "RIGHT", "CENTER"]))
+    story.append(report_table(debt_data, [35 * mm, 53 * mm, 25 * mm, 28 * mm, 37 * mm], aligns=["LEFT", "LEFT", "RIGHT", "CENTER", "RIGHT"]))
 
     upcoming_data = [["Vence", "Cuota", "Deuda", "Monto"]]
     for item in cuotas_proximas_detalle[:15]:
@@ -2519,6 +2619,54 @@ def dashboard(request):
     perfil, _ = PerfilUsuario.objects.get_or_create(usuario=request.user)
     hoy = timezone.localdate()
     inicio_mes = hoy.replace(day=1)
+    meses_con_datos = set(
+        MovimientoFinanciero.objects.filter(
+            usuario=request.user,
+            estado=MovimientoFinanciero.Estado.CONFIRMADO,
+            fecha__lte=hoy,
+        ).order_by().annotate(
+            mes=TruncMonth("fecha"),
+        ).values_list("mes", flat=True).distinct()
+    )
+    meses_con_datos.update(
+        PagoDeuda.objects.filter(
+            deuda__usuario=request.user,
+            estado=PagoDeuda.Estado.CONFIRMADO,
+            fecha__lte=hoy,
+        ).order_by().annotate(
+            mes=TruncMonth("fecha"),
+        ).values_list("mes", flat=True).distinct()
+    )
+    meses_con_datos.add(inicio_mes)
+    nombres_meses = (
+        "", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+        "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+    )
+    opciones_mensuales_reporte = []
+    for mes in sorted(meses_con_datos, reverse=True):
+        fin_mes = mes.replace(day=calendar.monthrange(mes.year, mes.month)[1])
+        opciones_mensuales_reporte.append(
+            {
+                "key": f"mes-{mes:%Y-%m}",
+                "label": f"{nombres_meses[mes.month]} {mes.year}",
+                "start": mes.isoformat(),
+                "end": min(fin_mes, hoy).isoformat(),
+            }
+        )
+    opciones_anuales_reporte = []
+    for anio in sorted({mes.year for mes in meses_con_datos}, reverse=True):
+        opciones_anuales_reporte.append(
+            {
+                "key": f"anio-{anio}",
+                "label": str(anio),
+                "start": hoy.replace(year=anio, month=1, day=1).isoformat(),
+                "end": (hoy if anio == hoy.year else hoy.replace(year=anio, month=12, day=31)).isoformat(),
+            }
+        )
+    periodos_reporte = {
+        "months": opciones_mensuales_reporte,
+        "years": opciones_anuales_reporte,
+    }
     if hoy.month == 12:
         inicio_mes_siguiente = hoy.replace(year=hoy.year + 1, month=1, day=1)
     else:
@@ -2654,31 +2802,39 @@ def dashboard(request):
         month = month_index % 12 + 1
         return fecha.replace(year=year, month=month, day=1)
 
-    meses = [add_months(inicio_mes, offset) for offset in range(-5, 1)]
+    meses = [add_months(inicio_mes, offset) for offset in range(-11, 1)]
+    movimientos_historicos = MovimientoFinanciero.objects.filter(
+        usuario=request.user,
+        estado=MovimientoFinanciero.Estado.CONFIRMADO,
+        fecha__gte=meses[0],
+        fecha__lt=add_months(inicio_mes, 1),
+    )
+    ingresos_historicos = {
+        (item["mes"].year, item["mes"].month): item["total"]
+        for item in movimientos_historicos.filter(
+            tipo=MovimientoFinanciero.Tipo.INGRESO,
+        ).order_by().annotate(
+            mes=TruncMonth("fecha"),
+        ).values("mes").annotate(
+            total=Sum("monto"),
+        )
+    }
+    gastos_historicos = {
+        (item["mes"].year, item["mes"].month): item["total"]
+        for item in movimientos_historicos.filter(
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+        ).exclude(
+            metodo_pago__tipo=MetodoPago.Tipo.CREDITO,
+        ).order_by().annotate(
+            mes=TruncMonth("fecha"),
+        ).values("mes").annotate(
+            total=Sum("monto"),
+        )
+    }
     flujo_mensual = []
     for mes in meses:
-        ingresos_mes = (
-            MovimientoFinanciero.objects.filter(
-                usuario=request.user,
-                estado=MovimientoFinanciero.Estado.CONFIRMADO,
-                tipo=MovimientoFinanciero.Tipo.INGRESO,
-                fecha__year=mes.year,
-                fecha__month=mes.month,
-            ).aggregate(total=Sum("monto"))["total"]
-            or Decimal("0")
-        )
-        gastos_mes = (
-            MovimientoFinanciero.objects.filter(
-                usuario=request.user,
-                estado=MovimientoFinanciero.Estado.CONFIRMADO,
-                tipo=MovimientoFinanciero.Tipo.GASTO,
-                fecha__year=mes.year,
-                fecha__month=mes.month,
-            ).exclude(
-                metodo_pago__tipo=MetodoPago.Tipo.CREDITO,
-            ).aggregate(total=Sum("monto"))["total"]
-            or Decimal("0")
-        )
+        ingresos_mes = ingresos_historicos.get((mes.year, mes.month), Decimal("0"))
+        gastos_mes = gastos_historicos.get((mes.year, mes.month), Decimal("0"))
         flujo_mensual.append(
             {
                 "mes": mes.strftime("%m/%Y"),
@@ -2690,6 +2846,12 @@ def dashboard(request):
 
     chart_data = {
         "flujo": {
+            "labels": [item["mes"] for item in flujo_mensual[-6:]],
+            "ingresos": [item["ingresos"] for item in flujo_mensual[-6:]],
+            "gastos": [item["gastos"] for item in flujo_mensual[-6:]],
+            "margen": [item["margen"] for item in flujo_mensual[-6:]],
+        },
+        "flujoAnual": {
             "labels": [item["mes"] for item in flujo_mensual],
             "ingresos": [item["ingresos"] for item in flujo_mensual],
             "gastos": [item["gastos"] for item in flujo_mensual],
@@ -2781,6 +2943,7 @@ def dashboard(request):
         "core/dashboard.html",
         {
             "hoy": hoy,
+            "periodos_reporte": periodos_reporte,
             "tareas_hoy": tareas_hoy,
             "ingresos": ingresos,
             "gastos": gastos,
@@ -3663,7 +3826,7 @@ def movimiento_list(request):
     movimientos = MovimientoFinanciero.objects.filter(
         usuario=request.user,
         tipo=active_tipo,
-    ).select_related("categoria__parent", "cuenta", "metodo_pago", "ajuste_saldo").prefetch_related("etiquetas")
+    ).select_related("categoria__parent", "cuenta", "metodo_pago", "recurrente", "ajuste_saldo").prefetch_related("etiquetas")
     q = request.GET.get("q", "").strip()
     estado = request.GET.get("estado", "")
     categoria_id = request.GET.get("categoria", "")
@@ -3711,6 +3874,10 @@ def movimiento_list(request):
         if active_tipo == MovimientoFinanciero.Tipo.GASTO
         else "movimiento_ingreso_create"
     )
+    cuentas_confirmacion = [
+        {"id": item["id"], "nombre": item["nombre"], "saldo": float(item["saldo"])}
+        for item in saldos_por_cuenta(request.user)
+    ]
     return render(
         request,
         "core/movimiento_list.html",
@@ -3722,6 +3889,7 @@ def movimiento_list(request):
             "create_url_name": create_url_name,
             "categorias": categorias,
             "cuentas": CuentaFinanciera.objects.filter(usuario=request.user, activa=True).order_by("nombre"),
+            "cuentas_confirmacion": cuentas_confirmacion,
             "metodos": MetodoPago.objects.filter(usuario=request.user, activo=True).order_by("nombre"),
             "etiquetas": Etiqueta.objects.filter(usuario=request.user).order_by("nombre"),
             "filters": {"q": q, "estado": estado, "categoria": categoria_id, "cuenta": cuenta_id, "metodo": metodo_id, "etiqueta": etiqueta_id},

@@ -4,6 +4,7 @@
 {% block page_subtitle %}Registra cada movimiento desde su pestaña para fijar el tipo automáticamente{% endblock %}
 
 {% block content %}
+{{ cuentas_confirmacion|json_script:"movement-confirmation-accounts" }}
 <div class="actions">
   <div class="tabs">
     <a class="tab {% if active_tipo == 'ingreso' %}active{% endif %}" href="{% url 'movimiento_list' %}?tipo=ingreso">Ingresos</a>
@@ -124,7 +125,7 @@
               </span>
             </td>
             <td class="amount">{{ movimiento.monto }}</td>
-            <td>{{ movimiento.cuenta|default:"General" }}</td>
+            <td>{% if movimiento.cuenta %}{{ movimiento.cuenta }}{% elif movimiento.estado == "pendiente" %}<span class="muted">Por elegir</span>{% else %}General{% endif %}</td>
             <td>{{ movimiento.metodo_pago|default:"" }}</td>
             <td>{{ movimiento.fecha }}</td>
             {% if active_tipo == "gasto" %}
@@ -148,9 +149,13 @@
             <td>
               {% if movimiento.estado == "pendiente" %}
                 <span class="action-icons">
-                  <a class="btn btn-sm btn-primary btn-icon" href="{% url 'movimiento_confirmar' movimiento.pk %}" title="{% if movimiento.tipo == 'ingreso' %}Confirmar recepción{% else %}Confirmar pago{% endif %}" aria-label="{% if movimiento.tipo == 'ingreso' %}Confirmar recepción{% else %}Confirmar pago{% endif %}">
+                  <a class="btn btn-sm btn-primary btn-icon" href="{% url 'movimiento_confirmar' movimiento.pk %}" title="{% if movimiento.tipo == 'ingreso' %}Confirmar recepción y elegir cuenta{% else %}Confirmar pago y elegir cuenta{% endif %}" aria-label="{% if movimiento.tipo == 'ingreso' %}Confirmar recepción y elegir cuenta{% else %}Confirmar pago y elegir cuenta{% endif %}" data-confirm-movement data-confirm-url="{% url 'movimiento_confirmar' movimiento.pk %}" data-movement-type="{{ movimiento.tipo }}" data-movement-concept="{{ movimiento.concepto }}" data-movement-amount="{{ movimiento.monto|stringformat:'f' }}" data-suggested-account="{% firstof movimiento.cuenta_id movimiento.recurrente.cuenta_id '' %}">
                     <span class="material-symbols-outlined">check</span>
                   </a>
+                  <form method="post" action="{% url 'movimiento_confirmar' movimiento.pk %}" data-confirm-movement-form hidden>
+                    {% csrf_token %}
+                    <input type="hidden" name="cuenta" value="">
+                  </form>
                   <button class="btn btn-sm btn-outline-danger btn-icon" type="button" title="Eliminar" aria-label="Eliminar" data-delete-trigger="delete-movimiento-{{ movimiento.pk }}">
                     <span class="material-symbols-outlined">delete</span>
                   </button>
@@ -187,4 +192,76 @@
   </div>
   {% include "core/includes/pagination.html" %}
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (() => {
+    const accountsElement = document.getElementById("movement-confirmation-accounts");
+    if (!accountsElement || !window.Swal) return;
+    const accounts = JSON.parse(accountsElement.textContent);
+    const money = new Intl.NumberFormat("es-EC", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    const escapeHtml = value => {
+      const node = document.createElement("span");
+      node.textContent = value || "";
+      return node.innerHTML;
+    };
+
+    document.querySelectorAll("[data-confirm-movement]").forEach(trigger => {
+      trigger.addEventListener("click", async event => {
+        event.preventDefault();
+        if (!accounts.length) {
+          window.location.assign(trigger.href);
+          return;
+        }
+        const amount = Number(String(trigger.dataset.movementAmount || "0").replace(",", "."));
+        const isIncome = trigger.dataset.movementType === "ingreso";
+        const options = Object.fromEntries(accounts.map(account => [
+          String(account.id),
+          `${account.nombre} · saldo ${money.format(account.saldo)}`,
+        ]));
+        const result = await Swal.fire({
+          title: isIncome ? "¿Dónde recibiste el dinero?" : "¿De qué cuenta se pagó?",
+          html: `<p class="muted"><strong>${escapeHtml(trigger.dataset.movementConcept)}</strong> · ${money.format(amount)}</p><div data-confirm-balance class="form-text"></div>`,
+          input: "select",
+          inputOptions: options,
+          inputValue: trigger.dataset.suggestedAccount || "",
+          inputPlaceholder: "Selecciona una cuenta",
+          showCancelButton: true,
+          confirmButtonText: isIncome ? "Confirmar ingreso" : "Confirmar y descontar",
+          cancelButtonText: "Cancelar",
+          reverseButtons: true,
+          buttonsStyling: false,
+          customClass: {
+            popup: "finance-swal",
+            confirmButton: "finance-swal-confirm",
+            cancelButton: "finance-swal-cancel",
+            input: "form-select",
+          },
+          inputValidator: value => value ? undefined : "Selecciona la cuenta que se afectará.",
+          didOpen: popup => {
+            const select = popup.querySelector("select");
+            const resultText = popup.querySelector("[data-confirm-balance]");
+            const updateBalance = () => {
+              const account = accounts.find(item => String(item.id) === select.value);
+              if (!account) {
+                resultText.textContent = "";
+                return;
+              }
+              const resulting = Number(account.saldo) + (isIncome ? amount : -amount);
+              resultText.textContent = `Saldo después de aprobar: ${money.format(resulting)}.`;
+              resultText.classList.toggle("text-danger", resulting < 0);
+            };
+            select.addEventListener("change", updateBalance);
+            updateBalance();
+          },
+        });
+        if (!result.isConfirmed) return;
+        const form = trigger.closest(".action-icons").querySelector("[data-confirm-movement-form]");
+        form.querySelector('input[name="cuenta"]').value = result.value;
+        form.submit();
+      });
+    });
+  })();
+</script>
 {% endblock %}

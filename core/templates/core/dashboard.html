@@ -5,6 +5,7 @@
 
 {% block content %}
 {{ chart_data|json_script:"dashboard-data" }}
+{{ periodos_reporte|json_script:"dashboard-report-periods" }}
 
 {% if mostrar_bienvenida %}
 <div class="welcome-tour-overlay" data-welcome-tour>
@@ -90,23 +91,17 @@
 {% endif %}
 
 <div class="wallet-hero">
-  <div>
+  <div class="wallet-summary">
     <span class="badge rounded-pill {% if saldo_disponible >= 0 %}text-bg-success{% else %}text-bg-warning{% endif %} mb-2">Saldo al {{ hoy|date:"d/m/Y" }}</span>
     <h2>Dinero disponible hoy: <span class="{% if saldo_disponible >= 0 %}text-success{% else %}text-warning{% endif %}">{{ saldo_disponible }}</span></h2>
     <p class="mb-0 text-muted">Suma de los saldos actuales de tus cuentas activas. Los ajustes se reflejan aquí inmediatamente.</p>
     <p class="mb-0 text-muted">Patrimonio neto después de todas las deudas activas: <strong>{{ patrimonio_neto }}</strong>.</p>
   </div>
-  <div class="wallet-actions">
-    <a class="btn btn-light" href="{% url 'reporte_financiero_pdf' %}?fecha_inicio={{ hoy|date:'Y-m-01' }}&fecha_fin={{ hoy|date:'Y-m-d' }}&vista=caja">
-      <span class="material-symbols-outlined">picture_as_pdf</span>
-      <span>Informe PDF</span>
-    </a>
-    <a class="btn btn-primary" href="{% url 'movimiento_ingreso_create' %}">
-      <span class="material-symbols-outlined">add</span>
-      <span>Registrar ingreso</span>
-    </a>
-    <a class="btn btn-outline-primary" href="{% url 'movimiento_gasto_create' %}"><span class="material-symbols-outlined">remove</span><span>Registrar gasto</span></a>
-  </div>
+  <button class="btn btn-light wallet-report-trigger" type="button" data-dashboard-report-open>
+    <span class="material-symbols-outlined">picture_as_pdf</span>
+    <span><strong>Informe PDF</strong><small>Completo por mes o año</small></span>
+    <span class="material-symbols-outlined">chevron_right</span>
+  </button>
 </div>
 
 <div class="grid metric-grid">
@@ -145,85 +140,74 @@
 </div>
 
 {% if proximos_pagos_tarjeta %}
-<section class="panel">
+<section class="panel upcoming-payments-panel" data-payment-panel>
   <div class="panel-heading">
     <div>
       <h2>Próximos pagos de deudas y tarjetas</h2>
-      <p class="muted mb-0">Vencimientos desde hoy hasta el final del próximo mes. Total futuro registrado: <strong>{{ tarjeta_pendiente_futuro }}</strong>.</p>
+      <p class="muted mb-0">Tus compromisos inmediatos, desde hoy hasta el final del próximo mes.</p>
+    </div>
+    <div class="chart-toolbar">
+      <div class="chart-control-group" aria-label="Filtrar próximos pagos">
+        <button class="chart-control is-active" type="button" data-payment-filter="all">Todos</button>
+        <button class="chart-control" type="button" data-payment-filter="current">Este mes</button>
+        <button class="chart-control" type="button" data-payment-filter="next">Próximo mes</button>
+      </div>
     </div>
   </div>
+  <div class="payment-overview">
+    <div class="payment-overview-card"><small>Próximo vencimiento</small><strong>{{ proximos_pagos_tarjeta.0.fecha|date:"d M Y" }}</strong></div>
+    <div class="payment-overview-card"><small>Pendiente este mes</small><strong>{{ tarjeta_vence_mes }}</strong></div>
+    <div class="payment-overview-card"><small>{{ inicio_mes_siguiente|date:"F Y" }}</small><strong>{{ tarjeta_vence_mes_siguiente }}</strong></div>
+    <div class="payment-overview-card"><small>Total futuro registrado</small><strong>{{ tarjeta_pendiente_futuro }}</strong></div>
+  </div>
   <div class="table-wrap">
-    <table class="table table-hover align-middle mb-0">
+    <table class="table table-hover align-middle mb-0 payment-table">
       <thead><tr><th>Vence</th><th>Compra</th><th>Tarjeta / método</th><th>Monto</th></tr></thead>
       <tbody>
         {% for pago in proximos_pagos_tarjeta %}
-          <tr>
-            <td>{{ pago.fecha|date:"d/m/Y" }}</td>
+          <tr data-payment-row data-payment-period="{% if pago.fecha.year == hoy.year and pago.fecha.month == hoy.month %}current{% else %}next{% endif %}"{% if forloop.counter > 5 %} data-payment-extra hidden{% endif %}>
+            <td><span class="payment-date"><span class="payment-date-dot{% if pago.fecha.year != hoy.year or pago.fecha.month != hoy.month %} is-next{% endif %}"></span><span>{{ pago.fecha|date:"d/m/Y" }}</span>{% if pago.fecha == hoy %}<span class="payment-today">Hoy</span>{% endif %}</span></td>
             <td><strong>{{ pago.deuda.concepto }}</strong><div class="small text-muted">Cuota {{ pago.cuota_numero }} de {{ pago.deuda.numero_cuotas }}</div></td>
             <td>{{ pago.deuda.acreedor }}</td>
-            <td class="amount">{{ pago.monto }}</td>
+            <td class="amount"><strong>{{ pago.monto }}</strong></td>
           </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
+  <div class="payment-filter-empty" data-payment-empty hidden>No tienes pagos pendientes en este periodo.</div>
+  {% if proximos_pagos_tarjeta|length > 5 %}
+    <div class="payment-list-footer">
+      <button class="btn btn-light" type="button" data-payment-expand aria-expanded="false">
+        <span class="material-symbols-outlined">expand_more</span><span data-payment-expand-label>Ver todos los pagos ({{ proximos_pagos_tarjeta|length }})</span>
+      </button>
+    </div>
+  {% endif %}
 </section>
 {% endif %}
-
-<details class="panel calculation-details">
-  <summary><span><strong>Cómo se calculan estos valores</strong><small>Disponible, patrimonio, margen, deudas y resultado proyectado</small></span><span class="material-symbols-outlined">expand_more</span></summary>
-  <div class="table-wrap">
-    <table class="table table-hover align-middle mb-0">
-      <thead>
-        <tr>
-          <th>Valor</th>
-          <th>Cálculo</th>
-          <th>Resultado</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>Dinero disponible hoy</td>
-          <td>Suma de los saldos actuales de {{ cuentas_resumen|length }} cuentas activas</td>
-          <td class="amount"><strong>{{ calculo_balance.saldo_disponible }}</strong></td>
-        </tr>
-        <tr>
-          <td>Patrimonio neto</td>
-          <td>Disponible {{ calculo_balance.saldo_disponible }} - deudas activas totales {{ calculo_balance.saldo_deudas_total }}</td>
-          <td class="amount"><strong>{{ calculo_balance.patrimonio_neto }}</strong></td>
-        </tr>
-        <tr>
-          <td>Margen antes de deudas</td>
-          <td>Ingresos {{ calculo_balance.ingresos }} - gastos reales {{ calculo_balance.gastos }}</td>
-          <td class="amount">{{ calculo_balance.margen }}</td>
-        </tr>
-        <tr>
-          <td>Pagado a deudas este mes</td>
-          <td>Cuotas que ya fueron confirmadas como pagadas</td>
-          <td class="amount">{{ calculo_balance.pagos_deuda }}</td>
-        </tr>
-        <tr>
-          <td>Cuotas pendientes del mes</td>
-          <td>{{ calculo_balance.cuotas_deuda_count }} cuotas todavía por pagar este mes</td>
-          <td class="amount">{{ calculo_balance.cuotas_deuda }}</td>
-        </tr>
-        <tr>
-          <td><strong>Resultado proyectado del mes</strong></td>
-          <td>Margen {{ calculo_balance.margen }} - pagado {{ calculo_balance.pagos_deuda }} - pendiente {{ calculo_balance.cuotas_deuda }}</td>
-          <td class="amount"><strong>{{ calculo_balance.posicion_neta }}</strong></td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-</details>
 
 <div class="dashboard-grid">
   <section class="panel chart-panel chart-panel-wide">
     <div class="panel-heading">
       <div>
         <h2>Flujo de dinero</h2>
-        <p class="muted mb-0">Ingresos, gastos reales y margen de los últimos 6 meses.</p>
+        <p class="muted mb-0">Compara entradas, salidas y margen, o cambia a una lectura de tendencia.</p>
       </div>
+      <div class="chart-toolbar" aria-label="Controles del flujo de dinero">
+        <div class="chart-control-group">
+          <button class="chart-control is-active" type="button" data-flow-range="6">6 meses</button>
+          <button class="chart-control" type="button" data-flow-range="12">12 meses</button>
+        </div>
+        <div class="chart-control-group">
+          <button class="chart-control is-active" type="button" data-flow-mode="compare">Comparar</button>
+          <button class="chart-control" type="button" data-flow-mode="trend">Tendencia</button>
+        </div>
+      </div>
+    </div>
+    <div class="chart-insights">
+      <div class="chart-insight"><small>Ingresos del periodo</small><strong data-flow-income>0,00</strong></div>
+      <div class="chart-insight"><small>Gastos del periodo</small><strong data-flow-expense>0,00</strong></div>
+      <div class="chart-insight" data-flow-margin-card><small>Margen acumulado</small><strong data-flow-margin>0,00</strong></div>
     </div>
     <div class="chart-box">
       <canvas id="flujoChart"></canvas>
@@ -236,6 +220,17 @@
         <h2>¿En qué se fue el dinero?</h2>
         <p class="muted mb-0">Gastos confirmados del mes, ordenados de mayor a menor.</p>
       </div>
+      <div class="chart-toolbar">
+        <div class="chart-control-group" aria-label="Unidad de gastos">
+          <button class="chart-control is-active" type="button" data-expense-mode="amount">Monto</button>
+          <button class="chart-control" type="button" data-expense-mode="percent">Porcentaje</button>
+        </div>
+      </div>
+    </div>
+    <div class="chart-insights">
+      <div class="chart-insight"><small>Total clasificado</small><strong data-expense-total>0,00</strong></div>
+      <div class="chart-insight"><small>Categoría principal</small><strong data-expense-top>Sin datos</strong></div>
+      <div class="chart-insight"><small>Participación</small><strong data-expense-share>0%</strong></div>
     </div>
     <div class="chart-box chart-box-small">
       <canvas id="gastosCategoriaChart"></canvas>
@@ -249,11 +244,23 @@
     <div class="panel-heading">
       <div>
         <h2>Presupuesto por categoría</h2>
-        <p class="muted mb-0">Comparación entre límite y gasto real del mes.</p>
+        <p class="muted mb-0">Observa cuánto usaste, cuánto queda y dónde te acercas o superas el límite.</p>
       </div>
+      <div class="chart-toolbar">
+        <div class="chart-control-group" aria-label="Filtro del presupuesto">
+          <button class="chart-control is-active" type="button" data-budget-filter="all">Todas</button>
+          <button class="chart-control" type="button" data-budget-filter="alert">En alerta</button>
+        </div>
+      </div>
+    </div>
+    <div class="chart-insights">
+      <div class="chart-insight"><small>Presupuestado</small><strong data-budget-total>0,00</strong></div>
+      <div class="chart-insight"><small>Consumido</small><strong data-budget-used>0,00</strong></div>
+      <div class="chart-insight" data-budget-alert-card><small>Categorías en alerta</small><strong data-budget-alerts>0</strong></div>
     </div>
     <div class="chart-box chart-box-small">
       <canvas id="presupuestoChart"></canvas>
+      <div class="chart-empty" data-budget-empty hidden>No hay categorías en el nivel de alerta.</div>
     </div>
   </section>
 
@@ -263,6 +270,17 @@
         <h2>¿Alcanzará el dinero los próximos meses?</h2>
         <p class="muted mb-0">Saldo estimado usando únicamente ingresos recurrentes, gastos recurrentes y cuotas ya registradas.</p>
       </div>
+      <div class="chart-toolbar">
+        <div class="chart-control-group" aria-label="Detalle de la proyección">
+          <button class="chart-control is-active" type="button" data-projection-mode="balance">Ver saldo</button>
+          <button class="chart-control" type="button" data-projection-mode="detail">Ver detalle</button>
+        </div>
+      </div>
+    </div>
+    <div class="chart-insights">
+      <div class="chart-insight"><small>Saldo final estimado</small><strong data-projection-final>0,00</strong></div>
+      <div class="chart-insight"><small>Punto más bajo</small><strong data-projection-low>0,00</strong></div>
+      <div class="chart-insight" data-projection-risk-card><small>Meses bajo cero</small><strong data-projection-risk>0</strong></div>
     </div>
     <div class="chart-box chart-box-small">
       <canvas id="proyeccionChart"></canvas>
@@ -336,6 +354,53 @@
     {% endif %}
   </section>
 </div>
+
+<details class="panel calculation-details">
+  <summary><span><strong>Cómo se calculan estos valores</strong><small>Disponible, patrimonio, margen, deudas y resultado proyectado</small></span><span class="material-symbols-outlined">expand_more</span></summary>
+  <div class="table-wrap">
+    <table class="table table-hover align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Valor</th>
+          <th>Cálculo</th>
+          <th>Resultado</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Dinero disponible hoy</td>
+          <td>Suma de los saldos actuales de {{ cuentas_resumen|length }} cuentas activas</td>
+          <td class="amount"><strong>{{ calculo_balance.saldo_disponible }}</strong></td>
+        </tr>
+        <tr>
+          <td>Patrimonio neto</td>
+          <td>Disponible {{ calculo_balance.saldo_disponible }} - deudas activas totales {{ calculo_balance.saldo_deudas_total }}</td>
+          <td class="amount"><strong>{{ calculo_balance.patrimonio_neto }}</strong></td>
+        </tr>
+        <tr>
+          <td>Margen antes de deudas</td>
+          <td>Ingresos {{ calculo_balance.ingresos }} - gastos reales {{ calculo_balance.gastos }}</td>
+          <td class="amount">{{ calculo_balance.margen }}</td>
+        </tr>
+        <tr>
+          <td>Pagado a deudas este mes</td>
+          <td>Cuotas que ya fueron confirmadas como pagadas</td>
+          <td class="amount">{{ calculo_balance.pagos_deuda }}</td>
+        </tr>
+        <tr>
+          <td>Cuotas pendientes del mes</td>
+          <td>{{ calculo_balance.cuotas_deuda_count }} cuotas todavía por pagar este mes</td>
+          <td class="amount">{{ calculo_balance.cuotas_deuda }}</td>
+        </tr>
+        <tr>
+          <td><strong>Resultado proyectado del mes</strong></td>
+          <td>Margen {{ calculo_balance.margen }} - pagado {{ calculo_balance.pagos_deuda }} - pendiente {{ calculo_balance.cuotas_deuda }}</td>
+          <td class="amount"><strong>{{ calculo_balance.posicion_neta }}</strong></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</details>
 {% endblock %}
 
 {% block scripts %}
@@ -372,65 +437,312 @@
 </script>
 <script>
   (() => {
+    const trigger = document.querySelector("[data-dashboard-report-open]");
+    const periodsElement = document.getElementById("dashboard-report-periods");
+    if (!trigger || !periodsElement || !window.Swal) return;
+
+    const groups = JSON.parse(periodsElement.textContent);
+    const periods = [...groups.months, ...groups.years];
+    const periodsByKey = new Map(periods.map(period => [period.key, period]));
+    const inputOptions = {
+      "Reportes mensuales": Object.fromEntries(groups.months.map(period => [period.key, period.label])),
+      "Reportes anuales": Object.fromEntries(groups.years.map(period => [period.key, period.label])),
+    };
+
+    trigger.addEventListener("click", async () => {
+      const result = await Swal.fire({
+        title: "Descargar informe financiero",
+        html: "<p class=\"muted\">Incluye balance, caja y consumo, presupuestos, categorías, deudas, proyección y recomendaciones.</p>",
+        input: "select",
+        inputOptions,
+        inputValue: groups.months[0]?.key || groups.years[0]?.key || "",
+        inputPlaceholder: "Selecciona un periodo",
+        showCancelButton: true,
+        confirmButtonText: "Descargar PDF",
+        cancelButtonText: "Cancelar",
+        reverseButtons: true,
+        buttonsStyling: false,
+        customClass: {
+          popup: "finance-swal",
+          confirmButton: "finance-swal-confirm",
+          cancelButton: "finance-swal-cancel",
+          input: "form-select",
+        },
+        inputValidator: value => periodsByKey.has(value) ? undefined : "Selecciona un periodo.",
+      });
+      if (!result.isConfirmed) return;
+
+      const period = periodsByKey.get(result.value);
+      if (!period) return;
+      const url = new URL("{% url 'reporte_financiero_pdf' %}", window.location.origin);
+      url.searchParams.set("fecha_inicio", period.start);
+      url.searchParams.set("fecha_fin", period.end);
+      window.location.assign(url.toString());
+    });
+  })();
+</script>
+<script>
+  (() => {
+    const panel = document.querySelector("[data-payment-panel]");
+    if (!panel) return;
+
+    const rows = [...panel.querySelectorAll("[data-payment-row]")];
+    const filters = [...panel.querySelectorAll("[data-payment-filter]")];
+    const expand = panel.querySelector("[data-payment-expand]");
+    const expandLabel = panel.querySelector("[data-payment-expand-label]");
+    const expandFooter = expand?.closest(".payment-list-footer");
+    const empty = panel.querySelector("[data-payment-empty]");
+    let activeFilter = "all";
+    let expanded = false;
+
+    const render = () => {
+      const eligible = rows.filter(row => activeFilter === "all" || row.dataset.paymentPeriod === activeFilter);
+      rows.forEach(row => {
+        const position = eligible.indexOf(row);
+        row.hidden = position < 0 || (!expanded && position >= 5);
+      });
+      if (empty) empty.hidden = eligible.length > 0;
+      filters.forEach(button => {
+        const active = button.dataset.paymentFilter === activeFilter;
+        button.classList.toggle("is-active", active);
+        button.setAttribute("aria-pressed", active ? "true" : "false");
+      });
+      if (expand && expandFooter) {
+        expandFooter.hidden = eligible.length <= 5;
+        expand.setAttribute("aria-expanded", expanded ? "true" : "false");
+        expand.querySelector(".material-symbols-outlined").textContent = expanded ? "expand_less" : "expand_more";
+        expandLabel.textContent = expanded ? "Mostrar menos" : `Ver todos los pagos (${eligible.length})`;
+      }
+    };
+
+    filters.forEach(button => button.addEventListener("click", () => {
+      activeFilter = button.dataset.paymentFilter;
+      expanded = false;
+      render();
+    }));
+    expand?.addEventListener("click", () => {
+      expanded = !expanded;
+      render();
+    });
+    render();
+  })();
+</script>
+<script>
+  (() => {
     const data = JSON.parse(document.getElementById("dashboard-data").textContent);
     const money = new Intl.NumberFormat("es-EC", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const tooltipMoney = context => `${context.dataset.label || context.label}: ${money.format(context.parsed.y ?? context.parsed.x ?? 0)}`;
+    const sum = values => values.reduce((total, value) => total + Number(value || 0), 0);
+    const setText = (selector, value) => {
+      const element = document.querySelector(selector);
+      if (element) element.textContent = value;
+    };
+    const activateControl = (selector, active) => {
+      document.querySelectorAll(selector).forEach(button => {
+        const selected = button === active;
+        button.classList.toggle("is-active", selected);
+        button.setAttribute("aria-pressed", selected ? "true" : "false");
+      });
+    };
+    const moneyTick = value => money.format(value);
+    const moneyTooltip = context => `${context.dataset.label || context.label}: ${money.format(context.parsed.y ?? context.parsed.x ?? 0)}`;
+    const gridColor = "rgba(100, 116, 139, .12)";
 
-    const moneyOptions = {
+    Chart.defaults.color = "#687588";
+    Chart.defaults.font.family = "Inter, ui-sans-serif, system-ui, sans-serif";
+    Chart.defaults.plugins.legend.labels.usePointStyle = true;
+    Chart.defaults.plugins.legend.labels.boxWidth = 8;
+
+    const standardOptions = () => ({
       responsive: true,
       maintainAspectRatio: false,
       interaction: { mode: "index", intersect: false },
-      plugins: { legend: { position: "bottom" }, tooltip: { callbacks: { label: tooltipMoney } } },
-      scales: { y: { beginAtZero: true, ticks: { callback: value => money.format(value) } } },
-    };
+      animation: { duration: 420, easing: "easeOutQuart" },
+      plugins: {
+        legend: { position: "bottom" },
+        tooltip: { backgroundColor: "#172033", padding: 11, callbacks: { label: moneyTooltip } },
+      },
+      scales: {
+        x: { grid: { display: false } },
+        y: { beginAtZero: true, grid: { color: gridColor }, ticks: { callback: moneyTick } },
+      },
+    });
 
-    new Chart(document.getElementById("flujoChart"), {
+    let flowRange = 6;
+    let flowMode = "compare";
+    const flowChart = new Chart(document.getElementById("flujoChart"), {
       type: "bar",
       data: {
         labels: data.flujo.labels,
         datasets: [
-          { label: "Ingresos", data: data.flujo.ingresos, backgroundColor: "#22c55e", borderRadius: 8 },
-          { label: "Gastos", data: data.flujo.gastos, backgroundColor: "#fb8500", borderRadius: 8 },
-          { label: "Margen", data: data.flujo.margen, type: "line", borderColor: "#5e35b1", backgroundColor: "#5e35b1", tension: .35 },
+          { label: "Ingresos", data: data.flujo.ingresos, backgroundColor: "rgba(69, 179, 105, .82)", borderColor: "#45b369", borderWidth: 2, borderRadius: 7 },
+          { label: "Gastos", data: data.flujo.gastos, backgroundColor: "rgba(244, 148, 30, .82)", borderColor: "#f4941e", borderWidth: 2, borderRadius: 7 },
+          { label: "Margen", data: data.flujo.margen, type: "line", borderColor: "#25a194", backgroundColor: "rgba(37, 161, 148, .12)", pointBackgroundColor: "#25a194", pointRadius: 4, pointHoverRadius: 6, tension: .35, borderWidth: 3 },
         ],
       },
-      options: moneyOptions,
+      options: standardOptions(),
     });
 
-    new Chart(document.getElementById("gastosCategoriaChart"), {
+    const renderFlow = () => {
+      const source = flowRange === 12 ? data.flujoAnual : data.flujo;
+      flowChart.data.labels = source.labels;
+      [source.ingresos, source.gastos, source.margen].forEach((values, index) => {
+        const dataset = flowChart.data.datasets[index];
+        dataset.data = values;
+        dataset.type = flowMode === "trend" || index === 2 ? "line" : "bar";
+        dataset.fill = flowMode === "trend" && index === 2;
+        dataset.tension = flowMode === "trend" ? .32 : .2;
+        dataset.pointRadius = flowMode === "trend" || index === 2 ? 4 : 0;
+        dataset.borderWidth = flowMode === "trend" || index === 2 ? 3 : 2;
+      });
+      const income = sum(source.ingresos);
+      const expense = sum(source.gastos);
+      const margin = sum(source.margen);
+      setText("[data-flow-income]", money.format(income));
+      setText("[data-flow-expense]", money.format(expense));
+      setText("[data-flow-margin]", money.format(margin));
+      const marginCard = document.querySelector("[data-flow-margin-card]");
+      marginCard?.classList.toggle("is-positive", margin >= 0);
+      marginCard?.classList.toggle("is-warning", margin < 0);
+      flowChart.update();
+    };
+    document.querySelectorAll("[data-flow-range]").forEach(button => button.addEventListener("click", () => {
+      flowRange = Number(button.dataset.flowRange);
+      activateControl("[data-flow-range]", button);
+      renderFlow();
+    }));
+    document.querySelectorAll("[data-flow-mode]").forEach(button => button.addEventListener("click", () => {
+      flowMode = button.dataset.flowMode;
+      activateControl("[data-flow-mode]", button);
+      renderFlow();
+    }));
+    renderFlow();
+
+    const expenseValues = data.gastosCategoria.values.map(Number);
+    const expenseTotal = sum(expenseValues);
+    let expenseMode = "amount";
+    const expenseChart = new Chart(document.getElementById("gastosCategoriaChart"), {
       type: "bar",
       data: {
         labels: data.gastosCategoria.labels,
-        datasets: [{ data: data.gastosCategoria.values, backgroundColor: data.gastosCategoria.colors }],
+        datasets: [{ label: "Gasto", data: expenseValues, backgroundColor: data.gastosCategoria.colors, borderRadius: 7, borderSkipped: false }],
       },
-      options: { indexAxis: "y", responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: context => money.format(context.parsed.x) } } }, scales: { x: { beginAtZero: true, ticks: { callback: value => money.format(value) } }, y: { ticks: { autoSkip: false } } } },
+      options: {
+        indexAxis: "y",
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 420 },
+        plugins: {
+          legend: { display: false },
+          tooltip: { backgroundColor: "#172033", padding: 11, callbacks: { label: context => expenseMode === "percent" ? `${context.parsed.x.toFixed(1)}%` : money.format(context.parsed.x) } },
+        },
+        scales: {
+          x: { beginAtZero: true, grid: { color: gridColor }, ticks: { callback: value => expenseMode === "percent" ? `${value}%` : money.format(value) } },
+          y: { grid: { display: false }, ticks: { autoSkip: false } },
+        },
+      },
     });
+    const renderExpenses = () => {
+      expenseChart.data.datasets[0].data = expenseMode === "percent"
+        ? expenseValues.map(value => expenseTotal ? value / expenseTotal * 100 : 0)
+        : expenseValues;
+      expenseChart.options.scales.x.suggestedMax = expenseMode === "percent" ? 100 : undefined;
+      expenseChart.update();
+    };
+    setText("[data-expense-total]", money.format(expenseTotal));
+    setText("[data-expense-top]", data.gastosCategoria.labels[0] || "Sin datos");
+    setText("[data-expense-share]", expenseTotal && expenseValues.length ? `${(expenseValues[0] / expenseTotal * 100).toFixed(1)}%` : "0%");
+    document.querySelectorAll("[data-expense-mode]").forEach(button => button.addEventListener("click", () => {
+      expenseMode = button.dataset.expenseMode;
+      activateControl("[data-expense-mode]", button);
+      renderExpenses();
+    }));
 
-    new Chart(document.getElementById("presupuestoChart"), {
+    const budgetSource = data.presupuesto.labels.map((label, index) => {
+      const budget = Number(data.presupuesto.presupuesto[index] || 0);
+      const used = Number(data.presupuesto.usado[index] || 0);
+      return { label, budget, used, ratio: budget ? used / budget : 0 };
+    });
+    let budgetFilter = "all";
+    const budgetChart = new Chart(document.getElementById("presupuestoChart"), {
       type: "bar",
-      data: {
-        labels: data.presupuesto.labels,
-        datasets: [
-          { label: "Usado", data: data.presupuesto.usado, backgroundColor: "#fb8500", borderRadius: 8 },
-          { label: "Presupuesto", data: data.presupuesto.presupuesto, backgroundColor: "#5e35b1", borderRadius: 8 },
-        ],
+      data: { labels: [], datasets: [
+        { label: "Usado", data: [], backgroundColor: [], borderRadius: 6, borderSkipped: false },
+        { label: "Disponible", data: [], backgroundColor: "#dbe6e8", borderRadius: 6, borderSkipped: false },
+        { label: "Exceso", data: [], backgroundColor: "#ef4a4a", borderRadius: 6, borderSkipped: false },
+      ] },
+      options: {
+        ...standardOptions(),
+        indexAxis: "y",
+        scales: {
+          x: { beginAtZero: true, stacked: true, grid: { color: gridColor }, ticks: { callback: moneyTick } },
+          y: { stacked: true, grid: { display: false }, ticks: { autoSkip: false } },
+        },
       },
-      options: { ...moneyOptions, indexAxis: "y", scales: { x: { beginAtZero: true, ticks: { callback: value => money.format(value) } }, y: { ticks: { autoSkip: false } } } },
     });
+    const renderBudget = () => {
+      const visible = budgetFilter === "alert" ? budgetSource.filter(item => item.ratio >= .8) : budgetSource;
+      budgetChart.data.labels = visible.map(item => item.label);
+      budgetChart.data.datasets[0].data = visible.map(item => Math.min(item.used, item.budget));
+      budgetChart.data.datasets[0].backgroundColor = visible.map(item => item.ratio >= 1 ? "#ef4a4a" : item.ratio >= .8 ? "#f4941e" : "#25a194");
+      budgetChart.data.datasets[1].data = visible.map(item => Math.max(item.budget - item.used, 0));
+      budgetChart.data.datasets[2].data = visible.map(item => Math.max(item.used - item.budget, 0));
+      const empty = document.querySelector("[data-budget-empty]");
+      if (empty) empty.hidden = visible.length > 0;
+      budgetChart.canvas.hidden = visible.length === 0;
+      budgetChart.update();
+    };
+    const budgetAlerts = budgetSource.filter(item => item.ratio >= .8).length;
+    setText("[data-budget-total]", money.format(sum(budgetSource.map(item => item.budget))));
+    setText("[data-budget-used]", money.format(sum(budgetSource.map(item => item.used))));
+    setText("[data-budget-alerts]", String(budgetAlerts));
+    document.querySelector("[data-budget-alert-card]")?.classList.toggle("is-warning", budgetAlerts > 0);
+    document.querySelectorAll("[data-budget-filter]").forEach(button => button.addEventListener("click", () => {
+      budgetFilter = button.dataset.budgetFilter;
+      activateControl("[data-budget-filter]", button);
+      renderBudget();
+    }));
+    renderBudget();
 
-    new Chart(document.getElementById("proyeccionChart"), {
+    let projectionMode = "balance";
+    const projectionChart = new Chart(document.getElementById("proyeccionChart"), {
       type: "line",
       data: {
         labels: data.proyeccion.labels,
         datasets: [
-          { label: "Ingresos recurrentes", data: data.proyeccion.ingresos, type: "bar", borderColor: "#22c55e", backgroundColor: "#22c55e", borderRadius: 7 },
-          { label: "Gastos recurrentes", data: data.proyeccion.gastos, type: "bar", borderColor: "#fb8500", backgroundColor: "#fb8500", borderRadius: 7 },
-          { label: "Cuotas pendientes", data: data.proyeccion.deudas, type: "bar", borderColor: "#64748b", backgroundColor: "#64748b", borderRadius: 7 },
-          { label: "Saldo proyectado", data: data.proyeccion.saldo, type: "line", borderColor: "#5e35b1", backgroundColor: "#5e35b1", tension: .25, borderWidth: 3 },
+          { label: "Ingresos recurrentes", data: data.proyeccion.ingresos, type: "bar", backgroundColor: "rgba(69, 179, 105, .75)", borderColor: "#45b369", borderWidth: 1, borderRadius: 6 },
+          { label: "Gastos recurrentes", data: data.proyeccion.gastos, type: "bar", backgroundColor: "rgba(244, 148, 30, .75)", borderColor: "#f4941e", borderWidth: 1, borderRadius: 6 },
+          { label: "Cuotas pendientes", data: data.proyeccion.deudas, type: "bar", backgroundColor: "rgba(100, 116, 139, .72)", borderColor: "#64748b", borderWidth: 1, borderRadius: 6 },
+          { label: "Saldo proyectado", data: data.proyeccion.saldo, type: "line", borderColor: "#25a194", backgroundColor: "rgba(37, 161, 148, .12)", pointBackgroundColor: context => Number(context.raw) < 0 ? "#ef4a4a" : "#25a194", pointRadius: 5, pointHoverRadius: 7, fill: true, tension: .3, borderWidth: 3 },
         ],
       },
-      options: moneyOptions,
+      options: {
+        ...standardOptions(),
+        scales: {
+          x: { grid: { display: false } },
+          y: { grid: { color: context => context.tick.value === 0 ? "rgba(239, 74, 74, .65)" : gridColor }, ticks: { callback: moneyTick } },
+        },
+      },
     });
+    const renderProjection = () => {
+      projectionChart.data.datasets.slice(0, 3).forEach(dataset => { dataset.hidden = projectionMode === "balance"; });
+      projectionChart.update();
+    };
+    const projectedBalances = data.proyeccion.saldo.map(Number);
+    const finalBalance = projectedBalances.at(-1) || 0;
+    const lowestBalance = projectedBalances.length ? Math.min(...projectedBalances) : 0;
+    const riskMonths = projectedBalances.filter(value => value < 0).length;
+    setText("[data-projection-final]", money.format(finalBalance));
+    setText("[data-projection-low]", money.format(lowestBalance));
+    setText("[data-projection-risk]", String(riskMonths));
+    const riskCard = document.querySelector("[data-projection-risk-card]");
+    riskCard?.classList.toggle("is-warning", riskMonths > 0);
+    riskCard?.classList.toggle("is-positive", riskMonths === 0);
+    document.querySelectorAll("[data-projection-mode]").forEach(button => button.addEventListener("click", () => {
+      projectionMode = button.dataset.projectionMode;
+      activateControl("[data-projection-mode]", button);
+      renderProjection();
+    }));
+    renderProjection();
 
   })();
 </script>
