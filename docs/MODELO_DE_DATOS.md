@@ -1,6 +1,6 @@
 # Modelo de datos
 
-TaskBudget utiliza el usuario estándar de Django y distribuye sus tablas de negocio en esquemas PostgreSQL. Esta guía resume el modelo actual; las migraciones son la fuente definitiva de la estructura física.
+Finanzas Claras utiliza el usuario estándar de Django y distribuye sus tablas de negocio en esquemas PostgreSQL. Esta guía resume el modelo actual; las migraciones son la fuente definitiva de la estructura física.
 
 ## 1. Relaciones principales
 

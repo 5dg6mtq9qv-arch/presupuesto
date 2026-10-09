@@ -1,6 +1,6 @@
 # Guía de usuario
 
-Esta guía describe el uso funcional de TaskBudget. Todas las operaciones financieras se limitan al usuario que inició sesión.
+Esta guía describe el uso funcional de Finanzas Claras. Todas las operaciones financieras se limitan al usuario que inició sesión.
 
 ## 1. Primer ingreso
 
@@ -209,9 +209,9 @@ Un miembro staff no puede editar ni restablecer la contraseña de un superusuari
 
 ## 14. Instalar como aplicación en Android
 
-1. Publica o abre TaskBudget mediante HTTPS.
+1. Publica o abre Finanzas Claras mediante HTTPS.
 2. En Chrome para Android, inicia sesión y abre el menú.
-3. Pulsa **Instalar aplicación** o **Agregar a pantalla principal**. También puede aparecer el botón de instalación dentro de TaskBudget.
+3. Pulsa **Instalar aplicación** o **Agregar a pantalla principal**. También puede aparecer el botón de instalación dentro de Finanzas Claras.
 4. Confirma la instalación.
 
 La PWA se abre en una ventana independiente y conserva la navegación móvil. No es un APK nativo. Sin conexión se muestra una pantalla segura, pero no se pueden consultar ni modificar finanzas hasta recuperar internet.

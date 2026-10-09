@@ -1,6 +1,6 @@
 # Configuración de IA
 
-La IA es opcional. El resto de TaskBudget, incluida la captura manual de comprobantes, funciona sin un proveedor configurado.
+La IA es opcional. El resto de Finanzas Claras, incluida la captura manual de comprobantes, funciona sin un proveedor configurado.
 
 ## 1. Funciones que utilizan IA
 
@@ -35,7 +35,7 @@ Un usuario staff puede abrir **Configuración de IA**, seleccionar proveedor y m
 
 Para Claude selecciona **Anthropic Claude**, pega una clave creada en Anthropic Console y conserva la URL `https://api.anthropic.com/v1`. La suscripción de Claude.ai y el consumo de la API son servicios facturados por separado.
 
-El catálogo incluye `claude-haiku-5-5` para pruebas rápidas y de bajo costo. TaskBudget conserva los bloques de razonamiento firmados que requieren los modelos Claude 5.x durante las rondas de herramientas. `claude-haiku-4-5-20251001` se mantiene únicamente como opción heredada y no se recomienda para configuraciones nuevas.
+El catálogo incluye `claude-haiku-5-5` para pruebas rápidas y de bajo costo. Finanzas Claras conserva los bloques de razonamiento firmados que requieren los modelos Claude 5.x durante las rondas de herramientas. `claude-haiku-4-5-20251001` se mantiene únicamente como opción heredada y no se recomienda para configuraciones nuevas.
 
 Importante: desde que existe un registro de configuración en la base, ese registro tiene prioridad completa sobre las variables `AI_*`, incluso si está desactivado. Para cambiar el comportamiento usa la pantalla administrativa o administra explícitamente ese registro.
 

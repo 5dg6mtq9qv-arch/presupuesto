@@ -1,6 +1,6 @@
-# TaskBudget
+# Finanzas Claras
 
-TaskBudget es un gestor web de finanzas personales y tareas, desarrollado con Django y PostgreSQL. Centraliza cuentas, ingresos, gastos, presupuestos, deudas, cuotas, movimientos recurrentes, reportes y análisis asistido por IA en un espacio separado por usuario.
+Finanzas Claras es un gestor web de finanzas personales y tareas, desarrollado con Django y PostgreSQL. Centraliza cuentas, ingresos, gastos, presupuestos, deudas, cuotas, movimientos recurrentes, reportes y análisis asistido por IA en un espacio separado por usuario.
 
 La interfaz está en español, usa la zona horaria `America/Guayaquil` y puede instalarse desde el navegador como una PWA en Android o escritorio.
 

@@ -67,9 +67,17 @@ class ProductFeaturesTests(TestCase):
         dashboard = self.client.get(reverse("dashboard"))
 
         self.assertEqual(dashboard.status_code, 200)
+        self.assertEqual(len(dashboard.context["chart_data"]["flujoSemanal"]["labels"]), 7)
+        self.assertEqual(
+            len(dashboard.context["chart_data"]["flujoMensual"]["labels"]),
+            timezone.localdate().day,
+        )
         self.assertEqual(len(dashboard.context["chart_data"]["flujo"]["labels"]), 6)
         self.assertEqual(len(dashboard.context["chart_data"]["flujoAnual"]["labels"]), 12)
-        self.assertContains(dashboard, 'data-flow-range="12"', html=False)
+        self.assertContains(dashboard, 'data-flow-range="week"', html=False)
+        self.assertContains(dashboard, 'data-flow-range="month"', html=False)
+        self.assertContains(dashboard, 'data-flow-range="semester"', html=False)
+        self.assertContains(dashboard, 'data-flow-range="year"', html=False)
         self.assertContains(dashboard, 'data-expense-mode="percent"', html=False)
         self.assertContains(dashboard, 'data-budget-filter="alert"', html=False)
         self.assertContains(dashboard, 'data-projection-mode="detail"', html=False)

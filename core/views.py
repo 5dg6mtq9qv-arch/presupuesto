@@ -1299,7 +1299,7 @@ def contacto(request):
         full_name = user.get_full_name() or "No indicado"
         tipo = dict(ContactoForm.TIPO_CHOICES)[form.cleaned_data["tipo"]]
         body = (
-            "Se recibió un mensaje desde TaskBudget.\n\n"
+            "Se recibió un mensaje desde Finanzas Claras.\n\n"
             f"Tipo: {tipo}\n"
             f"Asunto: {form.cleaned_data['asunto']}\n\n"
             f"Usuario: {user.username}\n"
@@ -1309,7 +1309,7 @@ def contacto(request):
             f"Mensaje:\n{form.cleaned_data['mensaje']}"
         )
         message = EmailMessage(
-            subject=f"[TaskBudget · {tipo}] {form.cleaned_data['asunto']}",
+            subject=f"[Finanzas Claras · {tipo}] {form.cleaned_data['asunto']}",
             body=body,
             to=[_destinatario_contacto()],
             reply_to=[user.email] if user.email else None,
@@ -2056,7 +2056,7 @@ def reporte_financiero_pdf(request):
         topMargin=16 * mm,
         bottomMargin=17 * mm,
         title="Informe financiero personal",
-        author="Gestor de Finanzas Personales",
+        author="Finanzas Claras",
     )
     styles = getSampleStyleSheet()
     styles.add(ParagraphStyle(name="ReportTitle", parent=styles["Title"], textColor=colors.HexColor("#167f75"), fontSize=21, leading=25, alignment=TA_CENTER, spaceAfter=8))
@@ -2498,9 +2498,9 @@ def _enviar_resultado_solicitud(request, solicitud):
     try:
         EmailMessage(
             subject=(
-                "Tu cuenta de TaskBudget fue aprobada"
+                "Tu cuenta de Finanzas Claras fue aprobada"
                 if solicitud.estado == SolicitudRegistro.Estado.APROBADA
-                else "Tu solicitud de acceso a TaskBudget fue rechazada"
+                else "Tu solicitud de acceso a Finanzas Claras fue rechazada"
             ),
             body=_mensaje_resultado_solicitud(solicitud, login_url),
             to=[user.email],
@@ -2519,9 +2519,9 @@ def _mensaje_resultado_solicitud(solicitud, login_url):
             greeting
             + "Tu solicitud de registro fue aprobada y el asistente de IA quedó habilitado. "
             + f"Ya puedes iniciar sesión con las credenciales que elegiste en:\n{login_url}\n\n"
-            + "Bienvenido a TaskBudget."
+            + "Bienvenido a Finanzas Claras."
         )
-    return greeting + "Tu solicitud de acceso a TaskBudget fue rechazada por un administrador."
+    return greeting + "Tu solicitud de acceso a Finanzas Claras fue rechazada por un administrador."
 
 
 def _destinatarios_solicitudes_registro():
@@ -2565,13 +2565,13 @@ def _enviar_solicitud_registro_a_administrador(request, solicitud):
     user = solicitud.usuario
     full_name = user.get_full_name() or "No indicado"
     body = (
-        "Se recibió una nueva solicitud de acceso a TaskBudget.\n\n"
+        "Se recibió una nueva solicitud de acceso a Finanzas Claras.\n\n"
         f"Usuario: {user.username}\nNombre: {full_name}\nCorreo: {user.email}\n\n"
         f"Revisar y decidir: {review_url}\n\n"
         "El enlace requiere iniciar sesión como administrador y vence por seguridad."
     )
     html = (
-        "<p>Se recibió una nueva solicitud de acceso a <strong>TaskBudget</strong>.</p>"
+        "<p>Se recibió una nueva solicitud de acceso a <strong>Finanzas Claras</strong>.</p>"
         f"<p><strong>Usuario:</strong> {escape(user.username)}<br>"
         f"<strong>Nombre:</strong> {escape(full_name)}<br>"
         f"<strong>Correo:</strong> {escape(user.email)}</p>"
@@ -2899,7 +2899,52 @@ def dashboard(request):
             }
         )
 
+    movimientos_diarios = movimientos_historicos.filter(fecha__lte=hoy)
+    ingresos_diarios = {
+        item["fecha"]: item["total"]
+        for item in movimientos_diarios.filter(
+            tipo=MovimientoFinanciero.Tipo.INGRESO,
+        ).order_by().values("fecha").annotate(
+            total=Sum("monto"),
+        )
+    }
+    gastos_diarios = {
+        item["fecha"]: item["total"]
+        for item in movimientos_diarios.filter(
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+        ).exclude(
+            metodo_pago__tipo=MetodoPago.Tipo.CREDITO,
+        ).order_by().values("fecha").annotate(
+            total=Sum("monto"),
+        )
+    }
+
+    def flujo_por_dias(fechas):
+        items = []
+        for fecha in fechas:
+            ingreso_dia = ingresos_diarios.get(fecha, Decimal("0"))
+            gasto_dia = gastos_diarios.get(fecha, Decimal("0"))
+            items.append(
+                {
+                    "fecha": fecha.strftime("%d/%m"),
+                    "ingresos": float(ingreso_dia),
+                    "gastos": float(gasto_dia),
+                    "margen": float(ingreso_dia - gasto_dia),
+                }
+            )
+        return {
+            "labels": [item["fecha"] for item in items],
+            "ingresos": [item["ingresos"] for item in items],
+            "gastos": [item["gastos"] for item in items],
+            "margen": [item["margen"] for item in items],
+        }
+
+    dias_semana = [hoy - timedelta(days=offset) for offset in range(6, -1, -1)]
+    dias_mes = [inicio_mes + timedelta(days=offset) for offset in range(hoy.day)]
+
     chart_data = {
+        "flujoSemanal": flujo_por_dias(dias_semana),
+        "flujoMensual": flujo_por_dias(dias_mes),
         "flujo": {
             "labels": [item["mes"] for item in flujo_mensual[-6:]],
             "ingresos": [item["ingresos"] for item in flujo_mensual[-6:]],
@@ -4579,9 +4624,9 @@ def pago_delete(request, pk):
 def app_manifest(request):
     return JsonResponse(
         {
-            "name": "Gestor de Finanzas Personales",
-            "short_name": "Mis Finanzas",
-            "description": "Control personal de ingresos, gastos, cuentas y deudas.",
+            "name": "Finanzas Claras",
+            "short_name": "Finanzas Claras",
+            "description": "Organiza, entiende y controla tus ingresos, gastos, cuentas y deudas.",
             "start_url": "/",
             "scope": "/",
             "display": "standalone",
@@ -4589,7 +4634,7 @@ def app_manifest(request):
             "theme_color": "#25a194",
             "lang": "es",
             "icons": [
-                {"src": "/static/core/icons/app-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"},
+                {"src": "/static/core/branding/finanzas-claras-icon.png", "sizes": "1254x1254", "type": "image/png", "purpose": "any"},
             ],
         },
         content_type="application/manifest+json",
@@ -4598,8 +4643,8 @@ def app_manifest(request):
 
 def service_worker(request):
     script = """
-const CACHE = 'taskbudget-shell-v1';
-const SHELL = ['/offline/', '/static/core/icons/app-icon.svg'];
+const CACHE = 'finanzas-claras-shell-v2';
+const SHELL = ['/offline/', '/static/core/branding/finanzas-claras-icon.png'];
 self.addEventListener('install', event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL))));
 self.addEventListener('activate', event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key))))));
 self.addEventListener('fetch', event => {

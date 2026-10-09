@@ -22,7 +22,7 @@
       <div class="guided-tour-icon"><span class="material-symbols-outlined" data-tour-icon>waving_hand</span></div>
       <span class="eyebrow" data-tour-kicker>Bienvenido</span>
       <h2 id="welcome-tour-title" data-tour-title>Hola, {{ user.first_name|default:user.username }}</h2>
-      <p data-tour-copy>Te mostraré cómo usar TaskBudget sin crear ni modificar ningún dato. Solo observa las zonas señaladas y avanza.</p>
+      <p data-tour-copy>Te mostraré cómo usar Finanzas Claras sin crear ni modificar ningún dato. Solo observa las zonas señaladas y avanza.</p>
       <div class="guided-tour-details" data-tour-details hidden>
         <strong data-tour-details-title>Qué debes completar</strong>
         <ol data-tour-details-list></ol>
@@ -170,8 +170,10 @@
       </div>
       <div class="chart-toolbar" aria-label="Controles del flujo de dinero">
         <div class="chart-control-group">
-          <button class="chart-control is-active" type="button" data-flow-range="6">6 meses</button>
-          <button class="chart-control" type="button" data-flow-range="12">12 meses</button>
+          <button class="chart-control" type="button" data-flow-range="week">Semanal</button>
+          <button class="chart-control is-active" type="button" data-flow-range="month">Mensual</button>
+          <button class="chart-control" type="button" data-flow-range="semester">6 meses</button>
+          <button class="chart-control" type="button" data-flow-range="year">Anual</button>
         </div>
         <div class="chart-control-group">
           <button class="chart-control is-active" type="button" data-flow-mode="compare">Comparar</button>
@@ -390,7 +392,7 @@
         icon: "waving_hand",
         kicker: "Bienvenido",
         title: "Hola, {{ user.first_name|default:user.username|escapejs }}",
-        copy: "Te mostraré cómo usar TaskBudget sin crear ni modificar ningún dato. Solo observa las zonas señaladas y avanza.",
+        copy: "Te mostraré cómo usar Finanzas Claras sin crear ni modificar ningún dato. Solo observa las zonas señaladas y avanza.",
         note: "Durante esta guía los controles señalados son solo demostrativos.",
       },
       {
@@ -456,7 +458,7 @@
         title: "Indica cómo pagaste un gasto",
         copy: "Los métodos distinguen efectivo, débito, transferencia o crédito para que el registro refleje lo que realmente ocurrió.",
         details: ["Efectivo, débito u otro: elige también la cuenta", "Crédito: registra acreedor y número de cuotas", "El método explica cómo ocurrió; la cuenta indica de dónde salió"],
-        note: "Si eliges crédito, TaskBudget crea la deuda y sus cuotas; no descuenta una cuenta hasta registrar el pago.",
+        note: "Si eliges crédito, Finanzas Claras crea la deuda y sus cuotas; no descuenta una cuenta hasta registrar el pago.",
       },
       {
         target: '[data-tour-target="recurring"]',
@@ -730,23 +732,29 @@
       },
     });
 
-    let flowRange = 6;
+    let flowRange = "month";
     let flowMode = "compare";
+    const flowSources = {
+      week: data.flujoSemanal,
+      month: data.flujoMensual,
+      semester: data.flujo,
+      year: data.flujoAnual,
+    };
     const flowChart = new Chart(document.getElementById("flujoChart"), {
       type: "bar",
       data: {
-        labels: data.flujo.labels,
+        labels: data.flujoMensual.labels,
         datasets: [
-          { label: "Ingresos", data: data.flujo.ingresos, backgroundColor: "rgba(69, 179, 105, .82)", borderColor: "#45b369", borderWidth: 2, borderRadius: 7 },
-          { label: "Gastos", data: data.flujo.gastos, backgroundColor: "rgba(244, 148, 30, .82)", borderColor: "#f4941e", borderWidth: 2, borderRadius: 7 },
-          { label: "Margen", data: data.flujo.margen, type: "line", borderColor: "#25a194", backgroundColor: "rgba(37, 161, 148, .12)", pointBackgroundColor: "#25a194", pointRadius: 4, pointHoverRadius: 6, tension: .35, borderWidth: 3 },
+          { label: "Ingresos", data: data.flujoMensual.ingresos, backgroundColor: "rgba(69, 179, 105, .82)", borderColor: "#45b369", borderWidth: 2, borderRadius: 7 },
+          { label: "Gastos", data: data.flujoMensual.gastos, backgroundColor: "rgba(244, 148, 30, .82)", borderColor: "#f4941e", borderWidth: 2, borderRadius: 7 },
+          { label: "Margen", data: data.flujoMensual.margen, type: "line", borderColor: "#25a194", backgroundColor: "rgba(37, 161, 148, .12)", pointBackgroundColor: "#25a194", pointRadius: 4, pointHoverRadius: 6, tension: .35, borderWidth: 3 },
         ],
       },
       options: standardOptions(),
     });
 
     const renderFlow = () => {
-      const source = flowRange === 12 ? data.flujoAnual : data.flujo;
+      const source = flowSources[flowRange];
       flowChart.data.labels = source.labels;
       [source.ingresos, source.gastos, source.margen].forEach((values, index) => {
         const dataset = flowChart.data.datasets[index];
@@ -769,7 +777,7 @@
       flowChart.update();
     };
     document.querySelectorAll("[data-flow-range]").forEach(button => button.addEventListener("click", () => {
-      flowRange = Number(button.dataset.flowRange);
+      flowRange = button.dataset.flowRange;
       activateControl("[data-flow-range]", button);
       renderFlow();
     }));

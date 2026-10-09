@@ -7,8 +7,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="manifest" href="{% url 'app_manifest' %}">
-  <link rel="icon" href="/static/core/icons/app-icon.svg" type="image/svg+xml">
-  <title>{% block title %}Gestor de Finanzas Personales{% endblock %}</title>
+  <link rel="icon" href="/static/core/branding/finanzas-claras-icon.png" type="image/png">
+  <link rel="apple-touch-icon" href="/static/core/branding/finanzas-claras-icon.png">
+  <title>{% block title %}Finanzas Claras{% endblock %}</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..24,400,0,0">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css">
@@ -75,12 +76,22 @@
       min-height: 72px;
       display: flex;
       align-items: center;
-      gap: 12px;
+      justify-content: center;
       color: var(--text);
-      font-weight: 800;
-      font-size: 16px;
       margin: 0 6px 14px;
       border-bottom: 1px solid var(--line);
+    }
+
+    .brand-logo {
+      display: block;
+      width: min(100%, 220px);
+      height: auto;
+    }
+
+    .brand-symbol {
+      width: 44px;
+      height: 44px;
+      object-fit: contain;
     }
 
     .brand-mark {
@@ -1844,8 +1855,7 @@
   <div class="app-shell">
     <aside class="sidebar" id="sidebar">
       <a class="brand" href="{% url 'dashboard' %}">
-        <span class="brand-mark">GFP</span>
-        <span>Gestor Finanzas Personales</span>
+        <img class="brand-logo" src="/static/core/branding/finanzas-claras-logo.png" alt="Finanzas Claras">
       </a>
       <button class="btn btn-light btn-icon sidebar-close" type="button" title="Cerrar menú" aria-label="Cerrar menú" data-sidebar-close>
         <span class="material-symbols-outlined">close</span>
@@ -1963,8 +1973,8 @@
 
     <footer class="footer">
       <div class="footer-company">
-        <span class="brand-mark">FI</span>
-        <span class="footer-company-copy"><strong>TaskBudget · Félix IoT</strong><span>Gestor de Finanzas Personales</span></span>
+        <img class="brand-symbol" src="/static/core/branding/finanzas-claras-icon.png" alt="">
+        <span class="footer-company-copy"><strong>Finanzas Claras · Félix IoT</strong><span>Organiza, entiende y controla tu dinero</span></span>
       </div>
       <div class="footer-actions">
         <a href="mailto:contacto@felixiot.site">contacto@felixiot.site</a>

@@ -2,7 +2,7 @@
 
 ## 1. Visión general
 
-TaskBudget es una aplicación monolítica Django renderizada en servidor. No existe una API REST pública: el navegador interactúa con vistas Django, formularios HTML, sesiones y protección CSRF.
+Finanzas Claras es una aplicación monolítica Django renderizada en servidor. No existe una API REST pública: el navegador interactúa con vistas Django, formularios HTML, sesiones y protección CSRF.
 
 ```text
 Navegador / PWA

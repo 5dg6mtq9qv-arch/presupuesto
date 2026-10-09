@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block page_title %}Contacto y sugerencias{% endblock %}
-{% block page_subtitle %}Habla directamente con el equipo responsable de TaskBudget{% endblock %}
+{% block page_subtitle %}Habla directamente con el equipo responsable de Finanzas Claras{% endblock %}
 
 {% block content %}
 <div class="contact-layout">
@@ -29,10 +29,10 @@
   </section>
 
   <aside class="panel company-card">
-    <span class="brand-mark">FI</span>
+    <img class="brand-symbol" src="/static/core/branding/finanzas-claras-icon.png" alt="">
     <span class="eyebrow">Empresa responsable</span>
     <h2>{{ company_name }}</h2>
-    <p>Desarrollo y soporte de TaskBudget, Gestor de Finanzas Personales.</p>
+    <p>Desarrollo y soporte de Finanzas Claras, tu sistema de control financiero personal.</p>
     <a href="mailto:{{ contact_email }}"><span class="material-symbols-outlined">mail</span>{{ contact_email }}</a>
     <small>Responderemos al correo asociado a tu cuenta.</small>
   </aside>

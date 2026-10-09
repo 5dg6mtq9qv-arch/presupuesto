@@ -198,4 +198,4 @@ Este repositorio no impone una tecnología específica para:
 - almacenamiento externo de archivos;
 - observabilidad y rotación de logs.
 
-Documenta esas decisiones en el inventario del entorno donde se despliegue TaskBudget.
+Documenta esas decisiones en el inventario del entorno donde se despliegue Finanzas Claras.

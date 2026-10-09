@@ -128,7 +128,7 @@ class PrimerUsoTests(TestCase):
 
         response = self.client.get(reverse("dashboard"))
 
-        self.assertContains(response, "Te mostraré cómo usar TaskBudget sin crear ni modificar ningún dato")
+        self.assertContains(response, "Te mostraré cómo usar Finanzas Claras sin crear ni modificar ningún dato")
         self.assertContains(response, 'data-tour-target="accounts"')
         self.assertContains(response, 'data-tour-target="expense"')
         self.assertContains(response, 'data-tour-target="income"')
@@ -159,7 +159,7 @@ class PrimerUsoTests(TestCase):
         response = self.client.get(reverse("dashboard"), {"guia": "1"})
 
         self.assertContains(response, 'class="guided-tour"')
-        self.assertContains(response, "Te mostraré cómo usar TaskBudget sin crear ni modificar ningún dato")
+        self.assertContains(response, "Te mostraré cómo usar Finanzas Claras sin crear ni modificar ningún dato")
 
     def test_registro_rechaza_correo_duplicado_sin_importar_mayusculas(self):
         get_user_model().objects.create_user(
