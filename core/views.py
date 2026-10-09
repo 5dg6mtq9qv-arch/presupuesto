@@ -3091,17 +3091,22 @@ def analisis_financiero(request):
         month = month_index % 12 + 1
         return fecha.replace(year=year, month=month, day=1)
 
-    periodo = request.GET.get("periodo", "mes")
+    # The current UI always works with a month and an optional exact day. Keep
+    # accepting the old period parameters so bookmarked/exported links continue
+    # to resolve, but do not expose those modes in the filter bar anymore.
+    periodo_solicitado = request.GET.get("periodo")
+    periodo = periodo_solicitado or "mes"
     periodos_validos = {"semana", "mes", "semestre", "anio", "todo", "personalizado"}
     if periodo not in periodos_validos:
         periodo = "mes"
 
+    mes_default = hoy.month if periodo_solicitado is not None else None
     try:
-        mes_seleccionado = int(request.GET.get("mes", hoy.month))
+        mes_seleccionado = int(request.GET.get("mes") or mes_default)
     except (TypeError, ValueError):
-        mes_seleccionado = hoy.month
-    if not 1 <= mes_seleccionado <= 12:
-        mes_seleccionado = hoy.month
+        mes_seleccionado = mes_default
+    if mes_seleccionado is not None and not 1 <= mes_seleccionado <= 12:
+        mes_seleccionado = mes_default
 
     try:
         anio_seleccionado = int(request.GET.get("anio", hoy.year))
@@ -3116,7 +3121,33 @@ def analisis_financiero(request):
     ]
     primera_fecha = min([fecha.date() if hasattr(fecha, "date") else fecha for fecha in primeras_fechas if fecha] or [hoy])
 
-    if periodo == "semana":
+    ultimo_dia_seleccionado = (
+        calendar.monthrange(anio_seleccionado, mes_seleccionado)[1]
+        if mes_seleccionado is not None
+        else None
+    )
+    try:
+        dia_seleccionado = int(request.GET.get("dia", "")) if mes_seleccionado else None
+    except (TypeError, ValueError):
+        dia_seleccionado = None
+    if (
+        dia_seleccionado is not None
+        and not 1 <= dia_seleccionado <= ultimo_dia_seleccionado
+    ):
+        dia_seleccionado = None
+
+    if periodo_solicitado is None:
+        if mes_seleccionado is None:
+            fecha_inicio = hoy.replace(year=anio_seleccionado, month=1, day=1)
+            fecha_fin = hoy.replace(year=anio_seleccionado, month=12, day=31)
+        else:
+            fecha_inicio = hoy.replace(
+                year=anio_seleccionado,
+                month=mes_seleccionado,
+                day=dia_seleccionado or 1,
+            )
+            fecha_fin = fecha_inicio if dia_seleccionado else fecha_inicio.replace(day=ultimo_dia_seleccionado)
+    elif periodo == "semana":
         fecha_inicio = hoy - timedelta(days=hoy.weekday())
         fecha_fin = hoy
     elif periodo == "mes":
@@ -3165,6 +3196,8 @@ def analisis_financiero(request):
         (12, "Diciembre"),
     ]
 
+    dias_disponibles = range(1, ultimo_dia_seleccionado + 1) if ultimo_dia_seleccionado else []
+
     tipo = request.GET.get("tipo", "todos")
     if tipo not in {"todos", MovimientoFinanciero.Tipo.INGRESO, MovimientoFinanciero.Tipo.GASTO}:
         tipo = "todos"
@@ -3172,9 +3205,41 @@ def analisis_financiero(request):
     if vista not in {"caja", "consumo"}:
         vista = "caja"
     categoria_id = request.GET.get("categoria", "")
+    subcategoria_id = request.GET.get("subcategoria", "")
     if categoria_id and not categoria_id.isdigit():
         categoria_id = ""
-    categorias = Categoria.objects.filter(
+    if subcategoria_id and not subcategoria_id.isdigit():
+        subcategoria_id = ""
+    categorias_periodo_ids = set(
+        MovimientoFinanciero.objects.filter(
+            usuario=request.user,
+            estado=MovimientoFinanciero.Estado.CONFIRMADO,
+            fecha__range=(fecha_inicio, fecha_fin),
+            categoria__isnull=False,
+        ).values_list("categoria_id", flat=True)
+    )
+    recurrentes_disponibles = movimientos_recurrentes_programados(
+        request.user,
+        fecha_inicio,
+        fecha_fin,
+    )
+    categorias_periodo_ids.update(
+        item["categoria"].pk
+        for item in recurrentes_disponibles
+        if item["categoria"] is not None
+    )
+    cuotas_disponibles, _ = cuotas_deudas_programadas(
+        request.user,
+        fecha_inicio,
+        fecha_fin,
+    )
+    categorias_periodo_ids.update(
+        item["deuda"].categoria_id
+        for item in cuotas_disponibles
+        if item["deuda"].categoria_id is not None
+    )
+
+    categorias_qs = Categoria.objects.filter(
         usuario=request.user,
         tipo=Categoria.Tipo.FINANZAS,
     ).select_related("parent").order_by(
@@ -3182,18 +3247,46 @@ def analisis_financiero(request):
         "parent__nombre",
         "nombre",
     )
+    categorias_periodo = list(categorias_qs.filter(pk__in=categorias_periodo_ids))
+    categorias_raiz_ids = {
+        categoria.parent_id or categoria.pk
+        for categoria in categorias_periodo
+    }
+    categorias = categorias_qs.filter(parent__isnull=True, pk__in=categorias_raiz_ids)
+    subcategorias = categorias_qs.filter(
+        parent__isnull=False,
+        pk__in=categorias_periodo_ids,
+    )
+    etiquetas = Etiqueta.objects.filter(usuario=request.user).order_by("nombre")
+
+    etiqueta_ids_solicitadas = list(dict.fromkeys(request.GET.getlist("etiquetas")))
+    etiqueta_ids = list(
+        etiquetas.filter(
+            pk__in=[value for value in etiqueta_ids_solicitadas if value.isdigit()]
+        ).values_list("pk", flat=True)
+    )
+    etiqueta_ids_set = set(etiqueta_ids)
+    for etiqueta in etiquetas:
+        etiqueta.seleccionada = etiqueta.pk in etiqueta_ids_set
 
     categoria_ids = []
-    if categoria_id:
-        categoria_seleccionada = categorias.filter(pk=categoria_id).first()
-        if categoria_seleccionada:
-            categoria_ids = [categoria_seleccionada.pk]
-            if not categoria_seleccionada.parent_id:
-                categoria_ids.extend(
-                    categoria_seleccionada.subcategorias.values_list("pk", flat=True)
-                )
+    categoria_seleccionada = categorias.filter(pk=categoria_id).first() if categoria_id else None
+    subcategoria_seleccionada = (
+        subcategorias.filter(pk=subcategoria_id, parent=categoria_seleccionada).first()
+        if categoria_seleccionada and subcategoria_id
+        else None
+    )
+    if categoria_seleccionada:
+        if subcategoria_seleccionada:
+            categoria_ids = [subcategoria_seleccionada.pk]
         else:
-            categoria_id = ""
+            categoria_ids = [categoria_seleccionada.pk]
+            categoria_ids.extend(
+                categoria_seleccionada.subcategorias.values_list("pk", flat=True)
+            )
+    else:
+        categoria_id = ""
+        subcategoria_id = ""
 
     movimientos = MovimientoFinanciero.objects.filter(
         usuario=request.user,
@@ -3204,13 +3297,18 @@ def analisis_financiero(request):
         movimientos = movimientos.filter(tipo=tipo)
     if categoria_ids:
         movimientos = movimientos.filter(categoria_id__in=categoria_ids)
-    recurrentes_programados = movimientos_recurrentes_programados(
-        request.user,
-        fecha_inicio,
-        fecha_fin,
-        tipo=tipo,
-        categoria_id=categoria_ids,
-    )
+    if etiqueta_ids:
+        movimientos = movimientos.filter(etiquetas__id__in=etiqueta_ids).distinct()
+        # Recurring templates have no tags, so they cannot match a tag filter.
+        recurrentes_programados = []
+    else:
+        recurrentes_programados = movimientos_recurrentes_programados(
+            request.user,
+            fecha_inicio,
+            fecha_fin,
+            tipo=tipo,
+            categoria_id=categoria_ids,
+        )
 
     # A past period must never be completed with transactions that did not happen.
     # Only still-actionable occurrences (today or later) are presented as planned.
@@ -3251,6 +3349,8 @@ def analisis_financiero(request):
         deudas_activas = deudas_activas.none()
     if categoria_ids:
         deudas_activas = deudas_activas.filter(categoria_id__in=categoria_ids)
+    if etiqueta_ids:
+        deudas_activas = deudas_activas.filter(etiquetas__id__in=etiqueta_ids).distinct()
     saldo_deudas = deudas_activas.aggregate(total=Sum("saldo_actual"))["total"] or Decimal("0")
     cuotas_deuda_detalle = []
     if vista == "caja" and tipo != MovimientoFinanciero.Tipo.INGRESO:
@@ -3259,6 +3359,7 @@ def analisis_financiero(request):
             fecha_inicio,
             fecha_fin,
             categoria_id=categoria_ids,
+            etiqueta_ids=etiqueta_ids,
         )
     cuotas_pendientes = [
         cuota
@@ -3276,6 +3377,8 @@ def analisis_financiero(request):
         pagos_periodo = pagos_periodo.none()
     if categoria_ids:
         pagos_periodo = pagos_periodo.filter(deuda__categoria_id__in=categoria_ids)
+    if etiqueta_ids:
+        pagos_periodo = pagos_periodo.filter(deuda__etiquetas__id__in=etiqueta_ids).distinct()
     pagos_total = pagos_periodo.aggregate(total=Sum("monto"))["total"] or Decimal("0")
     pagos_aplicados = pagos_total if vista == "caja" else Decimal("0")
     posicion_neta = margen - pagos_aplicados
@@ -3293,6 +3396,8 @@ def analisis_financiero(request):
         movimientos_anteriores = movimientos_anteriores.filter(tipo=tipo)
     if categoria_ids:
         movimientos_anteriores = movimientos_anteriores.filter(categoria_id__in=categoria_ids)
+    if etiqueta_ids:
+        movimientos_anteriores = movimientos_anteriores.filter(etiquetas__id__in=etiqueta_ids).distinct()
     ingresos_anteriores = movimientos_anteriores.filter(
         tipo=MovimientoFinanciero.Tipo.INGRESO,
     ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
@@ -3309,6 +3414,8 @@ def analisis_financiero(request):
         pagos_anteriores_qs = pagos_anteriores_qs.none()
     if categoria_ids:
         pagos_anteriores_qs = pagos_anteriores_qs.filter(deuda__categoria_id__in=categoria_ids)
+    if etiqueta_ids:
+        pagos_anteriores_qs = pagos_anteriores_qs.filter(deuda__etiquetas__id__in=etiqueta_ids).distinct()
     pagos_anteriores = pagos_anteriores_qs.aggregate(total=Sum("monto"))["total"] or Decimal("0")
     resultado_anterior = ingresos_anteriores - gastos_anteriores
     if vista == "caja":
@@ -3413,7 +3520,7 @@ def analisis_financiero(request):
         mes = add_months(base_proyeccion, offset)
         siguiente_mes = add_months(mes, 1)
         fin_mes = siguiente_mes - timedelta(days=1)
-        recurrentes_mes = movimientos_recurrentes_programados(
+        recurrentes_mes = [] if etiqueta_ids else movimientos_recurrentes_programados(
             request.user,
             mes,
             fin_mes,
@@ -3435,6 +3542,7 @@ def analisis_financiero(request):
                 mes,
                 fin_mes,
                 categoria_id=categoria_ids,
+                etiqueta_ids=etiqueta_ids,
             )
         deudas_mes = sum(
             (item["monto"] for item in cuotas_mes if item["estado"] == PagoDeuda.Estado.PENDIENTE),
@@ -3588,12 +3696,18 @@ def analisis_financiero(request):
             "periodo": periodo,
             "mes_seleccionado": mes_seleccionado,
             "anio_seleccionado": anio_seleccionado,
+            "dia_seleccionado": dia_seleccionado,
             "meses_disponibles": meses_disponibles,
             "anios_disponibles": anios_disponibles,
+            "dias_disponibles": dias_disponibles,
             "tipo": tipo,
             "vista": vista,
             "categoria_id": categoria_id,
+            "subcategoria_id": subcategoria_id,
             "categorias": categorias,
+            "subcategorias": subcategorias,
+            "etiquetas": etiquetas,
+            "etiqueta_ids": etiqueta_ids,
             "ingresos": ingresos,
             "gastos": gastos,
             "margen": margen,

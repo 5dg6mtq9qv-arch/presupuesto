@@ -838,7 +838,13 @@ def generar_finanzas_automaticas(hasta_fecha=None, usuario=None):
     }
 
 
-def cuotas_deudas_programadas(usuario, fecha_inicio, fecha_fin, categoria_id=None):
+def cuotas_deudas_programadas(
+    usuario,
+    fecha_inicio,
+    fecha_fin,
+    categoria_id=None,
+    etiqueta_ids=None,
+):
     deudas = Deuda.objects.filter(
         usuario=usuario,
         estado=Deuda.Estado.ACTIVA,
@@ -849,6 +855,8 @@ def cuotas_deudas_programadas(usuario, fecha_inicio, fecha_fin, categoria_id=Non
             deudas = deudas.filter(categoria_id__in=categoria_id)
         else:
             deudas = deudas.filter(categoria_id=categoria_id)
+    if etiqueta_ids:
+        deudas = deudas.filter(etiquetas__id__in=etiqueta_ids).distinct()
 
     cuotas = []
     total = Decimal("0")

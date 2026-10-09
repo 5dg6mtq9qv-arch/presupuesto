@@ -2839,6 +2839,191 @@ class MovimientoRecurrenteServiceTests(TestCase):
         self.assertEqual(response.context["mes_seleccionado"], 6)
         self.assertEqual(response.context["anio_seleccionado"], 2026)
 
+    def test_nuevo_filtro_sin_dia_incluye_el_mes_completo(self):
+        MovimientoFinanciero.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+            concepto="Inicio del mes",
+            monto="10.00",
+            fecha=datetime(2026, 10, 2).date(),
+        )
+        MovimientoFinanciero.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+            concepto="Final del mes",
+            monto="20.00",
+            fecha=datetime(2026, 10, 28).date(),
+        )
+        self.client.force_login(self.user)
+
+        with patch("core.views.timezone.localdate", return_value=datetime(2026, 10, 9).date()):
+            response = self.client.get(
+                reverse("analisis_financiero"),
+                {"mes": "10", "anio": "2026"},
+            )
+
+        self.assertEqual(response.context["fecha_inicio"], datetime(2026, 10, 1).date())
+        self.assertEqual(response.context["fecha_fin"], datetime(2026, 10, 31).date())
+        self.assertEqual(response.context["gastos"], Decimal("30.00"))
+
+    def test_nuevo_filtro_sin_mes_incluye_el_anio_completo(self):
+        for month, amount in ((1, "10.00"), (12, "20.00")):
+            MovimientoFinanciero.objects.create(
+                usuario=self.user,
+                tipo=MovimientoFinanciero.Tipo.GASTO,
+                concepto=f"Gasto del mes {month}",
+                monto=amount,
+                fecha=datetime(2026, month, 2).date(),
+            )
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("analisis_financiero"), {"anio": "2026"})
+
+        self.assertEqual(response.context["fecha_inicio"], datetime(2026, 1, 1).date())
+        self.assertEqual(response.context["fecha_fin"], datetime(2026, 12, 31).date())
+        self.assertIsNone(response.context["mes_seleccionado"])
+        self.assertIsNone(response.context["dia_seleccionado"])
+        self.assertEqual(response.context["gastos"], Decimal("30.00"))
+
+    def test_nuevo_filtro_con_dia_usa_una_fecha_exacta(self):
+        for day, amount in ((2, "10.00"), (3, "20.00")):
+            MovimientoFinanciero.objects.create(
+                usuario=self.user,
+                tipo=MovimientoFinanciero.Tipo.GASTO,
+                concepto=f"Gasto {day}",
+                monto=amount,
+                fecha=datetime(2026, 10, day).date(),
+            )
+        self.client.force_login(self.user)
+
+        response = self.client.get(
+            reverse("analisis_financiero"),
+            {"mes": "10", "anio": "2026", "dia": "2"},
+        )
+
+        self.assertEqual(response.context["fecha_inicio"], datetime(2026, 10, 2).date())
+        self.assertEqual(response.context["fecha_fin"], datetime(2026, 10, 2).date())
+        self.assertEqual(response.context["gastos"], Decimal("10.00"))
+
+    def test_filtros_de_subcategoria_y_etiqueta_se_aplican_juntos(self):
+        parent = Categoria.objects.create(
+            usuario=self.user,
+            tipo=Categoria.Tipo.FINANZAS,
+            nombre="Hogar",
+        )
+        selected_subcategory = Categoria.objects.create(
+            usuario=self.user,
+            tipo=Categoria.Tipo.FINANZAS,
+            parent=parent,
+            nombre="Servicios",
+        )
+        other_subcategory = Categoria.objects.create(
+            usuario=self.user,
+            tipo=Categoria.Tipo.FINANZAS,
+            parent=parent,
+            nombre="Muebles",
+        )
+        selected_tag = Etiqueta.objects.create(usuario=self.user, nombre="Esencial")
+        other_tag = Etiqueta.objects.create(usuario=self.user, nombre="Opcional")
+        for concept, category, tag, amount in (
+            ("Coincide", selected_subcategory, selected_tag, "15.00"),
+            ("Otra etiqueta", selected_subcategory, other_tag, "25.00"),
+            ("Otra subcategoría", other_subcategory, selected_tag, "35.00"),
+        ):
+            movement = MovimientoFinanciero.objects.create(
+                usuario=self.user,
+                tipo=MovimientoFinanciero.Tipo.GASTO,
+                categoria=category,
+                concepto=concept,
+                monto=amount,
+                fecha=datetime(2026, 10, 2).date(),
+            )
+            movement.etiquetas.add(tag)
+        self.client.force_login(self.user)
+
+        response = self.client.get(
+            reverse("analisis_financiero"),
+            {
+                "mes": "10",
+                "anio": "2026",
+                "categoria": str(parent.pk),
+                "subcategoria": str(selected_subcategory.pk),
+                "etiquetas": [str(selected_tag.pk)],
+            },
+        )
+
+        self.assertEqual(response.context["gastos"], Decimal("15.00"))
+        self.assertEqual(response.context["subcategoria_id"], str(selected_subcategory.pk))
+        self.assertEqual(response.context["etiqueta_ids"], [selected_tag.pk])
+
+    def test_categorias_y_subcategorias_disponibles_dependen_del_periodo(self):
+        january_parent = Categoria.objects.create(
+            usuario=self.user,
+            tipo=Categoria.Tipo.FINANZAS,
+            nombre="Categoría enero",
+        )
+        january_subcategory = Categoria.objects.create(
+            usuario=self.user,
+            tipo=Categoria.Tipo.FINANZAS,
+            parent=january_parent,
+            nombre="Subcategoría enero",
+        )
+        february_parent = Categoria.objects.create(
+            usuario=self.user,
+            tipo=Categoria.Tipo.FINANZAS,
+            nombre="Categoría febrero",
+        )
+        february_subcategory = Categoria.objects.create(
+            usuario=self.user,
+            tipo=Categoria.Tipo.FINANZAS,
+            parent=february_parent,
+            nombre="Subcategoría febrero",
+        )
+        for month, category in ((1, january_subcategory), (2, february_subcategory)):
+            MovimientoFinanciero.objects.create(
+                usuario=self.user,
+                tipo=MovimientoFinanciero.Tipo.GASTO,
+                categoria=category,
+                concepto=f"Gasto {month}",
+                monto="10.00",
+                fecha=datetime(2026, month, 5).date(),
+            )
+        self.client.force_login(self.user)
+
+        january = self.client.get(
+            reverse("analisis_financiero"),
+            {"anio": "2026", "mes": "1"},
+        )
+        whole_year = self.client.get(
+            reverse("analisis_financiero"),
+            {"anio": "2026"},
+        )
+
+        self.assertQuerySetEqual(january.context["categorias"], [january_parent])
+        self.assertQuerySetEqual(january.context["subcategorias"], [january_subcategory])
+        self.assertQuerySetEqual(
+            whole_year.context["categorias"],
+            [february_parent, january_parent],
+            ordered=False,
+        )
+        self.assertQuerySetEqual(
+            whole_year.context["subcategorias"],
+            [february_subcategory, january_subcategory],
+            ordered=False,
+        )
+
+    def test_barra_de_filtros_muestra_solo_los_campos_solicitados(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("analisis_financiero"))
+        html = response.content.decode()
+
+        for field_id in ("anio", "mes", "dia", "categoria", "subcategoria", "etiquetas"):
+            self.assertIn(f'id="{field_id}"', html)
+        self.assertEqual(html.count("data-filter-row="), 3)
+        for removed_id in ("periodo", "desde", "hasta", "tipo", "vista"):
+            self.assertNotIn(f'id="{removed_id}"', html)
+
     def test_analisis_historico_no_inventa_recurrentes_no_confirmados(self):
         ingreso_recurrente = MovimientoRecurrente.objects.create(
             usuario=self.user,

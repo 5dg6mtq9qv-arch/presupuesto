@@ -1431,9 +1431,28 @@
     .col-md-1 { grid-column: span 1; }
     .col-md-2 { grid-column: span 2; }
     .col-md-3 { grid-column: span 3; }
+    .col-md-4 { grid-column: span 4; }
+    .col-md-6 { grid-column: span 6; }
+    .col-md-10 { grid-column: span 10; }
     .col-md-12 { grid-column: span 12; }
     .g-3 { gap: 16px; }
     .align-items-end { align-items: end; }
+    .analysis-filter-form { display: grid; gap: 18px; }
+    .analysis-tags-field .select2-selection--multiple .select2-selection__rendered {
+      width: 100%;
+    }
+    .analysis-tags-field .select2-search--inline {
+      display: flex;
+      align-items: center;
+      flex: 1 1 220px;
+      min-width: 180px;
+    }
+    .analysis-tags-field .select2-search--inline .select2-search__field {
+      width: 100% !important;
+      min-width: 180px;
+      height: 40px;
+      line-height: 40px;
+    }
 
     input[type="color"].color-field-native {
       position: absolute;
@@ -1756,7 +1775,7 @@
       .upcoming-payments-panel > .panel-heading { flex-direction: column; }
       .payment-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .row { grid-template-columns: 1fr; }
-      .col-md-1, .col-md-2, .col-md-3, .col-md-12 { grid-column: auto; }
+      .col-md-1, .col-md-2, .col-md-3, .col-md-4, .col-md-6, .col-md-10, .col-md-12 { grid-column: auto; }
       .wallet-hero { flex-direction: column; align-items: flex-start; }
       .wallet-report-trigger { width: 100%; }
       .debt-filter-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -2505,7 +2524,7 @@
         return option.text;
       };
 
-      jQuery("select").each(function () {
+      jQuery("select:not([data-native-select])").each(function () {
         const select = jQuery(this);
         if (select.data("select2")) return;
         select.select2({
