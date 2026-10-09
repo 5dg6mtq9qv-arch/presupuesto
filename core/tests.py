@@ -242,7 +242,8 @@ class ContactoTests(TestCase):
         self.assertContains(response, "contacto@felixiot.site")
         self.assertContains(response, "No incluye información financiera")
 
-    def test_envia_sugerencia_con_datos_del_usuario(self):
+    @patch("core.views.send_telegram_message", return_value=True)
+    def test_envia_sugerencia_con_datos_del_usuario(self, send_telegram):
         response = self.client.post(
             reverse("contacto"),
             {
@@ -261,6 +262,12 @@ class ContactoTests(TestCase):
         self.assertIn("Nombre: Cristian Pérez", message.body)
         self.assertIn("Sería útil personalizar", message.body)
         self.assertNotIn("saldo", message.body.lower())
+        telegram_text = send_telegram.call_args.args[0]
+        self.assertIn("Nuevo mensaje de soporte", telegram_text)
+        self.assertIn("enviado al correo configurado", telegram_text)
+        self.assertNotIn("cliente", telegram_text)
+        self.assertNotIn("Mejorar el panel", telegram_text)
+        self.assertNotIn("personalizar", telegram_text)
 
 @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
 class AutorizacionRegistroTests(TestCase):

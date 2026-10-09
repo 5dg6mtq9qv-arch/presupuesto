@@ -1107,7 +1107,7 @@ def configuracion_telegram(request):
                         bot = test_telegram_token(runtime)
                         send_telegram_message(
                             "✅ Prueba correcta de Finanzas Claras.\n"
-                            "Los avisos de nuevas solicitudes de acceso llegarán a este chat.",
+                            "Los avisos de solicitudes de acceso y mensajes de soporte llegarán a este chat.",
                             runtime,
                         )
                     except TelegramError as exc:
@@ -1392,6 +1392,17 @@ def contacto(request):
             logger.exception("No se pudo enviar el mensaje de contacto del usuario %s", user.pk)
             form.add_error(None, "No pudimos enviar el mensaje en este momento. Inténtalo nuevamente más tarde.")
         else:
+            try:
+                send_telegram_message(
+                    "💬 Nuevo mensaje de soporte recibido en Finanzas Claras.\n\n"
+                    "El contenido fue enviado al correo configurado. Revisa tu bandeja de entrada."
+                )
+            except TelegramError as exc:
+                logger.warning(
+                    "No se pudo enviar por Telegram el aviso de soporte del usuario %s: %s",
+                    user.pk,
+                    exc,
+                )
             messages.success(request, "Mensaje enviado a Félix IoT. Te responderemos al correo de tu cuenta.")
             return redirect("contacto")
 

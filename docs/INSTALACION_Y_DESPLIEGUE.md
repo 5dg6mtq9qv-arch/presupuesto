@@ -136,7 +136,7 @@ El token se guarda cifrado. Puedes definir una raíz criptográfica independient
 TELEGRAM_CONFIG_ENCRYPTION_KEY=una-clave-maestra-independiente-y-estable
 ```
 
-Si se omite, el cifrado deriva de `DJANGO_SECRET_KEY`. La clave elegida debe mantenerse estable entre despliegues. Cada nueva solicitud activa ambos canales en el mismo evento: el correo contiene los datos y el enlace de revisión, mientras Telegram solo avisa que el detalle fue enviado al correo, sin exponer información personal ni el enlace. El fallo de un canal no bloquea el registro.
+Si se omite, el cifrado deriva de `DJANGO_SECRET_KEY`. La clave elegida debe mantenerse estable entre despliegues. Cada nueva solicitud activa ambos canales en el mismo evento: el correo contiene los datos y el enlace de revisión, mientras Telegram solo avisa que el detalle fue enviado al correo, sin exponer información personal ni el enlace. Los mensajes enviados desde **Contacto y sugerencias** siguen el mismo criterio: contenido completo por correo y aviso genérico por Telegram. El fallo de Telegram no bloquea el registro ni el envío del formulario de soporte.
 
 `STATIC_ROOT` y `MEDIA_ROOT` son opcionales en `.env`; si no se indican se usan los valores definidos en `settings.py`.
 
