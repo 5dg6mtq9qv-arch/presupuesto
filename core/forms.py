@@ -13,6 +13,7 @@ from .models import (
     Categoria,
     ConfiguracionCorreo,
     ConfiguracionIA,
+    ConfiguracionTelegram,
     CuentaFinanciera,
     Deuda,
     Etiqueta,
@@ -160,6 +161,57 @@ class ConfiguracionCorreoForm(forms.ModelForm):
             self.instance.set_password("")
         if cleaned_data.get("activo") and not self.instance.password_cifrada:
             self.add_error("password", "Configura la contraseña antes de activar el correo.")
+        return cleaned_data
+
+
+class ConfiguracionTelegramForm(forms.ModelForm):
+    token = forms.CharField(
+        label="Token del bot",
+        required=False,
+        widget=forms.PasswordInput(
+            render_value=False,
+            attrs={"autocomplete": "new-password", "placeholder": "Déjalo vacío para conservarlo"},
+        ),
+        help_text="Se guarda cifrado y nunca vuelve a mostrarse.",
+    )
+    eliminar_token = forms.BooleanField(
+        label="Eliminar el token guardado",
+        required=False,
+    )
+
+    class Meta:
+        model = ConfiguracionTelegram
+        fields = ["chat_id", "timeout_segundos", "activo"]
+        labels = {
+            "chat_id": "Chat ID de destino",
+            "timeout_segundos": "Tiempo máximo de espera",
+            "activo": "Activar alertas por Telegram",
+        }
+        help_texts = {
+            "chat_id": "Usa el ID numérico del chat o grupo, o @usuario para un canal donde el bot pueda escribir.",
+            "timeout_segundos": "Entre 5 y 60 segundos.",
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            if isinstance(field.widget, forms.CheckboxInput):
+                field.widget.attrs["class"] = "form-check-input"
+            else:
+                field.widget.attrs["class"] = "form-control"
+
+    def clean(self):
+        cleaned_data = super().clean()
+        token = (cleaned_data.get("token") or "").strip()
+        clear_token = cleaned_data.get("eliminar_token", False)
+        if token and clear_token:
+            self.add_error("eliminar_token", "Elige entre reemplazar o eliminar el token.")
+        elif token:
+            self.instance.set_token(token)
+        elif clear_token:
+            self.instance.set_token("")
+        if cleaned_data.get("activo") and not self.instance.token_cifrado:
+            self.add_error("token", "Configura el token antes de activar Telegram.")
         return cleaned_data
 
 

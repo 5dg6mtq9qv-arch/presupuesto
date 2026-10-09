@@ -121,6 +121,23 @@ En esa misma pantalla se configura el destinatario de las nuevas solicitudes de 
 
 La clave `EMAIL_CONFIG_ENCRYPTION_KEY` debe conservarse estable entre despliegues. Si se omite, el cifrado deriva de `DJANGO_SECRET_KEY`, que tampoco debe cambiar o la contraseña almacenada dejará de poder descifrarse.
 
+### Alertas de solicitudes por Telegram
+
+El correo continúa enviándose normalmente y Telegram funciona como un canal adicional. Un superusuario puede configurarlo desde **Administración → Configurar Telegram**:
+
+1. Crea un bot conversando con `@BotFather` y ejecutando `/newbot`.
+2. Inicia una conversación con el bot o agrégalo al grupo o canal que recibirá las alertas.
+3. Obtén el `chat_id` del destino y completa el token y ese identificador en el panel.
+4. Activa Telegram y pulsa **Guardar y enviar prueba**.
+
+El token se guarda cifrado. Puedes definir una raíz criptográfica independiente con:
+
+```dotenv
+TELEGRAM_CONFIG_ENCRYPTION_KEY=una-clave-maestra-independiente-y-estable
+```
+
+Si se omite, el cifrado deriva de `DJANGO_SECRET_KEY`. La clave elegida debe mantenerse estable entre despliegues. Cada nueva solicitud activa ambos canales en el mismo evento: el correo contiene los datos y el enlace de revisión, mientras Telegram solo avisa que el detalle fue enviado al correo, sin exponer información personal ni el enlace. El fallo de un canal no bloquea el registro.
+
 `STATIC_ROOT` y `MEDIA_ROOT` son opcionales en `.env`; si no se indican se usan los valores definidos en `settings.py`.
 
 ## 6. Preparación para producción

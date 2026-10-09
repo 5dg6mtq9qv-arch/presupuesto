@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block page_title %}Configurar Telegram{% endblock %}
+{% block page_subtitle %}Recibe en un bot un aviso para revisar por correo cada nueva solicitud{% endblock %}
+
+{% block content %}
+<style>
+  .telegram-setup { max-width: 960px; margin: 0 auto; }
+  .telegram-grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 18px; align-items: start; }
+  .telegram-form { display: grid; gap: 16px; }
+  .telegram-status { display: flex; align-items: center; gap: 10px; padding: 12px; border-radius: 12px; background: var(--surface-soft); margin-bottom: 18px; }
+  .telegram-status .material-symbols-outlined { color: {% if config.token_configurado %}var(--success){% else %}var(--muted){% endif %}; }
+  .telegram-status small { display: block; color: var(--muted); }
+  .telegram-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  .telegram-actions .btn { min-height: 44px; }
+  .telegram-tip { display: flex; gap: 9px; font-size: 13px; line-height: 1.5; }
+  .telegram-tip .material-symbols-outlined { color: var(--primary); }
+  .telegram-error { padding: 12px; border: 1px solid #fecaca; border-radius: 12px; background: #fff7f7; color: #991b1b; }
+  @media (max-width: 760px) { .telegram-grid { grid-template-columns: 1fr; } }
+</style>
+
+<div class="telegram-setup">
+  <div class="telegram-grid">
+    <section class="panel">
+      <div class="panel-heading">
+        <div><h2>Bot de Telegram</h2><p class="muted mb-0">Los cambios se aplican al guardar, sin editar archivos ni reiniciar.</p></div>
+      </div>
+
+      <div class="telegram-status">
+        <span class="material-symbols-outlined">{% if config.token_configurado %}verified_user{% else %}key_off{% endif %}</span>
+        <div>
+          <strong>{% if config.token_configurado %}Token protegido{% else %}Falta el token del bot{% endif %}</strong>
+          <small>{% if config.token_configurado %}Déjalo vacío para conservar la credencial guardada.{% else %}Crea el bot con @BotFather y pega aquí su token.{% endif %}</small>
+        </div>
+      </div>
+
+      {% if connection_error %}
+        <div class="telegram-error" role="alert"><strong>No se pudo enviar.</strong> {{ connection_error }}</div>
+      {% endif %}
+
+      <form method="post" class="telegram-form">
+        {% csrf_token %}
+        {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+
+        {% include "core/partials/form_field.html" with field=form.token %}
+        {% if config.token_configurado %}
+          <div class="unfold-field unfold-check">
+            <div class="form-check">{{ form.eliminar_token }} <label class="form-check-label" for="{{ form.eliminar_token.id_for_label }}">{{ form.eliminar_token.label }}</label></div>
+            {% for error in form.eliminar_token.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+          </div>
+        {% endif %}
+        {% include "core/partials/form_field.html" with field=form.chat_id %}
+        {% include "core/partials/form_field.html" with field=form.timeout_segundos %}
+
+        <div class="unfold-field unfold-check">
+          <div class="form-check">{{ form.activo }} <label class="form-check-label" for="{{ form.activo.id_for_label }}">{{ form.activo.label }}</label></div>
+          {% for error in form.activo.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+        </div>
+
+        <div class="telegram-actions">
+          <button class="btn btn-primary" type="submit" name="action" value="save_test">
+            <span class="material-symbols-outlined">send</span><span>Guardar y enviar prueba</span>
+          </button>
+          <button class="btn btn-outline-secondary" type="submit" name="action" value="save">
+            <span class="material-symbols-outlined">save</span><span>Solo guardar</span>
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <aside class="panel">
+      <div class="panel-heading"><div><h2>Cómo conectarlo</h2></div></div>
+      <div class="telegram-tip"><span class="material-symbols-outlined">smart_toy</span><span><strong>1.</strong> Abre @BotFather, ejecuta <code>/newbot</code> y copia el token.</span></div>
+      <hr>
+      <div class="telegram-tip"><span class="material-symbols-outlined">forum</span><span><strong>2.</strong> Inicia una conversación con el bot o agrégalo al grupo/canal receptor.</span></div>
+      <hr>
+      <div class="telegram-tip"><span class="material-symbols-outlined">tag</span><span><strong>3.</strong> Obtén el <code>chat_id</code>, escríbelo aquí y envía una prueba.</span></div>
+      <hr>
+      <div class="telegram-tip"><span class="material-symbols-outlined">lock</span><span>El token se cifra antes de guardarse y esta pantalla solo está disponible para superusuarios.</span></div>
+    </aside>
+  </div>
+</div>
+{% endblock %}

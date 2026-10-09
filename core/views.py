@@ -68,6 +68,7 @@ from .forms import (
     CapturaComprobanteForm,
     ConfiguracionCorreoForm,
     ConfiguracionIAForm,
+    ConfiguracionTelegramForm,
     ConfirmarImportacionAmortizacionForm,
     ImportacionBancariaForm,
     ImportacionAmortizacionForm,
@@ -88,6 +89,7 @@ from .models import (
     Categoria,
     ConfiguracionCorreo,
     ConfiguracionIA,
+    ConfiguracionTelegram,
     ConsumoIA,
     CuentaFinanciera,
     Deuda,
@@ -124,6 +126,12 @@ from .services import (
 from .bank_import import CSVImportError, confirm_import, create_import_preview
 from .amortization_import import AmortizationImportError, parse_amortization_file as parse_amortization_pdf
 from .receipt_capture import analyze_receipt, receipt_error_for_display
+from .telegram_config import (
+    TelegramError,
+    get_telegram_runtime_config,
+    send_telegram_message,
+    test_telegram_token,
+)
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -968,6 +976,16 @@ def admin_required(view_func):
     )
 
 
+def superuser_required(view_func):
+    return login_required(
+        user_passes_test(
+            lambda user: user.is_superuser,
+            login_url="dashboard",
+            redirect_field_name=None,
+        )(view_func)
+    )
+
+
 @admin_required
 def configuracion_ia(request):
     config = ConfiguracionIA.objects.order_by("pk").first() or ConfiguracionIA()
@@ -1066,6 +1084,54 @@ def configuracion_correo(request):
     return render(
         request,
         "core/configuracion_correo.html",
+        {"form": form, "config": config, "connection_error": connection_error},
+    )
+
+
+@superuser_required
+def configuracion_telegram(request):
+    config = ConfiguracionTelegram.objects.order_by("pk").first() or ConfiguracionTelegram()
+    connection_error = ""
+
+    if request.method == "POST":
+        form = ConfiguracionTelegramForm(request.POST, instance=config)
+        if form.is_valid():
+            action = request.POST.get("action")
+            if action == "save_test" and not form.cleaned_data.get("activo"):
+                form.add_error("activo", "Activa Telegram para poder enviar la prueba.")
+            else:
+                config = form.save()
+                if action == "save_test":
+                    runtime = get_telegram_runtime_config()
+                    try:
+                        bot = test_telegram_token(runtime)
+                        send_telegram_message(
+                            "✅ Prueba correcta de Finanzas Claras.\n"
+                            "Los avisos de nuevas solicitudes de acceso llegarán a este chat.",
+                            runtime,
+                        )
+                    except TelegramError as exc:
+                        connection_error = str(exc)
+                        messages.error(
+                            request,
+                            f"La configuración se guardó, pero la prueba falló: {exc}",
+                        )
+                    else:
+                        bot_name = bot.get("username") or bot.get("first_name") or "bot"
+                        messages.success(
+                            request,
+                            f"Mensaje de prueba enviado correctamente con @{bot_name}.",
+                        )
+                        return redirect("configuracion_telegram")
+                else:
+                    messages.success(request, "Configuración de Telegram guardada.")
+                    return redirect("configuracion_telegram")
+    else:
+        form = ConfiguracionTelegramForm(instance=config)
+
+    return render(
+        request,
+        "core/configuracion_telegram.html",
         {"form": form, "config": config, "connection_error": connection_error},
     )
 
@@ -2553,10 +2619,6 @@ def _destinatarios_solicitudes_registro():
 
 def _enviar_solicitud_registro_a_administrador(request, solicitud):
     recipients = _destinatarios_solicitudes_registro()
-    if not recipients:
-        logger.warning("No hay un destinatario configurado para la solicitud de registro %s", solicitud.pk)
-        return False
-
     token = signing.dumps(
         {"solicitud_id": solicitud.pk},
         salt=REGISTRATION_DECISION_SALT,
@@ -2583,18 +2645,44 @@ def _enviar_solicitud_registro_a_administrador(request, solicitud):
         'background:#25a194;color:#fff;text-decoration:none;border-radius:6px">Revisar solicitud</a></p>'
         "<p>El enlace requiere iniciar sesión como administrador y vence por seguridad.</p>"
     )
-    message = EmailMultiAlternatives(
-        subject=f"Nueva solicitud de acceso: {user.username}",
-        body=body,
-        to=recipients,
+    email_sent = False
+    if recipients:
+        message = EmailMultiAlternatives(
+            subject=f"Nueva solicitud de acceso: {user.username}",
+            body=body,
+            to=recipients,
+        )
+        message.attach_alternative(html, "text/html")
+        try:
+            email_sent = message.send(fail_silently=False) == 1
+        except Exception:
+            logger.exception("No se pudo enviar por correo la solicitud de registro %s", solicitud.pk)
+        else:
+            if not email_sent:
+                logger.warning("El correo no confirmó el envío de la solicitud de registro %s", solicitud.pk)
+    else:
+        logger.warning("No hay correo destinatario para la solicitud de registro %s", solicitud.pk)
+
+    telegram_body = (
+        "🔔 Nueva solicitud de acceso a Finanzas Claras.\n\n"
+        + (
+            "El detalle y el enlace de revisión fueron enviados al correo configurado. "
+            "Revisa tu bandeja de entrada."
+            if email_sent
+            else "No se pudo enviar el correo de detalle. Revisa el panel de solicitudes del sistema."
+        )
     )
-    message.attach_alternative(html, "text/html")
+    telegram_sent = False
     try:
-        message.send(fail_silently=False)
-    except Exception:
-        logger.exception("No se pudo notificar la solicitud de registro %s", solicitud.pk)
-        return False
-    return True
+        telegram_sent = send_telegram_message(telegram_body)
+    except TelegramError as exc:
+        logger.warning(
+            "No se pudo enviar por Telegram la solicitud de registro %s: %s",
+            solicitud.pk,
+            exc,
+        )
+
+    return email_sent or telegram_sent
 
 
 @admin_required
@@ -3257,17 +3345,6 @@ def analisis_financiero(request):
         parent__isnull=False,
         pk__in=categorias_periodo_ids,
     )
-    etiquetas = Etiqueta.objects.filter(usuario=request.user).order_by("nombre")
-
-    etiqueta_ids_solicitadas = list(dict.fromkeys(request.GET.getlist("etiquetas")))
-    etiqueta_ids = list(
-        etiquetas.filter(
-            pk__in=[value for value in etiqueta_ids_solicitadas if value.isdigit()]
-        ).values_list("pk", flat=True)
-    )
-    etiqueta_ids_set = set(etiqueta_ids)
-    for etiqueta in etiquetas:
-        etiqueta.seleccionada = etiqueta.pk in etiqueta_ids_set
 
     categoria_ids = []
     categoria_seleccionada = categorias.filter(pk=categoria_id).first() if categoria_id else None
@@ -3287,6 +3364,55 @@ def analisis_financiero(request):
     else:
         categoria_id = ""
         subcategoria_id = ""
+
+    movimientos_para_etiquetas = MovimientoFinanciero.objects.filter(
+        usuario=request.user,
+        estado=MovimientoFinanciero.Estado.CONFIRMADO,
+        fecha__range=(fecha_inicio, fecha_fin),
+        etiquetas__isnull=False,
+    )
+    pagos_para_etiquetas = PagoDeuda.objects.filter(
+        deuda__usuario=request.user,
+        fecha__range=(fecha_inicio, fecha_fin),
+    )
+    if categoria_ids:
+        movimientos_para_etiquetas = movimientos_para_etiquetas.filter(
+            categoria_id__in=categoria_ids
+        )
+        pagos_para_etiquetas = pagos_para_etiquetas.filter(
+            deuda__categoria_id__in=categoria_ids
+        )
+    etiquetas_disponibles_ids = set(
+        movimientos_para_etiquetas.values_list("etiquetas__id", flat=True)
+    )
+    deudas_disponibles_ids = set(
+        pagos_para_etiquetas.values_list("deuda_id", flat=True)
+    )
+    deudas_disponibles_ids.update(
+        item["deuda"].pk
+        for item in cuotas_disponibles
+        if not categoria_ids or item["deuda"].categoria_id in categoria_ids
+    )
+    etiquetas_disponibles_ids.update(
+        Etiqueta.objects.filter(
+            usuario=request.user,
+            deudas__id__in=deudas_disponibles_ids,
+        ).values_list("pk", flat=True)
+    )
+    etiquetas = Etiqueta.objects.filter(
+        usuario=request.user,
+        pk__in=etiquetas_disponibles_ids,
+    ).order_by("nombre")
+
+    etiqueta_ids_solicitadas = list(dict.fromkeys(request.GET.getlist("etiquetas")))
+    etiqueta_ids = list(
+        etiquetas.filter(
+            pk__in=[value for value in etiqueta_ids_solicitadas if value.isdigit()]
+        ).values_list("pk", flat=True)
+    )
+    etiqueta_ids_set = set(etiqueta_ids)
+    for etiqueta in etiquetas:
+        etiqueta.seleccionada = etiqueta.pk in etiqueta_ids_set
 
     movimientos = MovimientoFinanciero.objects.filter(
         usuario=request.user,

@@ -317,6 +317,53 @@ class ConfiguracionCorreo(models.Model):
         return f"{self.usuario} · {self.servidor}:{self.puerto}"
 
 
+class ConfiguracionTelegram(models.Model):
+    unico = models.BooleanField(default=True, unique=True, editable=False)
+    activo = models.BooleanField(default=False, verbose_name="Activar alertas por Telegram")
+    chat_id = models.CharField(
+        max_length=120,
+        blank=True,
+        help_text="Identificador del chat o grupo, o @usuario del canal que recibirá las alertas.",
+    )
+    timeout_segundos = models.PositiveSmallIntegerField(default=15)
+    token_cifrado = models.TextField(blank=True, editable=False)
+    token_configurado = models.BooleanField(default=False, editable=False)
+    actualizado = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = '"configuracion"."configuracion_telegram"'
+        verbose_name = "configuración de Telegram"
+        verbose_name_plural = "configuración de Telegram"
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if not 5 <= self.timeout_segundos <= 60:
+            errors["timeout_segundos"] = "El timeout debe estar entre 5 y 60 segundos."
+        if self.activo and not self.token_cifrado:
+            errors["activo"] = "Configura el token del bot antes de activar Telegram."
+        if self.activo and not self.chat_id.strip():
+            errors["chat_id"] = "Configura el chat de destino antes de activar Telegram."
+        if errors:
+            raise ValidationError(errors)
+
+    def set_token(self, value):
+        from .telegram_config import encrypt_telegram_token
+
+        token = str(value or "").strip()
+        self.token_cifrado = encrypt_telegram_token(token) if token else ""
+        self.token_configurado = bool(token)
+
+    def get_token(self):
+        from .telegram_config import decrypt_telegram_token
+
+        return decrypt_telegram_token(self.token_cifrado) if self.token_cifrado else ""
+
+    def __str__(self):
+        destino = self.chat_id or "sin chat"
+        return f"Telegram · {destino}"
+
+
 class ConsumoIA(models.Model):
     usuario = models.ForeignKey(
         settings.AUTH_USER_MODEL,

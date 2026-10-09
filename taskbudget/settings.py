@@ -85,6 +85,9 @@ AI_CONFIG_ENCRYPTION_KEY = os.getenv("AI_CONFIG_ENCRYPTION_KEY", "").strip()
 # Optional independent master key for SMTP credentials stored through Django Admin.
 # When omitted, DJANGO_SECRET_KEY is used as the encryption root.
 EMAIL_CONFIG_ENCRYPTION_KEY = os.getenv("EMAIL_CONFIG_ENCRYPTION_KEY", "").strip()
+# Optional independent key for Telegram bot tokens stored through the system panel.
+# When omitted, DJANGO_SECRET_KEY is used as the encryption root.
+TELEGRAM_CONFIG_ENCRYPTION_KEY = os.getenv("TELEGRAM_CONFIG_ENCRYPTION_KEY", "").strip()
 
 
 # Application definition

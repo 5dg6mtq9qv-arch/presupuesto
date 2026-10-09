@@ -11,7 +11,12 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from .forms import ConfiguracionCorreoForm, ConfiguracionIAForm, MovimientoFinancieroForm
+from .forms import (
+    ConfiguracionCorreoForm,
+    ConfiguracionIAForm,
+    ConfiguracionTelegramForm,
+    MovimientoFinancieroForm,
+)
 from .financial_profile import calculate_financial_behavior_profile, get_financial_behavior_profile
 from .ai_assistant import (
     AI_TOOLS,
@@ -28,6 +33,11 @@ from .ai_assistant import (
 )
 from .ai_config import AIRuntimeConfig, get_ai_runtime_config
 from .email_config import get_email_runtime_config
+from .telegram_config import (
+    TelegramRuntimeConfig,
+    get_telegram_runtime_config,
+    send_telegram_message,
+)
 from .admin import ConfiguracionIAAdminForm
 from .models import (
     Acreedor,
@@ -36,6 +46,7 @@ from .models import (
     ConfiguracionCorreo,
     CuentaFinanciera,
     ConfiguracionIA,
+    ConfiguracionTelegram,
     Deuda,
     Etiqueta,
     MetodoPago,
@@ -496,6 +507,144 @@ class ConfiguracionCorreoTests(TestCase):
         self.assertContains(response, "Guardar y enviar prueba")
         self.assertContains(response, "smtp.hostinger.com")
 
+
+@override_settings(TELEGRAM_CONFIG_ENCRYPTION_KEY="clave-maestra-telegram-prueba")
+class ConfiguracionTelegramTests(TestCase):
+    def datos_formulario(self, **overrides):
+        data = {
+            "activo": "on",
+            "chat_id": "-1001234567890",
+            "timeout_segundos": "15",
+            "token": "123456:token-super-secreto",
+            "eliminar_token": "",
+        }
+        data.update(overrides)
+        return data
+
+    def test_superusuario_guarda_token_cifrado(self):
+        form = ConfiguracionTelegramForm(data=self.datos_formulario())
+
+        self.assertTrue(form.is_valid(), form.errors)
+        config = form.save()
+        self.assertNotIn("token-super-secreto", config.token_cifrado)
+        self.assertEqual(config.get_token(), "123456:token-super-secreto")
+        runtime = get_telegram_runtime_config()
+        self.assertTrue(runtime.configured)
+        self.assertEqual(runtime.chat_id, "-1001234567890")
+
+    @patch("core.telegram_config.urlopen")
+    def test_envio_usa_bot_api_y_chat_configurado(self, mocked_urlopen):
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = b'{"ok":true,"result":{"message_id":1}}'
+        mocked_urlopen.return_value = response
+        runtime = TelegramRuntimeConfig(
+            enabled=True,
+            token="123456:token-prueba",
+            chat_id="-1001234567890",
+            timeout=15,
+            source="test",
+        )
+
+        sent = send_telegram_message("Mensaje de prueba", runtime)
+
+        self.assertTrue(sent)
+        request = mocked_urlopen.call_args.args[0]
+        self.assertTrue(request.full_url.endswith("/sendMessage"))
+        payload = json.loads(request.data)
+        self.assertEqual(payload["chat_id"], "-1001234567890")
+        self.assertEqual(payload["text"], "Mensaje de prueba")
+
+    def test_pantalla_solo_permite_superusuarios(self):
+        staff = get_user_model().objects.create_user(
+            username="staff-telegram",
+            password="test",
+            is_staff=True,
+        )
+        superuser = get_user_model().objects.create_superuser(
+            username="super-telegram",
+            email="super@example.com",
+            password="test",
+        )
+
+        self.client.force_login(staff)
+        denied = self.client.get(reverse("configuracion_telegram"))
+        self.assertRedirects(denied, reverse("dashboard"))
+
+        self.client.force_login(superuser)
+        allowed = self.client.get(reverse("configuracion_telegram"))
+        self.assertEqual(allowed.status_code, 200)
+        self.assertContains(allowed, "Bot de Telegram")
+
+    @patch("core.views.send_telegram_message", return_value=True)
+    @patch("core.views.test_telegram_token", return_value={"username": "finanzas_bot"})
+    def test_guarda_y_envia_prueba(self, test_token, send_message):
+        superuser = get_user_model().objects.create_superuser(
+            username="super-prueba-telegram",
+            email="super@example.com",
+            password="test",
+        )
+        self.client.force_login(superuser)
+
+        response = self.client.post(
+            reverse("configuracion_telegram"),
+            self.datos_formulario(action="save_test"),
+            follow=True,
+        )
+
+        self.assertContains(response, "Mensaje de prueba enviado correctamente")
+        test_token.assert_called_once()
+        send_message.assert_called_once()
+
+    @override_settings(
+        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+        REGISTRATION_APPROVAL_EMAIL="propietario@example.com",
+    )
+    @patch("core.views.send_telegram_message", return_value=True)
+    def test_registro_envia_correo_y_telegram(self, send_message):
+        response = self.client.post(
+            reverse("registro"),
+            {
+                "username": "solicitante-telegram",
+                "first_name": "Sofía",
+                "last_name": "López",
+                "email": "sofia-telegram@example.com",
+                "password1": "Clave-segura-2026!",
+                "password2": "Clave-segura-2026!",
+            },
+        )
+
+        self.assertRedirects(response, reverse("registro_solicitado"))
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["propietario@example.com"])
+        telegram_text = send_message.call_args.args[0]
+        self.assertIn("Nueva solicitud de acceso", telegram_text)
+        self.assertIn("enviados al correo configurado", telegram_text)
+        self.assertNotIn("solicitante-telegram", telegram_text)
+        self.assertNotIn("sofia-telegram@example.com", telegram_text)
+        self.assertNotIn("/usuarios/solicitudes/decision/", telegram_text)
+
+    @override_settings(REGISTRATION_APPROVAL_EMAIL="propietario@example.com")
+    def test_telegram_avisa_si_el_correo_de_solicitud_falla(self):
+        with (
+            patch("core.views.EmailMultiAlternatives.send", side_effect=RuntimeError("SMTP no disponible")),
+            patch("core.views.send_telegram_message", return_value=True) as send_message,
+        ):
+            response = self.client.post(
+                reverse("registro"),
+                {
+                    "username": "solicitante-sin-correo",
+                    "first_name": "Mario",
+                    "last_name": "Vega",
+                    "email": "mario-sin-correo@example.com",
+                    "password1": "Clave-segura-2026!",
+                    "password2": "Clave-segura-2026!",
+                },
+            )
+
+        self.assertRedirects(response, reverse("registro_solicitado"))
+        telegram_text = send_message.call_args.args[0]
+        self.assertIn("No se pudo enviar el correo", telegram_text)
+        self.assertNotIn("solicitante-sin-correo", telegram_text)
 
 class GastoTarjetaCreditoTests(TestCase):
     def setUp(self):
@@ -2925,6 +3074,7 @@ class MovimientoRecurrenteServiceTests(TestCase):
         )
         selected_tag = Etiqueta.objects.create(usuario=self.user, nombre="Esencial")
         other_tag = Etiqueta.objects.create(usuario=self.user, nombre="Opcional")
+        unavailable_tag = Etiqueta.objects.create(usuario=self.user, nombre="Sin uso en el periodo")
         for concept, category, tag, amount in (
             ("Coincide", selected_subcategory, selected_tag, "15.00"),
             ("Otra etiqueta", selected_subcategory, other_tag, "25.00"),
@@ -2955,6 +3105,12 @@ class MovimientoRecurrenteServiceTests(TestCase):
         self.assertEqual(response.context["gastos"], Decimal("15.00"))
         self.assertEqual(response.context["subcategoria_id"], str(selected_subcategory.pk))
         self.assertEqual(response.context["etiqueta_ids"], [selected_tag.pk])
+        self.assertQuerySetEqual(
+            response.context["etiquetas"],
+            [selected_tag, other_tag],
+            ordered=False,
+        )
+        self.assertNotIn(unavailable_tag, response.context["etiquetas"])
 
     def test_categorias_y_subcategorias_disponibles_dependen_del_periodo(self):
         january_parent = Categoria.objects.create(
