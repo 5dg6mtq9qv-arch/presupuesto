@@ -3023,6 +3023,7 @@ class MovimientoRecurrenteServiceTests(TestCase):
         self.assertEqual(html.count("data-filter-row="), 3)
         for removed_id in ("periodo", "desde", "hasta", "tipo", "vista"):
             self.assertNotIn(f'id="{removed_id}"', html)
+        self.assertIn("select2:select select2:unselect select2:clear", html)
 
     def test_analisis_historico_no_inventa_recurrentes_no_confirmados(self):
         ingreso_recurrente = MovimientoRecurrente.objects.create(

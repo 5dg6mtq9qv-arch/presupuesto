@@ -385,6 +385,14 @@
     subcategorySelect.addEventListener("change", submitFilters);
     tagSelect.addEventListener("change", submitFilters);
     refreshSubcategories();
+    if (window.jQuery && jQuery.fn.select2) {
+      jQuery(categorySelect).on("select2:select select2:clear", () => {
+        refreshSubcategories();
+        submitFilters();
+      });
+      jQuery(subcategorySelect).on("select2:select select2:clear", submitFilters);
+      jQuery(tagSelect).on("select2:select select2:unselect select2:clear", submitFilters);
+    }
 
     const data = JSON.parse(document.getElementById("analysis-data").textContent);
     const moneyFormatter = new Intl.NumberFormat("es-EC", {
