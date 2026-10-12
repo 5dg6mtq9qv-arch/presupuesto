@@ -1271,6 +1271,23 @@
     .amount { font-variant-numeric: tabular-nums; }
 
     .debt-page-actions { align-items: flex-end; }
+    .monthly-payment-panel {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 20px;
+      border-color: #bfe3dd;
+      background: linear-gradient(135deg, var(--primary-soft), var(--surface));
+    }
+    .monthly-payment-panel h2 { margin: 3px 0 5px; }
+    .monthly-payment-panel .btn { flex: 0 0 auto; }
+    .bulk-payment-select-all, .bulk-payment-option { cursor: pointer; }
+    .bulk-payment-select-all { justify-content: flex-start; margin-bottom: 10px; border-style: dashed; }
+    .bulk-payment-select-all > span { display: grid; gap: 2px; }
+    .bulk-payment-option { grid-template-columns: auto minmax(0, 1fr); justify-content: initial; }
+    .bulk-payment-option input, .bulk-payment-select-all input { width: 18px; height: 18px; accent-color: var(--primary); }
+    .bulk-payment-option:has(input:checked) { border-color: #9bd7cf; background: var(--primary-soft); }
     .debt-filter-panel { padding: 18px 20px; }
     .debt-filter-heading {
       display: flex;
@@ -1843,6 +1860,8 @@
       .receipt-source-actions { grid-template-columns: 1fr; }
       .receipt-source-option { min-height: 82px; }
       .debt-page-actions { align-items: stretch; }
+      .monthly-payment-panel { align-items: stretch; flex-direction: column; }
+      .monthly-payment-panel .btn { width: 100%; }
       .debt-page-actions > .btn { width: 100%; }
       .debt-filter-heading, .debt-card-header { flex-direction: column; }
       .debt-filter-heading > .btn { width: 100%; }

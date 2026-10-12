@@ -2435,6 +2435,138 @@ class GuidedFinancialFlowsTests(TestCase):
         self.assertEqual(response.status_code, 404)
 
 
+class PagoAgrupadoMesTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="pago-mensual", password="test")
+        self.client.force_login(self.user)
+        self.cuenta = CuentaFinanciera.objects.create(
+            usuario=self.user,
+            nombre="Cuenta principal",
+            tipo=CuentaFinanciera.Tipo.EFECTIVO,
+            saldo_inicial="500.00",
+        )
+        self.hoy = datetime(2026, 10, 12).date()
+
+    def crear_cuota(self, concepto, monto, fecha, usuario=None):
+        usuario = usuario or self.user
+        deuda = Deuda.objects.create(
+            usuario=usuario,
+            acreedor="Banco",
+            concepto=concepto,
+            monto_inicial=monto,
+            saldo_actual=monto,
+            numero_cuotas=1,
+            fecha_inicio=fecha,
+            fecha_primera_cuota=fecha,
+            fecha_vencimiento=fecha,
+        )
+        cuota = PagoDeuda.objects.create(
+            deuda=deuda,
+            monto=monto,
+            fecha=fecha,
+            cuota_numero=1,
+            estado=PagoDeuda.Estado.PENDIENTE,
+        )
+        return deuda, cuota
+
+    @patch("core.views.timezone.localdate")
+    def test_lista_ofrece_pagar_todas_las_cuotas_del_mes(self, localdate):
+        localdate.return_value = self.hoy
+        self.crear_cuota("Préstamo A", "80.00", datetime(2026, 10, 5).date())
+        self.crear_cuota("Préstamo B", "45.00", datetime(2026, 10, 20).date())
+
+        response = self.client.get(reverse("deuda_list"))
+
+        self.assertContains(response, "Paga todas las cuotas del mes juntas")
+        self.assertContains(response, "Pagar todo el mes")
+        self.assertEqual(response.context["total_cuotas_mes"], Decimal("125.00"))
+
+    @patch("core.views.timezone.localdate")
+    def test_pago_agrupado_confirma_solo_las_cuotas_del_mes(self, localdate):
+        localdate.return_value = self.hoy
+        deuda_a, cuota_a = self.crear_cuota("Préstamo A", "80.00", datetime(2026, 10, 5).date())
+        deuda_b, cuota_b = self.crear_cuota("Préstamo B", "45.00", datetime(2026, 10, 20).date())
+        _, cuota_noviembre = self.crear_cuota("Préstamo futuro", "30.00", datetime(2026, 11, 5).date())
+
+        response = self.client.post(
+            reverse("pagos_mes_confirmar"),
+            {"cuenta": self.cuenta.pk, "pagos": [cuota_a.pk, cuota_b.pk]},
+        )
+
+        self.assertRedirects(response, reverse("deuda_list"))
+        cuota_a.refresh_from_db()
+        cuota_b.refresh_from_db()
+        cuota_noviembre.refresh_from_db()
+        deuda_a.refresh_from_db()
+        deuda_b.refresh_from_db()
+        self.assertEqual(cuota_a.estado, PagoDeuda.Estado.CONFIRMADO)
+        self.assertEqual(cuota_b.estado, PagoDeuda.Estado.CONFIRMADO)
+        self.assertEqual(cuota_a.cuenta, self.cuenta)
+        self.assertEqual(cuota_b.cuenta, self.cuenta)
+        self.assertEqual(cuota_noviembre.estado, PagoDeuda.Estado.PENDIENTE)
+        self.assertEqual(deuda_a.estado, Deuda.Estado.PAGADA)
+        self.assertEqual(deuda_b.estado, Deuda.Estado.PAGADA)
+        self.assertEqual(saldo_actual_cuenta(self.cuenta), Decimal("375.00"))
+
+    @patch("core.views.timezone.localdate")
+    def test_pago_agrupado_no_hace_cambios_si_el_saldo_es_insuficiente(self, localdate):
+        localdate.return_value = self.hoy
+        self.cuenta.saldo_inicial = Decimal("50.00")
+        self.cuenta.save(update_fields=["saldo_inicial"])
+        deuda, cuota = self.crear_cuota("Préstamo", "80.00", datetime(2026, 10, 5).date())
+
+        response = self.client.post(
+            reverse("pagos_mes_confirmar"),
+            {"cuenta": self.cuenta.pk, "pagos": [cuota.pk]},
+        )
+
+        cuota.refresh_from_db()
+        deuda.refresh_from_db()
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Saldo insuficiente")
+        self.assertEqual(cuota.estado, PagoDeuda.Estado.PENDIENTE)
+        self.assertEqual(deuda.saldo_actual, Decimal("80.00"))
+
+    @patch("core.views.timezone.localdate")
+    def test_pago_agrupado_permite_desmarcar_una_cuota(self, localdate):
+        localdate.return_value = self.hoy
+        deuda_a, cuota_a = self.crear_cuota("Préstamo A", "80.00", datetime(2026, 10, 5).date())
+        deuda_b, cuota_b = self.crear_cuota("Préstamo B", "45.00", datetime(2026, 10, 20).date())
+
+        response = self.client.post(
+            reverse("pagos_mes_confirmar"),
+            {"cuenta": self.cuenta.pk, "pagos": [cuota_a.pk]},
+        )
+
+        self.assertRedirects(response, reverse("deuda_list"))
+        cuota_a.refresh_from_db()
+        cuota_b.refresh_from_db()
+        deuda_a.refresh_from_db()
+        deuda_b.refresh_from_db()
+        self.assertEqual(cuota_a.estado, PagoDeuda.Estado.CONFIRMADO)
+        self.assertEqual(cuota_b.estado, PagoDeuda.Estado.PENDIENTE)
+        self.assertEqual(deuda_a.saldo_actual, Decimal("0.00"))
+        self.assertEqual(deuda_b.saldo_actual, Decimal("45.00"))
+        self.assertEqual(saldo_actual_cuenta(self.cuenta), Decimal("420.00"))
+
+    @patch("core.views.timezone.localdate")
+    def test_pago_agrupado_exige_al_menos_una_cuota(self, localdate):
+        localdate.return_value = self.hoy
+        deuda, cuota = self.crear_cuota("Préstamo", "80.00", datetime(2026, 10, 5).date())
+
+        response = self.client.post(
+            reverse("pagos_mes_confirmar"),
+            {"cuenta": self.cuenta.pk},
+        )
+
+        cuota.refresh_from_db()
+        deuda.refresh_from_db()
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Selecciona al menos una cuota")
+        self.assertEqual(cuota.estado, PagoDeuda.Estado.PENDIENTE)
+        self.assertEqual(deuda.saldo_actual, Decimal("80.00"))
+
+
 class DeudaListFilterTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(username="filtro-deudas", password="test")

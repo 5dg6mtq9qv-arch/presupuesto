@@ -4652,6 +4652,18 @@ def deuda_list(request):
         usuario=request.user,
         tipo=Categoria.Tipo.FINANZAS,
     ).select_related("parent").order_by("parent__nombre", "nombre")
+    inicio_mes = hoy.replace(day=1)
+    fin_mes = hoy.replace(day=calendar.monthrange(hoy.year, hoy.month)[1])
+    cuotas_mes = list(
+        PagoDeuda.objects.filter(
+            deuda__usuario=request.user,
+            deuda__estado=Deuda.Estado.ACTIVA,
+            deuda__saldo_actual__gt=0,
+            estado=PagoDeuda.Estado.PENDIENTE,
+            fecha__range=(inicio_mes, fin_mes),
+        ).select_related("deuda").order_by("fecha", "deuda__acreedor", "cuota_numero")
+    )
+    total_cuotas_mes = sum((pago.monto for pago in cuotas_mes), Decimal("0"))
     return render(
         request,
         "core/deuda_list.html",
@@ -4660,6 +4672,9 @@ def deuda_list(request):
             "page_obj": page_obj,
             "list_querystring": list_querystring,
             "categorias": categorias,
+            "cuotas_mes": cuotas_mes,
+            "total_cuotas_mes": total_cuotas_mes,
+            "inicio_mes": inicio_mes,
             "filters": {
                 "q": q,
                 "estado": estado,
@@ -4879,6 +4894,141 @@ def pago_confirmar(request, pk):
         cambios={"monto": str(monto_aplicado), "saldo_resultante": str(deuda.saldo_actual)},
     )
     messages.success(request, "Pago confirmado y saldo actualizado.")
+    return redirect("deuda_list")
+
+
+@login_required
+@transaction.atomic
+def pagos_mes_confirmar(request):
+    hoy = timezone.localdate()
+    inicio_mes = hoy.replace(day=1)
+    fin_mes = hoy.replace(day=calendar.monthrange(hoy.year, hoy.month)[1])
+    generar_pagos_deudas(hasta_fecha=fin_mes, usuario=request.user)
+
+    pagos_query = PagoDeuda.objects.filter(
+        deuda__usuario=request.user,
+        deuda__estado=Deuda.Estado.ACTIVA,
+        deuda__saldo_actual__gt=0,
+        estado=PagoDeuda.Estado.PENDIENTE,
+        fecha__range=(inicio_mes, fin_mes),
+    ).select_related("deuda").order_by("deuda_id", "fecha", "cuota_numero", "pk")
+    if request.method == "POST":
+        pagos = list(pagos_query.select_for_update())
+        deuda_ids = sorted({pago.deuda_id for pago in pagos})
+        deudas = {
+            deuda.pk: deuda
+            for deuda in Deuda.objects.select_for_update().filter(pk__in=deuda_ids).order_by("pk")
+        }
+    else:
+        pagos = list(pagos_query)
+        deudas = {pago.deuda_id: pago.deuda for pago in pagos}
+
+    if not pagos:
+        messages.info(request, "No tienes cuotas pendientes para pagar este mes.")
+        return redirect("deuda_list")
+
+    if request.method == "POST":
+        ids_seleccionados = {
+            int(value) for value in request.POST.getlist("pagos") if value.isdigit()
+        }
+    else:
+        ids_seleccionados = {pago.pk for pago in pagos}
+
+    saldos_restantes = {deuda_id: deuda.saldo_actual for deuda_id, deuda in deudas.items()}
+    total = Decimal("0")
+    pagos_aplicables = []
+    for pago in pagos:
+        pago.seleccionado = pago.pk in ids_seleccionados
+        pago.monto_aplicable = min(pago.monto, deudas[pago.deuda_id].saldo_actual)
+        if not pago.seleccionado:
+            continue
+        monto_aplicable = min(pago.monto, saldos_restantes[pago.deuda_id])
+        pago.monto_aplicable = monto_aplicable
+        if monto_aplicable <= 0:
+            continue
+        saldos_restantes[pago.deuda_id] -= monto_aplicable
+        total += monto_aplicable
+        pagos_aplicables.append(pago)
+
+    resumen_cuentas = saldos_por_cuenta(request.user)
+    saldos_por_id = {item["id"]: item["saldo"] for item in resumen_cuentas}
+    saldos_cuenta = {str(pk): float(saldo) for pk, saldo in saldos_por_id.items()}
+    form = ConfirmarPagoDeudaForm(
+        request.POST if request.method == "POST" else None,
+        user=request.user,
+        saldos=saldos_por_id,
+    )
+    form_valid = form.is_valid() if request.method == "POST" else False
+    if request.method == "POST" and not pagos_aplicables:
+        form.add_error(None, "Selecciona al menos una cuota para continuar.")
+        form_valid = False
+    if request.method != "POST" or not form_valid:
+        return render(
+            request,
+            "core/pagos_mes_confirmar.html",
+            {
+                "form": form,
+                "pagos": pagos,
+                "cantidad_seleccionada": len(pagos_aplicables),
+                "total": total,
+                "inicio_mes": inicio_mes,
+                "saldos_cuenta": saldos_cuenta,
+            },
+        )
+
+    cuenta = CuentaFinanciera.objects.select_for_update().get(
+        pk=form.cleaned_data["cuenta"].pk,
+        usuario=request.user,
+        activa=True,
+    )
+    saldo_disponible = saldo_actual_cuenta(cuenta)
+    if saldo_disponible < total:
+        form.add_error(
+            "cuenta",
+            f"Saldo insuficiente: tienes {saldo_disponible:.2f} y el total es de {total:.2f}.",
+        )
+        saldos_cuenta[str(cuenta.pk)] = float(saldo_disponible)
+        return render(
+            request,
+            "core/pagos_mes_confirmar.html",
+            {
+                "form": form,
+                "pagos": pagos,
+                "cantidad_seleccionada": len(pagos_aplicables),
+                "total": total,
+                "inicio_mes": inicio_mes,
+                "saldos_cuenta": saldos_cuenta,
+            },
+        )
+
+    confirmado_en = timezone.now()
+    for pago in pagos_aplicables:
+        deuda = deudas[pago.deuda_id]
+        monto_aplicado = min(pago.monto, deuda.saldo_actual)
+        pago.monto = monto_aplicado
+        pago.cuenta = cuenta
+        pago.estado = PagoDeuda.Estado.CONFIRMADO
+        pago.confirmado_en = confirmado_en
+        pago.save(update_fields=["monto", "cuenta", "estado", "confirmado_en"])
+        deuda.saldo_actual = max(Decimal("0"), deuda.saldo_actual - monto_aplicado)
+        if deuda.saldo_actual == 0:
+            deuda.estado = Deuda.Estado.PAGADA
+        deuda.save(update_fields=["saldo_actual", "estado"])
+        registrar_auditoria(
+            request,
+            RegistroAuditoria.Accion.CONFIRMAR,
+            pago,
+            cambios={
+                "monto": str(monto_aplicado),
+                "saldo_resultante": str(deuda.saldo_actual),
+                "pago_agrupado_mes": inicio_mes.isoformat(),
+            },
+        )
+
+    messages.success(
+        request,
+        f"Se pagaron {len(pagos_aplicables)} cuotas del mes por un total de {total:.2f}.",
+    )
     return redirect("deuda_list")
 
 

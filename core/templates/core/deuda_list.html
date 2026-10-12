@@ -21,6 +21,19 @@
   </div>
 </div>
 
+{% if cuotas_mes %}
+  <section class="panel monthly-payment-panel" aria-labelledby="monthly-payment-title">
+    <div>
+      <span class="eyebrow">Cuotas de {{ inicio_mes|date:"F Y" }}</span>
+      <h2 id="monthly-payment-title">Paga todas las cuotas del mes juntas</h2>
+      <p class="muted mb-0">{{ cuotas_mes|length }} cuota{{ cuotas_mes|length|pluralize:"s" }} pendiente{{ cuotas_mes|length|pluralize:"s" }} · total <strong class="amount">{{ total_cuotas_mes }}</strong></p>
+    </div>
+    <a class="btn btn-primary" href="{% url 'pagos_mes_confirmar' %}">
+      <span class="material-symbols-outlined">payments</span><span>Pagar todo el mes</span>
+    </a>
+  </section>
+{% endif %}
+
 <section class="panel debt-filter-panel" aria-labelledby="debt-filter-title">
   <div class="debt-filter-heading">
     <div>
