@@ -347,6 +347,8 @@ def build_financial_context(user, today=None):
     """Return aggregated, non-identifying financial facts for the current month."""
     today = today or timezone.localdate()
     start = today.replace(day=1)
+    next_month_start = _month_start(_shift_month(today, 1))
+    next_month_end = _month_end(next_month_start)
     movements = MovimientoFinanciero.objects.filter(
         usuario=user,
         estado=MovimientoFinanciero.Estado.CONFIRMADO,
@@ -407,6 +409,14 @@ def build_financial_context(user, today=None):
     )
     upcoming_total = upcoming.aggregate(total=Sum("monto"))["total"] or Decimal("0")
     upcoming_count = upcoming.count()
+    next_month_payments = PagoDeuda.objects.filter(
+        deuda__usuario=user,
+        deuda__estado=Deuda.Estado.ACTIVA,
+        estado=PagoDeuda.Estado.PENDIENTE,
+        fecha__range=(next_month_start, next_month_end),
+    )
+    next_month_total = next_month_payments.aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    next_month_count = next_month_payments.count()
     overdue = PagoDeuda.objects.filter(
         deuda__usuario=user,
         deuda__estado=Deuda.Estado.ACTIVA,
@@ -417,6 +427,10 @@ def build_financial_context(user, today=None):
     overdue_count = overdue.count()
     upcoming_rows = list(
         upcoming.select_related("deuda")
+        .order_by("fecha", "deuda__acreedor", "cuota_numero")[:MAX_UPCOMING_PAYMENT_DETAILS]
+    )
+    next_month_rows = list(
+        next_month_payments.select_related("deuda")
         .order_by("fecha", "deuda__acreedor", "cuota_numero")[:MAX_UPCOMING_PAYMENT_DETAILS]
     )
     active_debt_rows = list(
@@ -547,6 +561,26 @@ def build_financial_context(user, today=None):
                 for payment in upcoming_rows
             ],
             "detalle_completo": upcoming_count <= len(upcoming_rows),
+        },
+        "pagos_pendientes_mes_siguiente": {
+            "periodo": {
+                "desde": next_month_start.isoformat(),
+                "hasta": next_month_end.isoformat(),
+            },
+            "criterio": "Mes calendario siguiente completo; coincide con Cuotas · próximo mes del panel.",
+            "cantidad": next_month_count,
+            "total": _money(next_month_total),
+            "detalle": [
+                {
+                    "fecha": payment.fecha.isoformat(),
+                    "acreedor": payment.deuda.acreedor,
+                    "concepto": payment.deuda.concepto,
+                    "cuota": payment.cuota_numero,
+                    "monto": _money(payment.monto),
+                }
+                for payment in next_month_rows
+            ],
+            "detalle_completo": next_month_count <= len(next_month_rows),
         },
         "presupuestos_del_mes": _money(budget_total),
         "principales_categorias_de_gasto": categories,
@@ -679,6 +713,11 @@ def query_debt_payments(user, arguments):
     state = arguments.get("estado")
     if state in {PagoDeuda.Estado.CONFIRMADO, PagoDeuda.Estado.PENDIENTE}:
         queryset = queryset.filter(estado=state)
+    if state == PagoDeuda.Estado.PENDIENTE:
+        queryset = queryset.filter(deuda__estado=Deuda.Estado.ACTIVA)
+    creditor = str(arguments.get("acreedor") or "").strip()
+    if creditor:
+        queryset = queryset.filter(deuda__acreedor__icontains=creditor)
     count = queryset.count()
     total = queryset.aggregate(total=Sum("monto"))["total"] or Decimal("0")
     rows = list(
@@ -690,6 +729,7 @@ def query_debt_payments(user, arguments):
             "fecha_pago_desde": start.isoformat() if start else None,
             "fecha_pago_hasta": end.isoformat() if end else None,
             "estado": state if state in {"confirmado", "pendiente"} else "todos",
+            "acreedor": creditor or None,
         },
         "cantidad_total": count,
         "monto_total": _money(total),
@@ -1579,13 +1619,14 @@ AI_TOOLS = [
         "type": "function",
         "function": {
             "name": "consultar_pagos_deuda",
-            "description": "Consulta cuotas o pagos de deuda por su fecha de pago y estado, con acreedor, concepto e importe. Usa esta herramienta para preguntas sobre pagos que vencen en una fecha o periodo.",
+            "description": "Consulta cuotas o pagos de deuda por fecha, estado y acreedor, con concepto e importe. Usa esta herramienta para vencimientos de un periodo y para obtener el total de un acreedor concreto.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "fecha_pago_desde": {"type": "string", "description": "Fecha de pago inicial inclusiva AAAA-MM-DD"},
                     "fecha_pago_hasta": {"type": "string", "description": "Fecha de pago final inclusiva AAAA-MM-DD"},
                     "estado": {"type": "string", "enum": ["confirmado", "pendiente"]},
+                    "acreedor": {"type": "string", "description": "Nombre completo o parcial del acreedor que se desea consultar"},
                     "limite": {"type": "integer", "minimum": 1, "maximum": 50},
                 },
                 "additionalProperties": False,
@@ -2225,6 +2266,8 @@ def ask_financial_assistant(user, question, history=None):
         "Usa objetivos_financieros para alinear el consejo con las metas y memoria_recomendaciones para dar seguimiento, aprender de lo aceptado o descartado y no repetir consejos sin motivo. "
         "Trata sus tendencias como patrones orientativos, no como certezas; si su calidad es baja, aclara que existe poco historial. "
         "Para saldos de cuentas, registros recientes, periodos distintos al resumen actual, listados o fechas solicitadas, debes usar la herramienta adecuada. "
+        "Interpreta 'mes siguiente' o 'próximo mes' como el mes calendario siguiente completo, no como los próximos 30 días. Para ese dato usa pagos_pendientes_mes_siguiente, que coincide con la tarjeta 'Cuotas · próximo mes' del panel. Solo usa pagos_pendientes_proximos_30_dias cuando el usuario diga expresamente 'próximos 30 días'. "
+        "Si el usuario pide pagos de un acreedor concreto, llama consultar_pagos_deuda con el mismo rango calendario y el filtro acreedor; no sumes pagos de otros acreedores. "
         "Las herramientas limitan los datos al usuario autenticado; nunca solicites SQL ni identificadores internos. "
         "Nunca inventes registros, importes, categorías ni causas. Distingue consumo de salida de caja. "
         "Distingue también saldo total de deuda de obligación inmediata: saldo_total_de_deudas_activas y saldo_actual son capital pendiente y no equivalen automáticamente a dinero exigible hoy. "

@@ -283,6 +283,21 @@ class ProductFeaturesTests(TestCase):
         self.assertTrue(response.json()["ok"])
         self.assertEqual(response.json()["redirect_url"], reverse("comprobante_revisar", args=[capture.pk]))
 
+    def test_receipt_review_offers_inline_tag_creation(self):
+        image = BytesIO()
+        Image.new("RGB", (24, 24), "white").save(image, "JPEG")
+        capture = CapturaComprobante.objects.create(
+            usuario=self.user,
+            archivo=SimpleUploadedFile("etiqueta.jpg", image.getvalue(), content_type="image/jpeg"),
+        )
+
+        response = self.client.get(reverse("comprobante_revisar", args=[capture.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Nueva etiqueta")
+        self.assertContains(response, 'tipo_opcion: "etiqueta"', html=False)
+        self.assertContains(response, reverse("movimiento_opcion_create"))
+
     def test_receipt_page_offers_inline_retry_after_server_error(self):
         response = self.client.get(reverse("comprobante_nuevo"))
 

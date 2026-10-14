@@ -69,5 +69,113 @@
     if (window.jQuery) window.jQuery(metodo).on("change.receiptCredit", actualizar);
     actualizar();
   })();
+
+  (() => {
+    const form = document.querySelector("[data-receipt-review-form]");
+    const tagSelect = document.getElementById("id_etiquetas");
+    if (!form || !tagSelect || !window.Swal) return;
+
+    const endpoint = "{% url 'movimiento_opcion_create' %}";
+    const csrfToken = form.querySelector('input[name="csrfmiddlewaretoken"]')?.value || "";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "btn btn-sm btn-outline-primary mt-2";
+    button.innerHTML = '<span class="material-symbols-outlined">add</span><span>Nueva etiqueta</span>';
+    tagSelect.closest(".unfold-field")?.append(button);
+
+    const errorText = errors => Object.values(errors || {}).flat().join(" ") || "No se pudo crear la etiqueta.";
+    const colorField = () => {
+      const wrap = document.createElement("div");
+      wrap.className = "quick-color-field";
+      const input = document.createElement("input");
+      input.type = "color";
+      input.value = "#6366f1";
+      input.setAttribute("aria-label", "Seleccionar color");
+      const help = document.createElement("span");
+      const updateHelp = () => { help.textContent = `Identifica la etiqueta visualmente · ${input.value.toUpperCase()}`; };
+      input.addEventListener("input", updateHelp);
+      updateHelp();
+      wrap.append(input, help);
+      return {wrap, input};
+    };
+
+    button.addEventListener("click", async () => {
+      const content = document.createElement("div");
+      content.className = "quick-option-form";
+      const nameLabel = document.createElement("label");
+      nameLabel.className = "form-label";
+      nameLabel.textContent = "Nombre";
+      const name = document.createElement("input");
+      name.className = "form-control mb-3";
+      name.maxLength = 80;
+      name.placeholder = "Ej.: Trabajo, deducible, urgente";
+      const colorLabel = document.createElement("label");
+      colorLabel.className = "form-label";
+      colorLabel.textContent = "Color";
+      const color = colorField();
+      content.append(nameLabel, name, colorLabel, color.wrap);
+
+      const result = await Swal.fire({
+        title: "Nueva etiqueta",
+        html: content,
+        showCancelButton: true,
+        confirmButtonText: "Crear y seleccionar",
+        cancelButtonText: "Cancelar",
+        focusConfirm: false,
+        buttonsStyling: false,
+        reverseButtons: true,
+        customClass: {
+          popup: "finance-swal",
+          confirmButton: "finance-swal-confirm",
+          cancelButton: "finance-swal-cancel",
+        },
+        didOpen: () => name.focus(),
+        preConfirm: async () => {
+          if (!name.value.trim()) {
+            Swal.showValidationMessage("Escribe un nombre.");
+            return false;
+          }
+          const body = new URLSearchParams({
+            tipo_opcion: "etiqueta",
+            nombre: name.value.trim(),
+            color: color.input.value,
+            csrfmiddlewaretoken: csrfToken,
+          });
+          try {
+            const response = await fetch(endpoint, {
+              method: "POST",
+              headers: {
+                "X-CSRFToken": csrfToken,
+                "X-Requested-With": "XMLHttpRequest",
+                "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+              },
+              body,
+            });
+            const payload = await response.json();
+            if (!response.ok || !payload.ok) throw new Error(errorText(payload.errors));
+            return payload;
+          } catch (error) {
+            Swal.showValidationMessage(error.message || "No se pudo crear la etiqueta.");
+            return false;
+          }
+        },
+      });
+      if (!result.isConfirmed || !result.value) return;
+      const data = result.value.option;
+      let option = [...tagSelect.options].find(item => String(item.value) === String(data.id));
+      if (!option) {
+        option = new Option(data.label, data.id, true, true);
+        tagSelect.add(option);
+      }
+      option.text = data.label;
+      option.selected = true;
+      if (data.color) option.dataset.color = data.color;
+      if (window.jQuery) {
+        window.jQuery(tagSelect).val([...tagSelect.selectedOptions].map(item => item.value)).trigger("change");
+      } else {
+        tagSelect.dispatchEvent(new Event("change", {bubbles: true}));
+      }
+    });
+  })();
 </script>
 {% endblock %}

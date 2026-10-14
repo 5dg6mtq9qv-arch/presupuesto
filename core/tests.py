@@ -1543,6 +1543,52 @@ class FinancialAssistantTests(TestCase):
         )
         self.assertTrue(payments["detalle_completo"])
 
+    def test_contexto_distingue_mes_siguiente_de_proximos_30_dias(self):
+        date = datetime(2026, 10, 14).date()
+        october_debt = Deuda.objects.create(
+            usuario=self.user,
+            acreedor="Banco Octubre",
+            concepto="Cuota de octubre",
+            monto_inicial="96.17",
+            saldo_actual="96.17",
+            numero_cuotas=1,
+            fecha_inicio=date,
+            estado=Deuda.Estado.ACTIVA,
+        )
+        november_debt = Deuda.objects.create(
+            usuario=self.user,
+            acreedor="Banco Noviembre",
+            concepto="Cuota de noviembre",
+            monto_inicial="743.15",
+            saldo_actual="743.15",
+            numero_cuotas=1,
+            fecha_inicio=date,
+            estado=Deuda.Estado.ACTIVA,
+        )
+        PagoDeuda.objects.create(
+            deuda=october_debt,
+            cuota_numero=1,
+            monto="96.17",
+            fecha=datetime(2026, 10, 31).date(),
+            estado=PagoDeuda.Estado.PENDIENTE,
+        )
+        PagoDeuda.objects.create(
+            deuda=november_debt,
+            cuota_numero=1,
+            monto="743.15",
+            fecha=datetime(2026, 11, 20).date(),
+            estado=PagoDeuda.Estado.PENDIENTE,
+        )
+
+        context = build_financial_context(self.user, today=date)
+
+        self.assertEqual(context["pagos_pendientes_proximos_30_dias"]["total"], "96.17")
+        next_month = context["pagos_pendientes_mes_siguiente"]
+        self.assertEqual(next_month["periodo"], {"desde": "2026-11-01", "hasta": "2026-11-30"})
+        self.assertEqual(next_month["cantidad"], 1)
+        self.assertEqual(next_month["total"], "743.15")
+        self.assertEqual(next_month["detalle"][0]["acreedor"], "Banco Noviembre")
+
     def test_deuda_diferida_separa_capital_total_de_proxima_cuota(self):
         date = datetime(2026, 10, 8).date()
         account = CuentaFinanciera.objects.create(
@@ -1683,6 +1729,52 @@ class FinancialAssistantTests(TestCase):
         self.assertEqual(result["monto_total"], "300.00")
         self.assertEqual(len(result["registros"]), 1)
         self.assertFalse(result["detalle_completo"])
+
+    def test_herramienta_pagos_filtra_por_acreedor_y_periodo(self):
+        date = datetime(2026, 11, 10).date()
+        visa = Deuda.objects.create(
+            usuario=self.user,
+            acreedor="Visa Pichincha",
+            concepto="Compra Visa",
+            monto_inicial="120.00",
+            saldo_actual="120.00",
+            fecha_inicio=date,
+        )
+        mastercard = Deuda.objects.create(
+            usuario=self.user,
+            acreedor="Mastercard",
+            concepto="Compra Mastercard",
+            monto_inicial="80.00",
+            saldo_actual="80.00",
+            fecha_inicio=date,
+        )
+        PagoDeuda.objects.create(
+            deuda=visa,
+            monto="120.00",
+            fecha=date,
+            estado=PagoDeuda.Estado.PENDIENTE,
+        )
+        PagoDeuda.objects.create(
+            deuda=mastercard,
+            monto="80.00",
+            fecha=date,
+            estado=PagoDeuda.Estado.PENDIENTE,
+        )
+
+        result = query_debt_payments(
+            self.user,
+            {
+                "fecha_pago_desde": "2026-11-01",
+                "fecha_pago_hasta": "2026-11-30",
+                "estado": "pendiente",
+                "acreedor": "pichincha",
+            },
+        )
+
+        self.assertEqual(result["cantidad_total"], 1)
+        self.assertEqual(result["monto_total"], "120.00")
+        self.assertEqual(result["filtros"]["acreedor"], "pichincha")
+        self.assertEqual(result["registros"][0]["acreedor"], "Visa Pichincha")
 
     def test_herramienta_deudas_filtra_por_fecha_de_pago(self):
         dentro = Deuda.objects.create(
