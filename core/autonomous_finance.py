@@ -107,7 +107,7 @@ def generate_proactive_recommendations(user, *, today=None, context=None):
     available = _decimal(context.get("saldo_disponible_total"))
     debt = _decimal(context.get("saldo_total_de_deudas_activas"))
     upcoming = _decimal(context.get("pagos_pendientes_proximos_30_dias", {}).get("total"))
-    debt_assessment = context.get("evaluacion_plan_de_deudas", {})
+    debt_assessment = context.get("indicadores_plan_de_deudas", context.get("evaluacion_plan_de_deudas", {}))
     overdue_count = int(debt_assessment.get("cuotas_vencidas") or 0)
     overdue_amount = _decimal(debt_assessment.get("monto_vencido"))
     movements = int(context.get("calidad", {}).get("movimientos_confirmados", 0))
@@ -149,7 +149,7 @@ def generate_proactive_recommendations(user, *, today=None, context=None):
             10,
         )
     elif income > 0 and debt > income * Decimal("3"):
-        if debt_assessment.get("estado") == "manejable_segun_datos_registrados":
+        if not overdue_count and upcoming <= available:
             add(
                 "deuda_diferida_manejable",
                 "Mantén el plan de cuotas",

@@ -1635,10 +1635,12 @@ class FinancialAssistantTests(TestCase):
         self.assertEqual(context["saldo_total_de_deudas_activas"], "4437.00")
         self.assertIn("no implica que todo sea exigible hoy", context["interpretacion_saldo_deudas"])
         self.assertEqual(context["pagos_pendientes_proximos_30_dias"]["total"], "745.00")
-        self.assertEqual(context["evaluacion_plan_de_deudas"]["estado"], "manejable_segun_datos_registrados")
-        self.assertEqual(context["evaluacion_plan_de_deudas"]["cuotas_vencidas"], 0)
-        self.assertEqual(context["evaluacion_plan_de_deudas"]["carga_proximos_30_dias_sobre_ingresos_porcentaje"], "24.8")
-        self.assertTrue(context["evaluacion_plan_de_deudas"]["cubiertas_por_saldo_disponible"])
+        indicators = context["indicadores_plan_de_deudas"]
+        self.assertNotIn("estado", indicators)
+        self.assertEqual(indicators["cuotas_vencidas"], 0)
+        self.assertEqual(indicators["carga_proximos_30_dias_sobre_ingresos_porcentaje"], "24.8")
+        self.assertTrue(indicators["cubiertas_por_saldo_disponible"])
+        self.assertEqual(indicators["brecha_con_saldo_actual"], "0.00")
         self.assertTrue(debt_detail["es_diferida_en_cuotas"])
         self.assertEqual(debt_detail["categoria"], "Alimentación")
         self.assertEqual(debt_detail["subcategoria"], "Supermercado")
@@ -1668,6 +1670,97 @@ class FinancialAssistantTests(TestCase):
         self.assertEqual(record["resumen_calendario"]["proximas_cuotas"][0]["naturaleza"], "pago_programado_registrado")
         self.assertEqual(record["proximo_pago_pendiente"]["monto"], "745.00")
         self.assertEqual(record["proximo_pago_pendiente"]["estado_temporal"], "futura")
+
+    def test_contexto_entrega_hechos_separados_sin_diagnostico_prefabricado(self):
+        date = datetime(2026, 10, 20).date()
+        account = CuentaFinanciera.objects.create(
+            usuario=self.user,
+            nombre="Cuenta para diagnóstico",
+            tipo=CuentaFinanciera.Tipo.BANCO,
+            saldo_inicial="0.00",
+        )
+        credit_method = MetodoPago.objects.create(
+            usuario=self.user,
+            nombre="Tarjeta de prueba",
+            tipo=MetodoPago.Tipo.CREDITO,
+        )
+        MovimientoFinanciero.objects.create(
+            usuario=self.user,
+            cuenta=account,
+            tipo=MovimientoFinanciero.Tipo.INGRESO,
+            concepto="Ingreso",
+            monto="1000.00",
+            fecha=date,
+        )
+        MovimientoFinanciero.objects.create(
+            usuario=self.user,
+            cuenta=account,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+            concepto="Gasto directo",
+            monto="100.00",
+            fecha=date,
+        )
+        credit_purchase = MovimientoFinanciero.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+            metodo_pago=credit_method,
+            concepto="Compra con tarjeta",
+            monto="300.00",
+            fecha=date,
+        )
+        adjustment_movement = MovimientoFinanciero.objects.create(
+            usuario=self.user,
+            cuenta=account,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+            concepto="Ajuste de saldo",
+            monto="50.00",
+            fecha=date,
+        )
+        AjusteSaldo.objects.create(
+            usuario=self.user,
+            cuenta=account,
+            movimiento=adjustment_movement,
+            saldo_anterior="900.00",
+            saldo_nuevo="850.00",
+            diferencia="-50.00",
+            motivo="Conciliación",
+        )
+        debt = Deuda.objects.create(
+            usuario=self.user,
+            movimiento_origen=credit_purchase,
+            acreedor="Tarjeta Banco",
+            concepto="Compra con tarjeta",
+            monto_inicial="300.00",
+            saldo_actual="300.00",
+            numero_cuotas=1,
+            fecha_inicio=date,
+            estado=Deuda.Estado.ACTIVA,
+        )
+        PagoDeuda.objects.create(
+            deuda=debt,
+            cuenta=account,
+            monto="200.00",
+            fecha=date,
+            estado=PagoDeuda.Estado.CONFIRMADO,
+        )
+
+        context = build_financial_context(self.user, today=date)
+        flow = context["desglose_flujo_del_periodo"]
+
+        self.assertEqual(context["gastos_de_consumo_confirmados"], "400.00")
+        self.assertEqual(flow["consumo_pagado_sin_credito"], "100.00")
+        self.assertEqual(flow["compras_nuevas_a_credito"], "300.00")
+        self.assertEqual(flow["pagos_de_deuda_realizados"], "200.00")
+        self.assertEqual(flow["ajustes_de_saldo_disminucion"], "50.00")
+        self.assertEqual(context["salidas_de_caja_confirmadas"], "300.00")
+        self.assertEqual(context["balance_de_caja_del_periodo"], "700.00")
+        self.assertEqual(flow["variacion_de_saldo_incluyendo_ajustes"], "650.00")
+        self.assertNotIn("evaluacion_plan_de_deudas", context)
+        self.assertNotIn("estado", context["indicadores_plan_de_deudas"])
+        self.assertEqual(context["deudas_activas"]["cantidad_registros"], 1)
+        self.assertEqual(context["deudas_activas"]["cantidad_acreedores"], 1)
+        self.assertEqual(context["deudas_activas"]["registros_generados_por_compras_a_credito"], 1)
+        self.assertIn("No describas", context["deudas_activas"]["nota_conteo"])
 
     def test_herramienta_consulta_movimientos_por_fecha_sin_mezclar_usuarios(self):
         movement = MovimientoFinanciero.objects.create(

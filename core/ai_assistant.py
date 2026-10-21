@@ -40,6 +40,7 @@ from .models import (
 from .services import (
     crear_historial_inicial_deuda,
     detalle_saldo_cuenta,
+    movimientos_recurrentes_programados,
     sincronizar_cuotas_pendientes_deuda,
     sincronizar_deuda_compra_credito,
 )
@@ -356,8 +357,16 @@ def build_financial_context(user, today=None):
     )
     incomes = movements.filter(tipo=MovimientoFinanciero.Tipo.INGRESO).aggregate(total=Sum("monto"))["total"] or Decimal("0")
     expenses = movements.filter(tipo=MovimientoFinanciero.Tipo.GASTO)
-    consumption = expenses.aggregate(total=Sum("monto"))["total"] or Decimal("0")
-    cash_expenses = expenses.exclude(metodo_pago__tipo=MetodoPago.Tipo.CREDITO).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    adjustment_expenses = expenses.filter(ajuste_saldo__isnull=False)
+    consumption_expenses = expenses.filter(ajuste_saldo__isnull=True)
+    consumption = consumption_expenses.aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    credit_consumption = consumption_expenses.filter(
+        metodo_pago__tipo=MetodoPago.Tipo.CREDITO,
+    ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    direct_cash_expenses = consumption_expenses.exclude(
+        metodo_pago__tipo=MetodoPago.Tipo.CREDITO,
+    ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    balance_adjustments = adjustment_expenses.aggregate(total=Sum("monto"))["total"] or Decimal("0")
     debt_payments = PagoDeuda.objects.filter(
         deuda__usuario=user,
         estado=PagoDeuda.Estado.CONFIRMADO,
@@ -365,7 +374,7 @@ def build_financial_context(user, today=None):
     ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
 
     category_rows = (
-        expenses.annotate(
+        consumption_expenses.annotate(
             category_label=Coalesce(
                 "categoria__parent__nombre",
                 "categoria__nombre",
@@ -384,7 +393,7 @@ def build_financial_context(user, today=None):
         for row in category_rows
     ]
     tag_rows = (
-        expenses.filter(etiquetas__isnull=False)
+        consumption_expenses.filter(etiquetas__isnull=False)
         .values("etiquetas__nombre")
         .annotate(total=Sum("monto"), movimientos=Count("id"))
         .order_by("-total", "etiquetas__nombre")[:10]
@@ -425,6 +434,13 @@ def build_financial_context(user, today=None):
     )
     overdue_total = overdue.aggregate(total=Sum("monto"))["total"] or Decimal("0")
     overdue_count = overdue.count()
+    scheduled_incomes = movimientos_recurrentes_programados(
+        user,
+        today + timedelta(days=1),
+        today + timedelta(days=30),
+        tipo=MovimientoFinanciero.Tipo.INGRESO,
+    )
+    scheduled_income_total = sum((item["monto"] for item in scheduled_incomes), Decimal("0"))
     upcoming_rows = list(
         upcoming.select_related("deuda")
         .order_by("fecha", "deuda__acreedor", "cuota_numero")[:MAX_UPCOMING_PAYMENT_DETAILS]
@@ -456,45 +472,52 @@ def build_financial_context(user, today=None):
         anio=today.year,
         mes=today.month,
     ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
-    cash_outflow = cash_expenses + debt_payments
+    operating_cash_outflow = direct_cash_expenses + debt_payments
+    registered_balance_outflow = operating_cash_outflow + balance_adjustments
     active_accounts = list(CuentaFinanciera.objects.filter(usuario=user, activa=True).order_by("nombre"))
     account_rows = [_account_result(account) for account in active_accounts]
     available_balance = sum((Decimal(row["saldo_actual"]) for row in account_rows), Decimal("0"))
     behavior_profile = get_financial_behavior_profile(user, today=today)
     debt_burden = (upcoming_total / incomes * Decimal("100")) if incomes else None
     deferred_debt_count = active_debts.filter(numero_cuotas__gt=1).count()
-    if overdue_count:
-        debt_plan_status = "requiere_atencion_por_atrasos"
-        debt_plan_explanation = "Existen cuotas vencidas; la prioridad es regularizar esos pagos, no cancelar todo el capital pendiente."
-    elif upcoming_total > available_balance:
-        debt_plan_status = "requiere_atencion_por_liquidez"
-        debt_plan_explanation = "Las cuotas de los próximos 30 días superan el saldo disponible registrado."
-    elif debt_burden is not None and debt_burden > Decimal("30"):
-        debt_plan_status = "carga_mensual_alta"
-        debt_plan_explanation = "No hay atrasos, pero las próximas cuotas superan el 30% de los ingresos confirmados del mes."
-    elif incomes:
-        debt_plan_status = "manejable_segun_datos_registrados"
-        debt_plan_explanation = "No hay cuotas vencidas y las obligaciones próximas caben dentro del saldo y los ingresos registrados."
-    else:
-        debt_plan_status = "sin_ingresos_suficientes_para_evaluar"
-        debt_plan_explanation = "No hay atrasos registrados, pero faltan ingresos confirmados para medir la carga mensual con fiabilidad."
+    creditor_rows = list(
+        active_debts.values("acreedor")
+        .annotate(registros=Count("id"), saldo_total=Sum("saldo_actual"))
+        .order_by("-saldo_total", "acreedor")
+    )
+    credit_purchase_records = active_debts.filter(movimiento_origen__isnull=False).count()
+    manual_debt_records = active_debt_count - credit_purchase_records
+    current_balance_gap = max(Decimal("0"), upcoming_total - available_balance)
+    registered_coverage = available_balance + scheduled_income_total
+    registered_coverage_gap = max(Decimal("0"), upcoming_total - registered_coverage)
 
     return {
         "moneda": "USD",
         "periodo": {"desde": start.isoformat(), "hasta": today.isoformat()},
         "ingresos_confirmados": _money(incomes),
         "gastos_de_consumo_confirmados": _money(consumption),
-        "salidas_de_caja_confirmadas": _money(cash_outflow),
+        "salidas_de_caja_confirmadas": _money(operating_cash_outflow),
         "pagos_de_deuda_confirmados": _money(debt_payments),
-        "balance_de_caja_del_periodo": _money(incomes - cash_outflow),
+        "balance_de_caja_del_periodo": _money(incomes - operating_cash_outflow),
+        "desglose_flujo_del_periodo": {
+            "ingresos_recibidos": _money(incomes),
+            "consumo_pagado_sin_credito": _money(direct_cash_expenses),
+            "compras_nuevas_a_credito": _money(credit_consumption),
+            "pagos_de_deuda_realizados": _money(debt_payments),
+            "ajustes_de_saldo_disminucion": _money(balance_adjustments),
+            "salidas_de_caja_operativas": _money(operating_cash_outflow),
+            "variacion_de_saldo_incluyendo_ajustes": _money(incomes - registered_balance_outflow),
+            "criterio": (
+                "Las compras a crédito son consumo, pero no salida de caja inmediata. Los pagos de deuda sí son salida de caja. "
+                "Los ajustes de saldo se muestran aparte porque corrigen el saldo registrado y no prueban consumo del periodo."
+            ),
+        },
         "saldo_total_de_deudas_activas": _money(active_debt),
         "interpretacion_saldo_deudas": (
             "Es capital total pendiente; no implica que todo sea exigible hoy. "
             "Para liquidez inmediata usa únicamente cuotas vencidas o próximas."
         ),
-        "evaluacion_plan_de_deudas": {
-            "estado": debt_plan_status,
-            "explicacion": debt_plan_explanation,
+        "indicadores_plan_de_deudas": {
             "deudas_diferidas_en_cuotas": deferred_debt_count,
             "cuotas_vencidas": overdue_count,
             "monto_vencido": _money(overdue_total),
@@ -504,13 +527,33 @@ def build_financial_context(user, today=None):
                 f"{debt_burden:.1f}" if debt_burden is not None else None
             ),
             "cubiertas_por_saldo_disponible": upcoming_total <= available_balance,
-            "criterio": (
-                "La manejabilidad se evalúa con atrasos, cuotas próximas, ingresos y saldo disponible; "
-                "nunca únicamente con el capital total pendiente."
+            "brecha_con_saldo_actual": _money(current_balance_gap),
+            "ingresos_recurrentes_programados_proximos_30_dias": _money(scheduled_income_total),
+            "brecha_tras_ingresos_programados": _money(registered_coverage_gap),
+            "alcance_ingresos_futuros": (
+                "Solo incluye ingresos recurrentes activos registrados. Que el total sea cero no demuestra que el usuario no recibirá otros ingresos."
+            ),
+            "instruccion_de_interpretacion": (
+                "Estos son indicadores, no un diagnóstico. Deduce la situación considerando atrasos, fechas, saldo, ingresos programados "
+                "y datos faltantes. No declares una cuota impagable solo porque hoy supera el saldo disponible."
             ),
         },
         "deudas_activas": {
-            "cantidad": active_debt_count,
+            "cantidad_registros": active_debt_count,
+            "cantidad_acreedores": len(creditor_rows),
+            "registros_generados_por_compras_a_credito": credit_purchase_records,
+            "registros_de_deuda_manual": manual_debt_records,
+            "por_acreedor": [
+                {
+                    "acreedor": row["acreedor"],
+                    "registros": row["registros"],
+                    "saldo_total_pendiente": _money(row["saldo_total"]),
+                }
+                for row in creditor_rows
+            ],
+            "nota_conteo": (
+                "Cada compra a crédito puede generar un registro de deuda. No describas la cantidad de registros como cantidad de acreedores."
+            ),
             "detalle": [
                 {
                     "acreedor": debt.acreedor,
@@ -581,6 +624,20 @@ def build_financial_context(user, today=None):
                 for payment in next_month_rows
             ],
             "detalle_completo": next_month_count <= len(next_month_rows),
+        },
+        "ingresos_recurrentes_programados_proximos_30_dias": {
+            "cantidad": len(scheduled_incomes),
+            "total": _money(scheduled_income_total),
+            "detalle": [
+                {
+                    "fecha": item["fecha"].isoformat(),
+                    "concepto": item["recurrente"].concepto,
+                    "monto": _money(item["monto"]),
+                }
+                for item in scheduled_incomes[:MAX_UPCOMING_PAYMENT_DETAILS]
+            ],
+            "detalle_completo": len(scheduled_incomes) <= MAX_UPCOMING_PAYMENT_DETAILS,
+            "alcance": "No incluye ingresos ocasionales que todavía no estén registrados.",
         },
         "presupuestos_del_mes": _money(budget_total),
         "principales_categorias_de_gasto": categories,
@@ -2272,7 +2329,12 @@ def ask_financial_assistant(user, question, history=None):
         "Nunca inventes registros, importes, categorías ni causas. Distingue consumo de salida de caja. "
         "Distingue también saldo total de deuda de obligación inmediata: saldo_total_de_deudas_activas y saldo_actual son capital pendiente y no equivalen automáticamente a dinero exigible hoy. "
         "Si una deuda está diferida o tiene varias cuotas, evalúa la liquidez únicamente con cuotas vencidas, la próxima cuota y los pagos pendientes del periodo; no compares el saldo completo con el efectivo disponible ni recomiendes pagarlo íntegro, refinanciarlo o tratarlo como emergencia salvo que existan atrasos, una cuota impagable o el usuario lo solicite. "
-        "Usa evaluacion_plan_de_deudas como diagnóstico principal: si su estado es manejable_segun_datos_registrados, dilo explícitamente y presenta el saldo total solo como contexto de largo plazo, no como alerta. "
+        "Los campos de indicadores_plan_de_deudas son hechos calculados, no un diagnóstico prefabricado: deduce la conclusión y explica brevemente qué hechos la sostienen. "
+        "No declares falta de liquidez definitiva solo porque las cuotas futuras superen el saldo de hoy. Considera sus fechas, los ingresos recurrentes programados y aclara que pueden existir ingresos futuros todavía no registrados. "
+        "Si hay una brecha con el saldo actual pero no hay cuotas vencidas, descríbela como brecha de cobertura actual y no como deuda impagable. "
+        "Para analizar el periodo usa desglose_flujo_del_periodo: no mezcles compras nuevas a crédito, pagos de deuda, consumo pagado directamente ni ajustes de saldo. "
+        "Un ajuste de saldo corrige el saldo contable y no demuestra por sí mismo consumo realizado durante el periodo. "
+        "En deudas_activas distingue cantidad_registros de cantidad_acreedores; cada compra con tarjeta puede crear un registro y no representa un acreedor independiente. "
         "Antes de analizar una deuda, menciona a qué corresponde, cuántas cuotas tiene, cuántas quedan, cuánto está vencido y cuál es el siguiente pago según resumen_calendario. Si el calendario está incompleto, consulta deudas o pagos y reconoce lo que falte. "
         "Una variación negativa del saldo de deuda significa que está disminuyendo, no creciendo. Si faltan cuota o fechas, consulta las herramientas de deudas y pagos antes de concluir. "
         "Para registrar un ingreso o gasto expresado en lenguaje natural, usa inmediatamente preparar_movimiento_rapido cuando tengas tipo, monto y concepto; no consultes catálogos antes porque esa herramienta resuelve valores reales e inferencias seguras. "

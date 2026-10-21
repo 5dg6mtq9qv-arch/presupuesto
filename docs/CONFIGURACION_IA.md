@@ -70,6 +70,20 @@ Según la operación, el proveedor puede recibir:
 - patrones del perfil financiero, objetivos y memoria de recomendaciones;
 - una versión redimensionada y recomprimida de la imagen de un comprobante.
 
+El contexto financiero separa explícitamente los hechos que pueden confundirse entre sí:
+
+- consumo pagado directamente y compras nuevas a crédito;
+- pagos de deuda ya realizados;
+- ajustes de saldo, que corrigen el saldo contable pero no prueban consumo del período;
+- cantidad de registros de deuda y cantidad real de acreedores;
+- cuotas vencidas, cuotas futuras, saldo disponible e ingresos recurrentes programados.
+
+Estos valores se entregan como indicadores neutrales. El backend no impone un estado como
+“manejable” o “problema de liquidez”: el modelo debe deducirlo, justificarlo con los hechos
+registrados y señalar los datos faltantes. En particular, un ingreso futuro igual a cero solo
+significa que no existen ingresos recurrentes programados; no demuestra que el usuario no vaya
+a recibir otros ingresos.
+
 El sistema instruye al modelo para no acceder a otros usuarios, no inventar datos y no revelar secretos. Aun así, el operador debe revisar las condiciones de tratamiento de datos del proveedor elegido y obtener los consentimientos que correspondan.
 
 No uses el asistente para almacenar contraseñas, claves, números completos de tarjetas u otra información innecesaria.
