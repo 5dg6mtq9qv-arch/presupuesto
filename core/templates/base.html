@@ -2183,21 +2183,38 @@
         }
       });
       const wait = milliseconds => new Promise(resolve => window.setTimeout(resolve, milliseconds));
-      const sendQuestion = async (payload, retryFirstMessage) => {
-        for (let attempt = 0; attempt < (retryFirstMessage ? 2 : 1); attempt += 1) {
+      const newRequestId = () => window.crypto?.randomUUID?.()
+        || "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, character => {
+          const random = Math.floor(Math.random() * 16);
+          return (character === "x" ? random : (random & 0x3) | 0x8).toString(16);
+        });
+      const sendQuestion = async payload => {
+        const pollingDeadline = Date.now() + 35000;
+        let retryUsed = false;
+        while (true) {
           try {
             const response = await fetch("{% url 'asistente_financiero_preguntar' %}", {
               method: "POST",
               headers: {"Content-Type": "application/json", "X-CSRFToken": csrfToken, "X-Requested-With": "XMLHttpRequest"},
               body: JSON.stringify(payload),
             });
-            if (attempt === 0 && retryFirstMessage && [500, 502, 503, 504].includes(response.status)) {
+            if (response.status === 202 && Date.now() < pollingDeadline) {
+              let retryAfter = 800;
+              try {
+                retryAfter = Math.max(300, Math.min(2000, Number((await response.clone().json()).retry_after_ms) || 800));
+              } catch (_) {}
+              await wait(retryAfter);
+              continue;
+            }
+            if (!retryUsed && [500, 502, 503, 504].includes(response.status)) {
+              retryUsed = true;
               await wait(700);
               continue;
             }
             return response;
           } catch (error) {
-            if (attempt === 0 && retryFirstMessage && error instanceof TypeError) {
+            if (!retryUsed && error instanceof TypeError) {
+              retryUsed = true;
               await wait(700);
               continue;
             }
@@ -2216,10 +2233,11 @@
         submit.disabled = true;
         const pending = addMessage("Pensando…", "assistant");
         try {
-          const response = await sendQuestion(
-            {pregunta: value, historial: requestHistory},
-            requestHistory.length === 0,
-          );
+          const response = await sendQuestion({
+            pregunta: value,
+            historial: requestHistory,
+            request_id: newRequestId(),
+          });
           if (response.redirected && response.url.includes("/login")) throw new Error("Tu sesión expiró. Recarga la página e inicia sesión nuevamente.");
           const raw = await response.text();
           let data;

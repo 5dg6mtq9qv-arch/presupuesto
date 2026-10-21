@@ -26,6 +26,7 @@ def record_ai_usage(
     http_status=None,
     error_code="",
     provider_request_id="",
+    attempt_number=1,
 ):
     """Persist provider metadata only; prompts and answers are intentionally excluded."""
     if user is None or interaction_id is None:
@@ -57,6 +58,7 @@ def record_ai_usage(
             http_status=http_status if isinstance(http_status, int) and 0 <= http_status <= 65535 else None,
             codigo_error=str(error_code or "")[:80],
             solicitud_proveedor_id=str(provider_request_id or "")[:120],
+            numero_intento=max(1, _non_negative_int(attempt_number)),
         )
     except Exception:
         # La medición nunca debe impedir que el asistente responda.

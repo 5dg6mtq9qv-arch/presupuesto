@@ -12,7 +12,7 @@ from django.urls import reverse
 from django.utils import timezone
 from PIL import Image
 
-from .ai_assistant import _provider_message
+from .ai_assistant import AIAssistantError, _provider_message
 from .ai_config import AIRuntimeConfig
 from .ai_pricing import estimate_ai_cost_usd
 from .models import ConsumoIA, PerfilUsuario, RegistroAuditoria
@@ -280,8 +280,11 @@ class AIUsageTrackingTests(TestCase):
         self.assertEqual(message["content"], "ok")
         self.assertEqual(mocked_urlopen.call_count, 2)
         mocked_sleep.assert_called_once_with(0.4)
-        self.assertEqual(ConsumoIA.objects.filter(exitoso=False, http_status=500).count(), 1)
-        self.assertEqual(ConsumoIA.objects.filter(exitoso=True, http_status=200).count(), 1)
+        failed = ConsumoIA.objects.get(exitoso=False, http_status=500)
+        successful = ConsumoIA.objects.get(exitoso=True, http_status=200)
+        self.assertEqual(failed.numero_intento, 1)
+        self.assertEqual(successful.numero_intento, 2)
+        self.assertEqual(mocked_urlopen.call_args_list[0].kwargs["timeout"], 15)
 
     @patch("core.ai_assistant.time.sleep")
     @patch("core.ai_assistant.urlopen")
@@ -301,8 +304,57 @@ class AIUsageTrackingTests(TestCase):
         self.assertEqual(message["content"], "ok")
         self.assertEqual(mocked_urlopen.call_count, 2)
         mocked_sleep.assert_called_once_with(0.4)
-        self.assertEqual(ConsumoIA.objects.filter(exitoso=False, codigo_error="network_error").count(), 1)
-        self.assertEqual(ConsumoIA.objects.filter(exitoso=True, http_status=200).count(), 1)
+        failed = ConsumoIA.objects.get(exitoso=False, codigo_error="network_error")
+        successful = ConsumoIA.objects.get(exitoso=True, http_status=200)
+        self.assertEqual(failed.numero_intento, 1)
+        self.assertEqual(successful.numero_intento, 2)
+        self.assertEqual(mocked_urlopen.call_args_list[0].kwargs["timeout"], 15)
+
+    @patch("core.ai_assistant.time.sleep")
+    @patch("core.ai_assistant.urlopen")
+    def test_no_reintenta_un_429_de_cuota_agotada(self, mocked_urlopen, mocked_sleep):
+        mocked_urlopen.side_effect = HTTPError(
+            "https://api.openai.com/v1/chat/completions",
+            429,
+            "Too Many Requests",
+            {},
+            BytesIO(b'{"error":{"code":"insufficient_quota"}}'),
+        )
+
+        with self.assertRaisesMessage(AIAssistantError, "no tiene saldo o cuota"):
+            _provider_message(
+                [{"role": "user", "content": "hola"}],
+                self.config,
+                usage_context={"user": self.user, "interaction_id": uuid.uuid4(), "operation": "consulta"},
+            )
+
+        self.assertEqual(mocked_urlopen.call_count, 1)
+        mocked_sleep.assert_not_called()
+
+    @patch("core.ai_assistant.time.sleep")
+    @patch("core.ai_assistant.urlopen")
+    def test_respeta_retry_after_en_error_temporal(self, mocked_urlopen, mocked_sleep):
+        transient_error = HTTPError(
+            "https://api.openai.com/v1/chat/completions",
+            503,
+            "Service Unavailable",
+            {"Retry-After": "2"},
+            BytesIO(b'{"error":{"code":"server_is_overloaded"}}'),
+        )
+        response = MagicMock()
+        response.status = 200
+        response.read.return_value = b'{"choices":[{"message":{"content":"ok"}}]}'
+        response.__enter__.return_value = response
+        mocked_urlopen.side_effect = [transient_error, response]
+
+        message = _provider_message(
+            [{"role": "user", "content": "hola"}],
+            self.config,
+            usage_context={"user": self.user, "interaction_id": uuid.uuid4(), "operation": "consulta"},
+        )
+
+        self.assertEqual(message["content"], "ok")
+        mocked_sleep.assert_called_once_with(2.0)
 
     def test_calcula_costo_estimado_separando_tokens_cacheados(self):
         costo = estimate_ai_cost_usd("openai", "gpt-4.1-mini", 1000, 200, 400)

@@ -411,6 +411,7 @@ class ConsumoIA(models.Model):
     http_status = models.PositiveSmallIntegerField(null=True, blank=True)
     codigo_error = models.CharField(max_length=80, blank=True)
     solicitud_proveedor_id = models.CharField(max_length=120, blank=True)
+    numero_intento = models.PositiveSmallIntegerField(default=1)
     creado = models.DateTimeField(auto_now_add=True)
 
     class Meta:

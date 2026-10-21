@@ -1,11 +1,14 @@
 import json
 import re
+import time
+import uuid
 from datetime import datetime, timedelta
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 from urllib.parse import urlsplit
 
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.core import mail
 from django.test import TestCase, override_settings
 from django.urls import reverse
@@ -21,6 +24,7 @@ from .forms import (
 from .financial_profile import calculate_financial_behavior_profile, get_financial_behavior_profile
 from .ai_assistant import (
     AI_TOOLS,
+    AIAssistantError,
     _execute_tool,
     _parse_assistant_answer,
     analyze_spending,
@@ -40,6 +44,7 @@ from .telegram_config import (
     send_telegram_message,
 )
 from .admin import ConfiguracionIAAdminForm
+from .views import _ai_request_cache_key, _ai_request_fingerprint
 from .models import (
     Acreedor,
     AjusteSaldo,
@@ -1367,6 +1372,7 @@ class FinancialAdviceTests(TestCase):
 
 class FinancialAssistantTests(TestCase):
     def setUp(self):
+        cache.clear()
         self.user = get_user_model().objects.create_user(username="asistente", password="test")
         self.other = get_user_model().objects.create_user(username="otro-asistente", password="test")
         PerfilUsuario.objects.create(usuario=self.user, puede_usar_asistente_ia=True)
@@ -2259,6 +2265,124 @@ class FinancialAssistantTests(TestCase):
         self.assertTrue(response.json()["ok"])
         self.assertEqual(response.json()["respuesta"], "Tu balance es positivo.")
         mocked_assistant.assert_called_once_with(self.user, "¿Cómo está mi balance?")
+
+    @override_settings(AI_ASSISTANT_ENABLED=True, AI_API_KEY="secreto-de-prueba")
+    @patch("core.views.ask_financial_assistant")
+    def test_endpoint_reutiliza_resultado_para_el_mismo_request_id(self, mocked_assistant):
+        mocked_assistant.return_value = {
+            "respuesta": "Respuesta única.",
+            "evidencia": [],
+            "advertencia": "",
+            "periodo": {},
+        }
+        request_id = str(uuid.uuid4())
+        payload = {"pregunta": "¿Cómo está mi balance?", "historial": [], "request_id": request_id}
+
+        first = self.client.post(
+            reverse("asistente_financiero_preguntar"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+        repeated = self.client.post(
+            reverse("asistente_financiero_preguntar"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(repeated.status_code, 200)
+        self.assertEqual(repeated.json(), first.json())
+        self.assertEqual(repeated.json()["request_id"], request_id)
+        mocked_assistant.assert_called_once_with(self.user, "¿Cómo está mi balance?")
+
+    @override_settings(AI_ASSISTANT_ENABLED=True, AI_API_KEY="secreto-de-prueba")
+    @patch("core.views.ask_financial_assistant")
+    def test_endpoint_no_reutiliza_request_id_con_otro_contenido(self, mocked_assistant):
+        mocked_assistant.return_value = {
+            "respuesta": "Respuesta única.",
+            "evidencia": [],
+            "advertencia": "",
+            "periodo": {},
+        }
+        request_id = str(uuid.uuid4())
+
+        first = self.client.post(
+            reverse("asistente_financiero_preguntar"),
+            data=json.dumps({"pregunta": "Primera consulta", "request_id": request_id}),
+            content_type="application/json",
+        )
+        conflict = self.client.post(
+            reverse("asistente_financiero_preguntar"),
+            data=json.dumps({"pregunta": "Otra consulta", "request_id": request_id}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(conflict.status_code, 409)
+        mocked_assistant.assert_called_once()
+
+    @override_settings(AI_ASSISTANT_ENABLED=True, AI_API_KEY="secreto-de-prueba")
+    @patch("core.views.ask_financial_assistant")
+    def test_endpoint_permite_recuperar_un_error_transitorio_con_el_mismo_request_id(self, mocked_assistant):
+        mocked_assistant.side_effect = [
+            AIAssistantError("Fallo temporal"),
+            {"respuesta": "Recuperado.", "evidencia": [], "advertencia": "", "periodo": {}},
+        ]
+        request_id = str(uuid.uuid4())
+        payload = {"pregunta": "Consulta recuperable", "request_id": request_id}
+
+        failed = self.client.post(
+            reverse("asistente_financiero_preguntar"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+        recovered = self.client.post(
+            reverse("asistente_financiero_preguntar"),
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        self.assertEqual(failed.status_code, 503)
+        self.assertEqual(recovered.status_code, 200)
+        self.assertEqual(recovered.json()["respuesta"], "Recuperado.")
+        self.assertEqual(mocked_assistant.call_count, 2)
+
+    @override_settings(AI_ASSISTANT_ENABLED=True, AI_API_KEY="secreto-de-prueba")
+    @patch("core.views.ask_financial_assistant")
+    def test_endpoint_indica_si_el_mismo_request_id_sigue_procesandose(self, mocked_assistant):
+        request_id = str(uuid.uuid4())
+        question = "Consulta todavía activa"
+        cache.set(
+            _ai_request_cache_key(self.user.pk, request_id),
+            {
+                "estado": "procesando",
+                "huella": _ai_request_fingerprint(question, []),
+                "iniciado": time.time(),
+            },
+            timeout=300,
+        )
+
+        response = self.client.post(
+            reverse("asistente_financiero_preguntar"),
+            data=json.dumps({"pregunta": question, "historial": [], "request_id": request_id}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 202)
+        self.assertTrue(response.json()["procesando"])
+        mocked_assistant.assert_not_called()
+
+    @override_settings(AI_ASSISTANT_ENABLED=True, AI_API_KEY="secreto-de-prueba")
+    @patch("core.views.ask_financial_assistant")
+    def test_endpoint_rechaza_request_id_invalido(self, mocked_assistant):
+        response = self.client.post(
+            reverse("asistente_financiero_preguntar"),
+            data=json.dumps({"pregunta": "Consulta", "request_id": "no-es-un-uuid"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        mocked_assistant.assert_not_called()
 
     @override_settings(AI_ASSISTANT_ENABLED=True, AI_API_KEY="secreto-de-prueba")
     @patch("core.views.ask_financial_assistant")

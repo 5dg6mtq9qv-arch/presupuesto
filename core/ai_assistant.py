@@ -49,7 +49,9 @@ MAX_UPCOMING_PAYMENT_DETAILS = 25
 MAX_QUERY_DETAILS = 50
 MAX_ANOMALY_DETAILS = 10
 MAX_DEBT_SCHEDULE_DETAILS = 6
-TRANSIENT_AI_HTTP_STATUSES = {500, 502, 503, 504}
+TRANSIENT_AI_HTTP_STATUSES = {408, 429, 500, 502, 503, 504}
+MAX_PROVIDER_CALL_SECONDS = 30
+FIRST_PROVIDER_ATTEMPT_SECONDS = 15
 logger = logging.getLogger(__name__)
 
 SYSTEM_HELP = """
@@ -2071,8 +2073,13 @@ def _provider_message(
     usage_context=None,
     transient_retries=1,
     timeout_seconds=None,
+    deadline=None,
+    attempt_number=1,
 ):
     started_at = time.monotonic()
+    if deadline is None:
+        configured_timeout = config.timeout_seconds if timeout_seconds is None else max(1, int(timeout_seconds))
+        deadline = started_at + min(MAX_PROVIDER_CALL_SECONDS, max(10, configured_timeout + 5))
     provider_data = {}
 
     def record_call(*, successful, usage=None, http_status=None, error_code="", provider_request_id=""):
@@ -2089,7 +2096,13 @@ def _provider_message(
             http_status=http_status,
             error_code=error_code,
             provider_request_id=provider_request_id,
+            attempt_number=attempt_number,
         )
+
+    remaining_seconds = deadline - time.monotonic()
+    if remaining_seconds <= 0:
+        record_call(successful=False, error_code="deadline_exceeded")
+        raise AIAssistantError("El proveedor de IA tardó demasiado en responder.")
 
     if config.provider == "anthropic":
         payload = _anthropic_request_payload(messages, tools, config.model, max_tokens)
@@ -2122,7 +2135,11 @@ def _provider_message(
         if config.provider == "gemini":
             headers["x-goog-api-client"] = "taskbudget-oai/1.0"
         endpoint = config.base_url + "/chat/completions"
-    request_timeout = config.timeout_seconds if timeout_seconds is None else max(5, min(int(timeout_seconds), 60))
+    configured_timeout = config.timeout_seconds if timeout_seconds is None else max(1, min(int(timeout_seconds), 60))
+    attempt_timeout = min(configured_timeout, remaining_seconds)
+    if transient_retries > 0:
+        attempt_timeout = min(attempt_timeout, FIRST_PROVIDER_ATTEMPT_SECONDS)
+    request_timeout = max(1, attempt_timeout)
     request = Request(
         endpoint,
         data=json.dumps(payload).encode("utf-8"),
@@ -2159,12 +2176,29 @@ def _provider_message(
             pass
         record_call(successful=False, http_status=exc.code, error_code=error_code)
         logger.warning("AI provider HTTP error provider=%s model=%s status=%s body=%s", config.provider, config.model, exc.code, error_body)
-        if exc.code in TRANSIENT_AI_HTTP_STATUSES and transient_retries > 0:
+        quota_error = exc.code == 402 or (
+            exc.code == 429
+            and any(term in error_body.lower() for term in ("insufficient_quota", "billing", "quota", "credit balance"))
+        )
+        retry_after = None
+        if getattr(exc, "headers", None):
+            try:
+                retry_after = float(exc.headers.get("Retry-After"))
+            except (TypeError, ValueError):
+                retry_after = None
+        retry_delay = max(0.4, retry_after or 0.0)
+        can_retry = (
+            exc.code in TRANSIENT_AI_HTTP_STATUSES
+            and not quota_error
+            and transient_retries > 0
+            and deadline - time.monotonic() > retry_delay + 1
+        )
+        if can_retry:
             # Algunos proveedores despiertan el modelo en la primera llamada y
             # responden con un 5xx transitorio. La petición todavía no ha
             # ejecutado ninguna herramienta local, por lo que repetirla una vez
             # es seguro y evita trasladar ese arranque en frío al usuario.
-            time.sleep(0.4)
+            time.sleep(retry_delay)
             return _provider_message(
                 messages,
                 config,
@@ -2173,6 +2207,8 @@ def _provider_message(
                 usage_context=usage_context,
                 transient_retries=transient_retries - 1,
                 timeout_seconds=request_timeout,
+                deadline=deadline,
+                attempt_number=attempt_number + 1,
             )
         if exc.code == 401:
             raise AIAssistantError("La clave de la IA no es válida.") from exc
@@ -2180,7 +2216,7 @@ def _provider_message(
             raise AIAssistantError("La clave o el proyecto no tienen permiso para utilizar este modelo.") from exc
         if exc.code == 404:
             raise AIAssistantError("El modelo configurado no está disponible para este proyecto.") from exc
-        if exc.code == 402 or (exc.code == 429 and any(term in error_body.lower() for term in ("insufficient_quota", "billing", "quota", "credit balance"))):
+        if quota_error:
             raise AIAssistantError(
                 "La cuenta de la API no tiene saldo o cuota disponible. La suscripción de ChatGPT y el consumo de la API se facturan por separado."
             ) from exc
@@ -2195,12 +2231,13 @@ def _provider_message(
         raise AIAssistantError(f"El proveedor de IA no pudo procesar la consulta (HTTP {exc.code}).") from exc
     except (URLError, TimeoutError) as exc:
         record_call(successful=False, error_code="network_error")
-        if transient_retries > 0:
+        retry_delay = 0.4
+        if transient_retries > 0 and deadline - time.monotonic() > retry_delay + 1:
             # El primer intento también puede fallar antes de recibir una
             # respuesta HTTP mientras el proveedor abre la conexión o
             # despierta el modelo. En este punto no se ha ejecutado ninguna
             # herramienta local, por lo que repetir la llamada es seguro.
-            time.sleep(0.4)
+            time.sleep(retry_delay)
             return _provider_message(
                 messages,
                 config,
@@ -2209,6 +2246,8 @@ def _provider_message(
                 usage_context=usage_context,
                 transient_retries=transient_retries - 1,
                 timeout_seconds=request_timeout,
+                deadline=deadline,
+                attempt_number=attempt_number + 1,
             )
         raise AIAssistantError("El proveedor de IA no está disponible en este momento.") from exc
     except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
@@ -2400,6 +2439,10 @@ def ask_financial_assistant(user, question, history=None):
         }
     )
     interaction_id = uuid.uuid4()
+    interaction_deadline = time.monotonic() + min(
+        MAX_PROVIDER_CALL_SECONDS,
+        max(10, config.timeout_seconds + 5),
+    )
     total_tool_calls = 0
     for _round in range(4):
         message = _provider_message(
@@ -2412,6 +2455,7 @@ def ask_financial_assistant(user, question, history=None):
                 "interaction_id": interaction_id,
                 "operation": f"ronda_agente_{_round + 1}",
             },
+            deadline=interaction_deadline,
         )
         tool_calls = (message.get("tool_calls") or [])[:3]
         if not tool_calls:
@@ -2453,6 +2497,7 @@ def ask_financial_assistant(user, question, history=None):
             "interaction_id": interaction_id,
             "operation": "respuesta_final",
         },
+        deadline=interaction_deadline,
     )
 
     answer = _parse_assistant_answer(message.get("content"))

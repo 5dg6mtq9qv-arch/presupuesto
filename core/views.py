@@ -1,7 +1,9 @@
 import calendar
 import csv
+import hashlib
 import json
 import logging
+import time
 import uuid
 from collections import Counter
 from html import escape
@@ -138,6 +140,35 @@ from .telegram_config import (
 User = get_user_model()
 logger = logging.getLogger(__name__)
 REGISTRATION_DECISION_SALT = "taskbudget.registration-decision"
+AI_REQUEST_CACHE_SECONDS = 300
+AI_REQUEST_PROCESSING_SECONDS = 40
+
+
+def _ai_request_cache_key(user_id, request_id):
+    return f"ai-assistant-request:{user_id}:{request_id}"
+
+
+def _ai_request_fingerprint(question, history):
+    payload = json.dumps(
+        {"pregunta": question, "historial": history},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _pending_ai_response(request_id):
+    return JsonResponse(
+        {
+            "ok": False,
+            "procesando": True,
+            "request_id": request_id,
+            "retry_after_ms": 800,
+            "error": "La consulta todavía se está procesando.",
+        },
+        status=202,
+    )
 
 
 @login_required
@@ -252,6 +283,38 @@ def asistente_financiero_preguntar(request):
         if content:
             history.append({"role": item["role"], "content": content})
 
+    raw_request_id = str(body.get("request_id") or "").strip()
+    try:
+        request_id = str(uuid.UUID(raw_request_id)) if raw_request_id else str(uuid.uuid4())
+    except (TypeError, ValueError, AttributeError):
+        return JsonResponse({"ok": False, "error": "El identificador de la consulta no es válido."}, status=400)
+
+    fingerprint = _ai_request_fingerprint(question, history)
+    idempotency_key = _ai_request_cache_key(request.user.pk, request_id)
+    now = time.time()
+    pending_entry = {
+        "estado": "procesando",
+        "huella": fingerprint,
+        "iniciado": now,
+    }
+    owns_request = cache.add(idempotency_key, pending_entry, timeout=AI_REQUEST_CACHE_SECONDS)
+    if not owns_request:
+        existing = cache.get(idempotency_key) or {}
+        if existing.get("huella") != fingerprint:
+            return JsonResponse(
+                {"ok": False, "error": "Ese identificador ya pertenece a otra consulta."},
+                status=409,
+            )
+        if existing.get("estado") == "completada" and isinstance(existing.get("respuesta"), dict):
+            return JsonResponse(existing["respuesta"], status=int(existing.get("status") or 200))
+        started_at = float(existing.get("iniciado") or now)
+        if now - started_at <= AI_REQUEST_PROCESSING_SECONDS:
+            return _pending_ai_response(request_id)
+        # Una petición interrumpida no debe bloquear para siempre el mismo
+        # identificador. Tras el margen máximo, la siguiente llamada la recupera.
+        cache.set(idempotency_key, pending_entry, timeout=AI_REQUEST_CACHE_SECONDS)
+        owns_request = True
+
     rate_key = f"ai-assistant:{request.user.pk}"
     if cache.add(rate_key, 1, timeout=60):
         requests_in_window = 1
@@ -273,14 +336,30 @@ def asistente_financiero_preguntar(request):
         else:
             answer = ask_financial_assistant(request.user, question)
     except AIAssistantError as exc:
+        if owns_request:
+            cache.delete(idempotency_key)
         return JsonResponse({"ok": False, "error": str(exc)}, status=503)
     except Exception:
+        if owns_request:
+            cache.delete(idempotency_key)
         logger.exception("Unexpected financial assistant error for user_id=%s", request.user.pk)
         return JsonResponse(
             {"ok": False, "error": "No fue posible completar la consulta en este momento. Intenta nuevamente."},
             status=500,
         )
-    return JsonResponse({"ok": True, **answer})
+    response_payload = {"ok": True, "request_id": request_id, **answer}
+    cache.set(
+        idempotency_key,
+        {
+            "estado": "completada",
+            "huella": fingerprint,
+            "iniciado": now,
+            "respuesta": response_payload,
+            "status": 200,
+        },
+        timeout=AI_REQUEST_CACHE_SECONDS,
+    )
+    return JsonResponse(response_payload)
 
 
 @login_required
