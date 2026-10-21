@@ -1762,6 +1762,62 @@ class FinancialAssistantTests(TestCase):
         self.assertEqual(context["deudas_activas"]["registros_generados_por_compras_a_credito"], 1)
         self.assertIn("No describas", context["deudas_activas"]["nota_conteo"])
 
+    def test_contexto_proyecta_ingresos_gastos_recurrentes_y_cuotas_a_30_dias(self):
+        date = datetime(2026, 10, 20).date()
+        CuentaFinanciera.objects.create(
+            usuario=self.user,
+            nombre="Cuenta de proyección",
+            tipo=CuentaFinanciera.Tipo.BANCO,
+            saldo_inicial="500.00",
+        )
+        debt = Deuda.objects.create(
+            usuario=self.user,
+            acreedor="Banco proyección",
+            concepto="Obligación próxima",
+            monto_inicial="600.00",
+            saldo_actual="600.00",
+            numero_cuotas=1,
+            fecha_inicio=date,
+            estado=Deuda.Estado.ACTIVA,
+        )
+        PagoDeuda.objects.create(
+            deuda=debt,
+            cuota_numero=1,
+            monto="600.00",
+            fecha=date + timedelta(days=10),
+            estado=PagoDeuda.Estado.PENDIENTE,
+        )
+        recurring_income = MovimientoRecurrente.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.INGRESO,
+            concepto="Ingreso programado",
+            monto="200.00",
+            dia_mes=25,
+            activo=True,
+        )
+        recurring_expense = MovimientoRecurrente.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+            concepto="Servicio programado",
+            monto="150.00",
+            dia_mes=26,
+            activo=True,
+        )
+        created_at = timezone.make_aware(datetime(2026, 10, 1, 0, 0))
+        MovimientoRecurrente.objects.filter(pk__in=[recurring_income.pk, recurring_expense.pk]).update(
+            creado=created_at,
+        )
+
+        context = build_financial_context(self.user, today=date)
+        indicators = context["indicadores_plan_de_deudas"]
+
+        self.assertEqual(context["ingresos_recurrentes_programados_proximos_30_dias"]["total"], "200.00")
+        self.assertEqual(context["gastos_recurrentes_programados_proximos_30_dias"]["total"], "150.00")
+        self.assertEqual(indicators["brecha_con_saldo_actual"], "100.00")
+        self.assertEqual(indicators["saldo_proyectado_tras_compromisos_registrados"], "-50.00")
+        self.assertEqual(indicators["brecha_tras_compromisos_registrados"], "50.00")
+        self.assertFalse(indicators["cubiertas_tras_compromisos_registrados"])
+
     def test_herramienta_consulta_movimientos_por_fecha_sin_mezclar_usuarios(self):
         movement = MovimientoFinanciero.objects.create(
             usuario=self.user,

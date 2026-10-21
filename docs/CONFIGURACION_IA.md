@@ -76,13 +76,23 @@ El contexto financiero separa explícitamente los hechos que pueden confundirse 
 - pagos de deuda ya realizados;
 - ajustes de saldo, que corrigen el saldo contable pero no prueban consumo del período;
 - cantidad de registros de deuda y cantidad real de acreedores;
-- cuotas vencidas, cuotas futuras, saldo disponible e ingresos recurrentes programados.
+- cuotas vencidas, cuotas futuras, saldo disponible, ingresos recurrentes y gastos recurrentes programados.
 
 Estos valores se entregan como indicadores neutrales. El backend no impone un estado como
 “manejable” o “problema de liquidez”: el modelo debe deducirlo, justificarlo con los hechos
 registrados y señalar los datos faltantes. En particular, un ingreso futuro igual a cero solo
 significa que no existen ingresos recurrentes programados; no demuestra que el usuario no vaya
 a recibir otros ingresos.
+
+Para los próximos 30 días, el contexto calcula además una cobertura registrada con la fórmula:
+
+```text
+saldo disponible + ingresos recurrentes programados
+- gastos recurrentes programados - cuotas pendientes
+```
+
+La cifra es una proyección basada exclusivamente en compromisos registrados, no un saldo garantizado:
+pueden existir ingresos o gastos ocasionales que todavía no estén en el sistema.
 
 El sistema instruye al modelo para no acceder a otros usuarios, no inventar datos y no revelar secretos. Aun así, el operador debe revisar las condiciones de tratamiento de datos del proveedor elegido y obtener los consentimientos que correspondan.
 

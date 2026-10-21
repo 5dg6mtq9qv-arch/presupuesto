@@ -434,13 +434,19 @@ def build_financial_context(user, today=None):
     )
     overdue_total = overdue.aggregate(total=Sum("monto"))["total"] or Decimal("0")
     overdue_count = overdue.count()
-    scheduled_incomes = movimientos_recurrentes_programados(
+    scheduled_movements = movimientos_recurrentes_programados(
         user,
         today + timedelta(days=1),
         today + timedelta(days=30),
-        tipo=MovimientoFinanciero.Tipo.INGRESO,
     )
+    scheduled_incomes = [
+        item for item in scheduled_movements if item["tipo"] == MovimientoFinanciero.Tipo.INGRESO
+    ]
+    scheduled_expenses = [
+        item for item in scheduled_movements if item["tipo"] == MovimientoFinanciero.Tipo.GASTO
+    ]
     scheduled_income_total = sum((item["monto"] for item in scheduled_incomes), Decimal("0"))
+    scheduled_expense_total = sum((item["monto"] for item in scheduled_expenses), Decimal("0"))
     upcoming_rows = list(
         upcoming.select_related("deuda")
         .order_by("fecha", "deuda__acreedor", "cuota_numero")[:MAX_UPCOMING_PAYMENT_DETAILS]
@@ -488,8 +494,10 @@ def build_financial_context(user, today=None):
     credit_purchase_records = active_debts.filter(movimiento_origen__isnull=False).count()
     manual_debt_records = active_debt_count - credit_purchase_records
     current_balance_gap = max(Decimal("0"), upcoming_total - available_balance)
-    registered_coverage = available_balance + scheduled_income_total
-    registered_coverage_gap = max(Decimal("0"), upcoming_total - registered_coverage)
+    projected_balance_after_commitments = (
+        available_balance + scheduled_income_total - scheduled_expense_total - upcoming_total
+    )
+    projected_coverage_gap = max(Decimal("0"), -projected_balance_after_commitments)
 
     return {
         "moneda": "USD",
@@ -529,13 +537,17 @@ def build_financial_context(user, today=None):
             "cubiertas_por_saldo_disponible": upcoming_total <= available_balance,
             "brecha_con_saldo_actual": _money(current_balance_gap),
             "ingresos_recurrentes_programados_proximos_30_dias": _money(scheduled_income_total),
-            "brecha_tras_ingresos_programados": _money(registered_coverage_gap),
-            "alcance_ingresos_futuros": (
-                "Solo incluye ingresos recurrentes activos registrados. Que el total sea cero no demuestra que el usuario no recibirá otros ingresos."
+            "gastos_recurrentes_programados_proximos_30_dias": _money(scheduled_expense_total),
+            "saldo_proyectado_tras_compromisos_registrados": _money(projected_balance_after_commitments),
+            "brecha_tras_compromisos_registrados": _money(projected_coverage_gap),
+            "cubiertas_tras_compromisos_registrados": projected_balance_after_commitments >= 0,
+            "alcance_proyeccion": (
+                "Incluye saldo actual, ingresos y gastos recurrentes activos programados, y cuotas pendientes de los próximos 30 días. "
+                "No incluye ingresos ni gastos ocasionales que todavía no estén registrados."
             ),
             "instruccion_de_interpretacion": (
-                "Estos son indicadores, no un diagnóstico. Deduce la situación considerando atrasos, fechas, saldo, ingresos programados "
-                "y datos faltantes. No declares una cuota impagable solo porque hoy supera el saldo disponible."
+                "Estos son indicadores, no un diagnóstico. Deduce la situación considerando atrasos, fechas, saldo, ingresos y gastos "
+                "programados, cuotas y datos faltantes. No declares una cuota impagable solo porque hoy supera el saldo disponible."
             ),
         },
         "deudas_activas": {
@@ -638,6 +650,20 @@ def build_financial_context(user, today=None):
             ],
             "detalle_completo": len(scheduled_incomes) <= MAX_UPCOMING_PAYMENT_DETAILS,
             "alcance": "No incluye ingresos ocasionales que todavía no estén registrados.",
+        },
+        "gastos_recurrentes_programados_proximos_30_dias": {
+            "cantidad": len(scheduled_expenses),
+            "total": _money(scheduled_expense_total),
+            "detalle": [
+                {
+                    "fecha": item["fecha"].isoformat(),
+                    "concepto": item["recurrente"].concepto,
+                    "monto": _money(item["monto"]),
+                }
+                for item in scheduled_expenses[:MAX_UPCOMING_PAYMENT_DETAILS]
+            ],
+            "detalle_completo": len(scheduled_expenses) <= MAX_UPCOMING_PAYMENT_DETAILS,
+            "alcance": "Solo incluye gastos recurrentes activos aún no confirmados para ese periodo.",
         },
         "presupuestos_del_mes": _money(budget_total),
         "principales_categorias_de_gasto": categories,
@@ -2330,7 +2356,8 @@ def ask_financial_assistant(user, question, history=None):
         "Distingue también saldo total de deuda de obligación inmediata: saldo_total_de_deudas_activas y saldo_actual son capital pendiente y no equivalen automáticamente a dinero exigible hoy. "
         "Si una deuda está diferida o tiene varias cuotas, evalúa la liquidez únicamente con cuotas vencidas, la próxima cuota y los pagos pendientes del periodo; no compares el saldo completo con el efectivo disponible ni recomiendes pagarlo íntegro, refinanciarlo o tratarlo como emergencia salvo que existan atrasos, una cuota impagable o el usuario lo solicite. "
         "Los campos de indicadores_plan_de_deudas son hechos calculados, no un diagnóstico prefabricado: deduce la conclusión y explica brevemente qué hechos la sostienen. "
-        "No declares falta de liquidez definitiva solo porque las cuotas futuras superen el saldo de hoy. Considera sus fechas, los ingresos recurrentes programados y aclara que pueden existir ingresos futuros todavía no registrados. "
+        "No declares falta de liquidez definitiva solo porque las cuotas futuras superen el saldo de hoy. Considera sus fechas, los ingresos y gastos recurrentes programados, y aclara que pueden existir operaciones futuras todavía no registradas. "
+        "Cuando evalúes los próximos 30 días usa saldo_proyectado_tras_compromisos_registrados y explica por separado saldo inicial, ingresos recurrentes, gastos recurrentes y cuotas; no presentes la proyección como saldo garantizado. "
         "Si hay una brecha con el saldo actual pero no hay cuotas vencidas, descríbela como brecha de cobertura actual y no como deuda impagable. "
         "Para analizar el periodo usa desglose_flujo_del_periodo: no mezcles compras nuevas a crédito, pagos de deuda, consumo pagado directamente ni ajustes de saldo. "
         "Un ajuste de saldo corrige el saldo contable y no demuestra por sí mismo consumo realizado durante el periodo. "
