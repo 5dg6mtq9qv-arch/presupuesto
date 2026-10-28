@@ -1,0 +1,4 @@
+{% extends "base.html" %}
+{% block page_title %}{{ title }}{% endblock %}
+{% block page_subtitle %}Organiza lo necesario sin mezclarlo con tus finanzas{% endblock %}
+{% block content %}<section class="panel form-panel"><form class="form-grid" method="post">{% csrf_token %}{% include "core/includes/unfold_form_fields.html" %}<div class="form-actions actions"><button class="btn btn-primary" type="submit"><span class="material-symbols-outlined">save</span> Guardar</button><a class="btn btn-outline-secondary" href="{% url 'organizacion:hoy' %}">Cancelar</a></div></form></section>{% if task_form and apply_datetime_defaults %}<script>(()=>{const start=document.querySelector('[data-task-start]');const end=document.querySelector('[data-task-end]');[start,end].forEach(input=>{const preset=input?.getAttribute('value');if(input&&preset)input.value=preset;});})();</script>{% endif %}{% endblock %}

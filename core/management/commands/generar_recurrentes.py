@@ -1,9 +1,13 @@
+from datetime import timedelta
+
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 
 from core.services import generar_finanzas_automaticas
+from organizacion.access import can_access_organization
+from organizacion.services import generar_tareas_recurrentes
 
 
 class Command(BaseCommand):
@@ -38,6 +42,12 @@ class Command(BaseCommand):
             hasta_fecha=hasta,
             usuario=usuario,
         )
+        usuarios_organizacion = [usuario] if usuario else get_user_model().objects.filter(is_active=True)
+        tareas_creadas = sum(
+            generar_tareas_recurrentes(item, hasta + timedelta(days=14))
+            for item in usuarios_organizacion
+            if item and can_access_organization(item)
+        )
 
         self.stdout.write(
             self.style.SUCCESS(
@@ -48,6 +58,7 @@ class Command(BaseCommand):
                 "Cuotas de deuda pendientes creadas: "
                 f"{len(resultado['pagos_deuda'])}. "
                 "Pagos de deuda omitidos: "
-                f"{resultado['pagos_deuda_omitidos']}."
+                f"{resultado['pagos_deuda_omitidos']}. "
+                f"Tareas recurrentes creadas: {tareas_creadas}."
             )
         )

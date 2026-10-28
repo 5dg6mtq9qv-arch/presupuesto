@@ -5,6 +5,7 @@ from urllib.parse import urlsplit
 from django import forms
 from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import PasswordChangeForm, SetPasswordForm, UserCreationForm
+from django.contrib.auth.models import Permission
 from django.contrib.auth.password_validation import validate_password
 from django.utils import timezone
 
@@ -32,6 +33,21 @@ from .models import (
 )
 
 User = get_user_model()
+
+
+def _organization_permission():
+    return Permission.objects.get(
+        content_type__app_label="organizacion",
+        codename="access_organization",
+    )
+
+
+def _save_organization_access(user, enabled):
+    permission = _organization_permission()
+    if enabled:
+        user.user_permissions.add(permission)
+    else:
+        user.user_permissions.remove(permission)
 
 
 def _normalize_decimal_value(value):
@@ -509,6 +525,11 @@ class UsuarioCreateForm(BootstrapFormMixin, forms.ModelForm):
         required=False,
         help_text="Permite consultar el asistente externo y consumir la cuota configurada.",
     )
+    puede_usar_organizacion = forms.BooleanField(
+        label="Habilitar Organización y tareas",
+        required=False,
+        help_text="Muestra el módulo privado de tareas, subtareas, tablero Kanban y calendario.",
+    )
 
     class Meta:
         model = User
@@ -550,6 +571,7 @@ class UsuarioCreateForm(BootstrapFormMixin, forms.ModelForm):
                 usuario=user,
                 defaults={"puede_usar_asistente_ia": self.cleaned_data.get("puede_usar_asistente_ia", False)},
             )
+            _save_organization_access(user, self.cleaned_data.get("puede_usar_organizacion", False))
         return user
 
 
@@ -582,6 +604,11 @@ class UsuarioUpdateForm(BootstrapFormMixin, forms.ModelForm):
         required=False,
         help_text="Permite consultar el asistente externo y consumir la cuota configurada.",
     )
+    puede_usar_organizacion = forms.BooleanField(
+        label="Habilitar Organización y tareas",
+        required=False,
+        help_text="Muestra el módulo privado de tareas, subtareas, tablero Kanban y calendario.",
+    )
 
     class Meta:
         model = User
@@ -598,6 +625,13 @@ class UsuarioUpdateForm(BootstrapFormMixin, forms.ModelForm):
         super().__init__(*args, **kwargs)
         perfil = PerfilUsuario.objects.filter(usuario=self.instance).first() if self.instance.pk else None
         self.fields["puede_usar_asistente_ia"].initial = bool(perfil and perfil.puede_usar_asistente_ia)
+        self.fields["puede_usar_organizacion"].initial = bool(
+            self.instance.pk
+            and self.instance.user_permissions.filter(
+                content_type__app_label="organizacion",
+                codename="access_organization",
+            ).exists()
+        )
         if disable_is_active:
             self.fields["is_active"].disabled = True
             self.fields["is_active"].help_text = "No puedes desactivar tu propio usuario."
@@ -610,6 +644,7 @@ class UsuarioUpdateForm(BootstrapFormMixin, forms.ModelForm):
                 usuario=user,
                 defaults={"puede_usar_asistente_ia": self.cleaned_data.get("puede_usar_asistente_ia", False)},
             )
+            _save_organization_access(user, self.cleaned_data.get("puede_usar_organizacion", False))
         return user
 
 
@@ -856,6 +891,7 @@ class MovimientoFinancieroForm(UserScopedModelForm):
         self.fields["acreedor_credito"].queryset = Acreedor.objects.filter(usuario=user, activo=True).order_by("nombre")
         self.fields["acreedor_credito"].empty_label = "Selecciona un acreedor"
         self.fields["etiquetas"].queryset = Etiqueta.objects.filter(usuario=user).order_by("nombre")
+        self.fields["etiquetas"].label = "Etiquetas"
         if self.tipo != MovimientoFinanciero.Tipo.GASTO:
             self.fields.pop("fecha_pago", None)
             self.fields.pop("acreedor_credito", None)

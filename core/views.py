@@ -4382,6 +4382,14 @@ def movimiento_form_context(request, tipo, movimiento=None):
     return tiene_categorias, title, back_tipo, categorias_principales
 
 
+def movimiento_initial_from_query(request):
+    """Permite abrir el formulario con una etiqueta/proyecto ya seleccionado."""
+    tag_id = request.GET.get("etiqueta", "")
+    if tag_id.isdigit() and Etiqueta.objects.filter(pk=tag_id, usuario=request.user).exists():
+        return {"etiquetas": [int(tag_id)]}
+    return None
+
+
 @login_required
 def movimiento_ingreso_create(request):
     tipo = MovimientoFinanciero.Tipo.INGRESO
@@ -4394,7 +4402,7 @@ def movimiento_ingreso_create(request):
             messages.success(request, "Ingreso creado.")
             return redirect(f"{reverse('movimiento_list')}?tipo={tipo}")
     else:
-        form = MovimientoFinancieroForm(user=request.user, tipo=tipo)
+        form = MovimientoFinancieroForm(user=request.user, tipo=tipo, initial=movimiento_initial_from_query(request))
     return render(
         request,
         "core/movimiento_form.html",
@@ -4421,7 +4429,7 @@ def movimiento_gasto_create(request):
             messages.success(request, "Gasto creado.")
             return redirect(f"{reverse('movimiento_list')}?tipo={tipo}")
     else:
-        form = MovimientoFinancieroForm(user=request.user, tipo=tipo)
+        form = MovimientoFinancieroForm(user=request.user, tipo=tipo, initial=movimiento_initial_from_query(request))
     return render(
         request,
         "core/movimiento_form.html",

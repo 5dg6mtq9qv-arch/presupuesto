@@ -20,6 +20,16 @@ La interfaz está en español, usa la zona horaria `America/Guayaquil` y puede i
 - Asistente financiero con consultas, objetivos, recomendaciones y registro rápido de movimientos.
 - Análisis por periodo, vista de caja o consumo, exportación CSV e informe PDF.
 - Agenda de tareas, notificaciones, perfiles y administración de usuarios.
+- Módulo opcional de organización personal con vista Hoy, Kanban de tareas y
+  subtareas, etiquetas, calendario mensual, línea de tiempo y recurrencias. Se habilita mediante el
+  permiso `organizacion.access_organization`; los superusuarios tienen acceso.
+- Las etiquetas pueden compartirse entre tareas, ingresos y gastos sin cambiar
+  las reglas de presupuestos, saldos ni deudas.
+- Crear o renombrar una tarea crea o sincroniza automáticamente una única
+  etiqueta con el mismo título. El formulario solo solicita título,
+  descripción, inicio y fin.
+- El calendario representa cada tarea como un evento continuo desde inicio
+  hasta fin; la línea inferior muestra su duración y porcentaje de avance.
 - Registro de auditoría, consumo de IA y estimación orientativa de costos.
 
 ## Documentación

@@ -30,6 +30,7 @@ PostgreSQL por esquemas     MEDIA_ROOT / STATIC_ROOT
 | Integraciones | `core/bank_import.py`, `core/receipt_capture.py` | CSV bancario y lectura de comprobantes. |
 | Operación | `core/management/commands/`, `scripts/` | Trabajos programados y mantenimiento. |
 | Verificación | `core/tests.py`, `core/test_*.py` | Pruebas de dominio, producto e IA. |
+| Organización | `organizacion/` | Tareas, subtareas, etiquetas, calendario, línea de tiempo y recurrencias, aisladas del dominio financiero. |
 
 ## 3. Aislamiento por usuario
 
@@ -140,6 +141,17 @@ No es un libro contable inmutable: administradores de infraestructura con acceso
 El manifiesto y service worker se generan mediante vistas. El service worker almacena recursos de interfaz y muestra una página segura cuando no hay conexión. No almacena páginas autenticadas ni datos financieros privados para uso offline.
 
 ## 10. Extensión del sistema
+
+El módulo `organizacion` es independiente de `core`. Solo se relaciona de
+forma opcional con presupuestos, movimientos y pagos, y publica sus
+recordatorios en el buzón común de `Notificacion`. El acceso requiere el
+permiso `organizacion.access_organization` o ser superusuario.
+
+La integración financiera usa `Etiqueta`: tareas y movimientos pueden compartir
+las etiquetas del mismo usuario. Esto permite agrupar trabajo, ingresos y
+gastos sin reescribir montos, presupuestos ni saldos. Para usuarios sin permiso,
+Organización no aparece y el formulario de movimientos conserva su presentación
+financiera habitual.
 
 Al agregar una función:
 

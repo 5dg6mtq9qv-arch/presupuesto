@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block page_title %}Planificación semanal{% endblock %}
+{% block page_subtitle %}Distribuye tu carga antes de que la semana decida por ti{% endblock %}
+{% block content %}
+<div class="actions"><a class="btn btn-outline-secondary" href="?fecha={{ previous|date:'Y-m-d' }}">← Semana anterior</a><strong>Desde {{ monday|date:"d/m/Y" }}</strong><a class="btn btn-outline-secondary" href="?fecha={{ next|date:'Y-m-d' }}">Semana siguiente →</a></div>
+<div style="display:grid;grid-template-columns:repeat(7,minmax(190px,1fr));gap:12px;overflow-x:auto;padding-bottom:12px">
+{% for row in rows %}<section class="panel" style="min-width:190px;padding:14px"><h3>{{ row.date|date:"D d" }}</h3><div style="display:grid;gap:8px">{% for task in row.tasks %}<a class="org-week-task" href="{% url 'organizacion:tarea_detail' task.pk %}" style="display:block;padding:10px;border-radius:10px;background:#f8fafc;border-left:3px solid {% if task.area %}{{ task.area.color }}{% else %}#94a3b8{% endif %}">{{ task.titulo }}{% if task.inicio_planificado %}<small style="display:block">{{ task.inicio_planificado|date:"H:i" }}</small>{% endif %}</a>{% empty %}<small class="muted">Libre</small>{% endfor %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'organizacion:tarea_create' %}?fecha={{ row.date|date:'Y-m-d' }}">＋ Planificar</a></div></section>{% endfor %}
+</div>
+{% endblock %}

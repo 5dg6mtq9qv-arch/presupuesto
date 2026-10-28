@@ -1917,9 +1917,6 @@
         </ul>
         <div class="nav-section">Mi dinero</div>
         <ul class="nav-list">
-          {% if user.is_staff %}
-            <li><a class="nav-link {% if 'tarea' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'tarea_list' %}"><span class="material-symbols-outlined">task_alt</span> Tareas</a></li>
-          {% endif %}
           <li><a class="nav-link {% if 'movimiento' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'movimiento_list' %}"><span class="material-symbols-outlined">sync_alt</span> Ingresos y gastos</a></li>
           <li><a class="nav-link {% if request.resolver_match.url_name == 'actividad_financiera' %}active{% endif %}" href="{% url 'actividad_financiera' %}"><span class="material-symbols-outlined">history</span> Actividad</a></li>
           <li><a class="nav-link {% if request.resolver_match.url_name == 'cuenta_transferir' %}active{% endif %}" href="{% url 'cuenta_transferir' %}" data-tour-target="internal-moves"><span class="material-symbols-outlined">swap_horiz</span> Movimientos entre cuentas</a></li>
@@ -1927,6 +1924,15 @@
           <li><a class="nav-link {% if 'presupuesto' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'presupuesto_list' %}"><span class="material-symbols-outlined">price_check</span> Presupuestos</a></li>
           <li><a class="nav-link {% if 'recurrente' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'recurrente_list' %}" data-tour-target="recurring"><span class="material-symbols-outlined">event_repeat</span> Gastos e ingresos recurrentes</a></li>
         </ul>
+        {% if can_access_organization %}
+          <div class="nav-section">Organización</div>
+          <ul class="nav-list">
+            <li><a class="nav-link {% if request.resolver_match.namespace == 'organizacion' and request.resolver_match.url_name == 'hoy' %}active{% endif %}" href="{% url 'organizacion:hoy' %}"><span class="material-symbols-outlined">today</span> Mi día</a></li>
+            <li><a class="nav-link {% if request.resolver_match.namespace == 'organizacion' and 'tarea' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'organizacion:tarea_list' %}"><span class="material-symbols-outlined">task_alt</span> Tareas</a></li>
+            <li><a class="nav-link {% if request.resolver_match.namespace == 'organizacion' and request.resolver_match.url_name == 'calendario' %}active{% endif %}" href="{% url 'organizacion:calendario' %}"><span class="material-symbols-outlined">calendar_month</span> Calendario</a></li>
+            <li><a class="nav-link {% if request.resolver_match.namespace == 'organizacion' and 'recurrencia' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'organizacion:recurrencia_list' %}"><span class="material-symbols-outlined">event_repeat</span> Recurrentes</a></li>
+          </ul>
+        {% endif %}
         <div class="nav-section">Organizar</div>
         <ul class="nav-list">
           <li><a class="nav-link {% if request.resolver_match.url_name == 'cuenta_list' or request.resolver_match.url_name == 'cuenta_ajustar_saldo' %}active{% endif %}" href="{% url 'cuenta_list' %}" data-tour-target="accounts"><span class="material-symbols-outlined">account_balance_wallet</span> Cuentas</a></li>

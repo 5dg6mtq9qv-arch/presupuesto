@@ -2465,11 +2465,17 @@ class FinancialAssistantTests(TestCase):
                 "email": "",
                 "is_active": "on",
                 "puede_usar_asistente_ia": "on",
+                "puede_usar_organizacion": "on",
             },
         )
 
         self.assertRedirects(response, reverse("usuario_list"))
         self.assertTrue(PerfilUsuario.objects.get(usuario=self.other).puede_usar_asistente_ia)
+        self.assertTrue(self.other.has_perm("organizacion.access_organization"))
+
+        edit_page = self.client.get(reverse("usuario_update", args=[self.other.pk]))
+        self.assertContains(edit_page, "Habilitar Organización y tareas")
+        self.assertContains(edit_page, 'name="puede_usar_organizacion"', html=False)
 
     @override_settings(AI_CONFIG_ENCRYPTION_KEY="clave-maestra-de-prueba")
     def test_configuracion_admin_cifra_token_y_tiene_prioridad_sobre_env(self):

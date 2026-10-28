@@ -1,0 +1,14 @@
+<article class="org-task-card priority-{{ task.prioridad }}">
+  <div class="d-flex justify-content-between gap-2 align-items-start">
+    <div>
+      <a href="{% url 'organizacion:tarea_detail' task.pk %}"><strong>{{ task.titulo }}</strong></a>
+      <div class="small text-muted">
+        {% for tag in task.etiquetas.all %}<span class="badge rounded-pill text-bg-light border" style="border-left:3px solid {{ tag.color }}!important">{{ tag.nombre }}</span>{% endfor %}
+        {% if task.fecha_limite %} · vence {{ task.fecha_limite|date:"d/m H:i" }}{% endif %}
+      </div>
+    </div>
+    <div class="d-flex gap-1 align-items-center"><span class="org-drag-handle material-symbols-outlined" aria-hidden="true">drag_indicator</span>{% if kanban_mode %}<form method="post" action="{% url 'organizacion:tarea_delete' task.pk %}" onsubmit="return confirm('¿Eliminar esta tarea?')" draggable="false">{% csrf_token %}<button class="btn btn-sm btn-link text-danger p-0" type="submit" title="Eliminar" draggable="false"><span class="material-symbols-outlined" style="font-size:18px">delete</span></button></form>{% endif %}</div>
+  </div>
+  {% if task.subtareas.all %}<div class="progress mt-2" style="height:6px"><div class="progress-bar" style="width:{{ task.progreso }}%"></div></div>{% endif %}
+  {% if task.subtareas.all %}<a class="btn btn-sm btn-outline-primary mt-2 w-100" href="{% url 'organizacion:tarea_detail' task.pk %}"><span class="material-symbols-outlined" style="font-size:16px">account_tree</span> Abrir tablero de subtareas</a><div class="small text-muted mt-2">{{ task.subtareas.all|length }} subtareas · {{ task.progreso }}% completado</div>{% endif %}
+</article>

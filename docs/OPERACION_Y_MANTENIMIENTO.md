@@ -15,7 +15,9 @@ Opciones:
 .venv/bin/python manage.py generar_recurrentes --usuario nombre_usuario
 ```
 
-El comando genera movimientos recurrentes y pagos de deuda vencidos hasta hoy, o hasta la fecha indicada. Informa creados y duplicados omitidos.
+El comando genera movimientos recurrentes, pagos de deuda y las próximas dos
+semanas de tareas recurrentes para usuarios con acceso a Organización. La
+generación es idempotente e informa los registros creados u omitidos.
 
 ### Generar recomendaciones
 
@@ -79,6 +81,7 @@ Para aislar áreas:
 .venv/bin/python manage.py test core.test_quick_ai_movements
 .venv/bin/python manage.py test core.test_autonomous_finance
 .venv/bin/python manage.py test core.test_ai_usage
+.venv/bin/python manage.py test organizacion
 ```
 
 Las pruebas cubren cálculos financieros, permisos, flujos de producto, borradores y consumo de IA. Un cambio de reglas de saldo, crédito o deuda debe añadir casos de regresión específicos.

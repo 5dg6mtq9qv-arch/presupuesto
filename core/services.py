@@ -77,6 +77,10 @@ def saldo_actual_cuenta(cuenta):
 def generar_notificaciones_usuario(user, *, hoy=None):
     """Materializa alertas accionables sin duplicarlas entre ejecuciones."""
     hoy = hoy or timezone.localdate()
+    # Organización es un dominio separado; solo aporta sus avisos al buzón común.
+    if user.is_superuser or user.has_perm("organizacion.access_organization"):
+        from organizacion.services import generar_notificaciones_organizacion
+        generar_notificaciones_organizacion(user, hoy)
     limite = hoy + timedelta(days=7)
     activas = set()
 

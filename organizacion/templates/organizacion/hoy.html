@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block page_title %}Mi día{% endblock %}
+{% block page_subtitle %}Decide qué hacer hoy sin perder de vista lo importante{% endblock %}
+{% block content %}
+<style>
+  .org-quick{display:flex;gap:10px}.org-quick input{flex:1}.org-grid{display:grid;grid-template-columns:2fr 1fr;gap:18px}.org-stack{display:grid;gap:10px}.org-task-card{padding:14px;border:1px solid var(--bs-border-color);border-left:4px solid #94a3b8;border-radius:12px;background:#fff}.priority-alta{border-left-color:#f59e0b}.priority-urgente{border-left-color:#dc2626}.org-section-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}.org-project{padding:14px 0;border-bottom:1px solid var(--bs-border-color)}.org-project-head,.org-money{display:flex;justify-content:space-between;gap:10px}.org-money{font-size:12px;margin-top:7px}.org-money .income{color:#047857}.org-money .expense{color:#b91c1c}.org-mini-track{height:6px;background:#e2e8f0;border-radius:99px;overflow:hidden;margin-top:8px}.org-mini-track span{display:block;height:100%;background:#14a89a;border-radius:99px}@media(max-width:900px){.org-grid{grid-template-columns:1fr}.org-quick{flex-direction:column}}
+</style>
+<form class="panel org-quick" method="post" action="{% url 'organizacion:captura_rapida' %}">{% csrf_token %}{{ quick_form.titulo }}<button class="btn btn-primary" type="submit"><span class="material-symbols-outlined">add</span> Capturar</button></form>
+<div class="actions">
+  <div class="d-flex gap-2 flex-wrap"><a class="btn btn-primary" href="{% url 'organizacion:tarea_create' %}">Nueva tarea</a><a class="btn btn-outline-primary" href="{% url 'organizacion:semana' %}">Planificar semana</a></div>
+  <a class="btn btn-outline-secondary" href="{% url 'organizacion:tarea_list' %}">Ver tablero</a>
+</div>
+<div class="org-grid">
+  <div class="org-stack">
+    {% if overdue %}<section class="panel"><div class="org-section-head"><h2>Vencidas</h2><span class="badge text-bg-danger">{{ overdue|length }}</span></div><div class="org-stack">{% for task in overdue %}{% include "organizacion/_task_card.html" %}{% endfor %}</div></section>{% endif %}
+    <section class="panel"><div class="org-section-head"><h2>Hoy · {{ today|date:"l d" }}</h2><span class="badge text-bg-primary">{{ today_tasks|length }}</span></div><div class="org-stack">{% for task in today_tasks %}{% include "organizacion/_task_card.html" %}{% empty %}<p class="muted">No has planificado tareas para hoy. Puedes tomar una de la bandeja o preparar tu semana.</p>{% endfor %}</div></section>
+    <section class="panel"><div class="org-section-head"><h2>Bandeja de entrada</h2><span class="badge text-bg-light border">{{ inbox|length }}</span></div><div class="org-stack">{% for task in inbox %}{% include "organizacion/_task_card.html" %}{% empty %}<p class="muted">Bandeja vacía.</p>{% endfor %}</div></section>
+  </div>
+  <div class="org-stack">
+    <section class="panel"><div class="org-section-head"><h2>Próximos 7 días</h2></div>{% for task in upcoming %}<div class="org-project"><strong>{{ task.fecha_planificada|date:"D d" }}</strong><br><a href="{% url 'organizacion:tarea_detail' task.pk %}">{{ task.titulo }}</a></div>{% empty %}<p class="muted">Nada planificado.</p>{% endfor %}</section>
+    <section class="panel"><div class="org-section-head"><h2>Etiquetas</h2><a href="{% url 'etiqueta_list' %}">Administrar</a></div>{% for tag in task_tags %}<a class="org-project d-flex justify-content-between" href="{% url 'organizacion:tarea_list' %}?etiqueta={{ tag.pk }}"><span><i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:{{ tag.color }}"></i> {{ tag.nombre }}</span><strong>{{ tag.task_count }}</strong></a>{% empty %}<p class="muted">Usa etiquetas para agrupar tus tareas.</p>{% endfor %}</section>
+  </div>
+</div>
+{% endblock %}

@@ -134,6 +134,25 @@ Los objetivos pueden estar activos, logrados, pausados o cancelados. Las recomen
 
 `Tarea` guarda título, descripción, categoría de tipo tarea, fecha, horario, estado y prioridad. Los estados son pendiente, trabajando, finalizada y cancelada; la prioridad puede ser baja, media o alta.
 
+Esta entidad se conserva por compatibilidad. La organización personal nueva
+vive en la app `organizacion`:
+
+- `Area` y `Proyecto`: compatibilidad con la primera versión del módulo; no forman parte del flujo principal;
+- `Tarea`: bandeja, planificación, vencimiento, tiempo real, prioridad, etiquetas y vínculos financieros opcionales;
+- `Subtarea`: pasos que sincronizan la finalización de su tarea;
+- `Recurrencia`: plantillas diarias, semanales o mensuales con generación idempotente.
+
+La migración inicial copia las tareas antiguas al área `Importadas` sin borrar
+los registros originales.
+
+`Tarea.etiquetas` reutiliza `Etiqueta`, por lo que una misma etiqueta puede
+clasificar trabajo, ingresos y gastos. Este vínculo no altera
+`PresupuestoMensual` ni los cálculos financieros.
+
+`Tarea.etiqueta_automatica` identifica la etiqueta principal creada o
+reutilizada a partir del título. El inicio planificado determina su día en el
+calendario y el fin planificado alimenta el vencimiento y la línea de tiempo.
+
 ## 9. Auditoría
 
 | Entidad | Propósito |
