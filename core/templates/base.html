@@ -1924,15 +1924,6 @@
           <li><a class="nav-link {% if 'presupuesto' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'presupuesto_list' %}"><span class="material-symbols-outlined">price_check</span> Presupuestos</a></li>
           <li><a class="nav-link {% if 'recurrente' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'recurrente_list' %}" data-tour-target="recurring"><span class="material-symbols-outlined">event_repeat</span> Gastos e ingresos recurrentes</a></li>
         </ul>
-        {% if can_access_organization %}
-          <div class="nav-section">Organización</div>
-          <ul class="nav-list">
-            <li><a class="nav-link {% if request.resolver_match.namespace == 'organizacion' and request.resolver_match.url_name == 'hoy' %}active{% endif %}" href="{% url 'organizacion:hoy' %}"><span class="material-symbols-outlined">today</span> Mi día</a></li>
-            <li><a class="nav-link {% if request.resolver_match.namespace == 'organizacion' and 'tarea' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'organizacion:tarea_list' %}"><span class="material-symbols-outlined">task_alt</span> Tareas</a></li>
-            <li><a class="nav-link {% if request.resolver_match.namespace == 'organizacion' and request.resolver_match.url_name == 'calendario' %}active{% endif %}" href="{% url 'organizacion:calendario' %}"><span class="material-symbols-outlined">calendar_month</span> Calendario</a></li>
-            <li><a class="nav-link {% if request.resolver_match.namespace == 'organizacion' and 'recurrencia' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'organizacion:recurrencia_list' %}"><span class="material-symbols-outlined">event_repeat</span> Recurrentes</a></li>
-          </ul>
-        {% endif %}
         <div class="nav-section">Organizar</div>
         <ul class="nav-list">
           <li><a class="nav-link {% if request.resolver_match.url_name == 'cuenta_list' or request.resolver_match.url_name == 'cuenta_ajustar_saldo' %}active{% endif %}" href="{% url 'cuenta_list' %}" data-tour-target="accounts"><span class="material-symbols-outlined">account_balance_wallet</span> Cuentas</a></li>
@@ -1955,6 +1946,15 @@
             {% if user.is_superuser %}<li><a class="nav-link {% if request.resolver_match.url_name == 'configuracion_apoyo' %}active{% endif %}" href="{% url 'configuracion_apoyo' %}"><span class="material-symbols-outlined">volunteer_activism</span> Configurar apoyo</a></li>{% endif %}
             <li><a class="nav-link {% if request.resolver_match.url_name == 'consumo_ia_panel' or request.resolver_match.url_name == 'usuario_ia_toggle' %}active{% endif %}" href="{% url 'consumo_ia_panel' %}"><span class="material-symbols-outlined">admin_panel_settings</span> Control IA</a></li>
             <li><a class="nav-link" href="{% url 'admin:index' %}"><span class="material-symbols-outlined">admin_panel_settings</span> Admin Django</a></li>
+          </ul>
+        {% endif %}
+        {% if can_access_organization %}
+          <div class="nav-section">Organización</div>
+          <ul class="nav-list">
+            <li><a class="nav-link {% if request.resolver_match.namespace == 'organizacion' and request.resolver_match.url_name == 'hoy' %}active{% endif %}" href="{% url 'organizacion:hoy' %}"><span class="material-symbols-outlined">today</span> Mi día</a></li>
+            <li><a class="nav-link {% if request.resolver_match.namespace == 'organizacion' and 'tarea' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'organizacion:tarea_list' %}"><span class="material-symbols-outlined">task_alt</span> Tareas</a></li>
+            <li><a class="nav-link {% if request.resolver_match.namespace == 'organizacion' and request.resolver_match.url_name == 'calendario' %}active{% endif %}" href="{% url 'organizacion:calendario' %}"><span class="material-symbols-outlined">calendar_month</span> Calendario</a></li>
+            <li><a class="nav-link {% if request.resolver_match.namespace == 'organizacion' and 'recurrencia' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'organizacion:recurrencia_list' %}"><span class="material-symbols-outlined">event_repeat</span> Recurrentes</a></li>
           </ul>
         {% endif %}
       {% endif %}

@@ -1,9 +1,15 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block page_title %}Kanban de tareas{% endblock %}
 {% block page_subtitle %}Crea tareas y mueve su estado mientras trabajas{% endblock %}
 
 {% block content %}
+<style>
+  .task-drag-handle{display:inline-flex;align-items:center;justify-content:center;min-width:36px;min-height:36px;color:#64748b;cursor:grab;user-select:none}
+  .mobile-drag-hint{display:none}
+  @media(max-width:600px){.kanban{grid-template-columns:repeat(4,minmax(0,84vw));gap:10px;overscroll-behavior-x:contain}.kanban-column{min-width:0}.mobile-drag-hint{display:block;color:#64748b;font-size:13px;margin:0 0 8px}}
+</style>
 <div class="actions">
   <div class="d-flex align-items-center gap-2 text-muted">
     <span class="badge rounded-pill text-bg-light border">Tablero</span>
@@ -43,6 +49,7 @@
     </button>
   </form>
 </section>
+<p class="mobile-drag-hint">Mantén el dedo en ⋮⋮ y mueve la tarea hacia otra columna.</p>
 <section class="kanban">
   {% for columna in columnas %}
     <article class="kanban-column">
@@ -59,6 +66,7 @@
             data-estado-url-template="{% url 'tarea_estado' tarea.pk '__estado__' %}"
           >
             <div class="task-labels">
+              <span class="material-symbols-outlined task-drag-handle" aria-label="Arrastrar tarea">drag_indicator</span>
               {% if tarea.categoria %}
                 <span class="badge rounded-pill text-bg-info">{{ tarea.categoria.nombre }}</span>
               {% endif %}
@@ -102,6 +110,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{% static 'core/js/touch_kanban.js' %}"></script>
 <script>
   (() => {
     const csrfToken = "{{ csrf_token }}";
@@ -166,6 +175,24 @@
       return response.json();
     }
 
+    async function moveCard(card, body) {
+      if (!card || card.dataset.estado === body.dataset.estado) return;
+      const previousColumn = card.closest('.kanban-body');
+      body.appendChild(card);
+      syncEmptyStates();
+      updateCounts();
+      try {
+        const data = await persistState(card, body.dataset.estado);
+        card.dataset.estado = data.estado;
+        updateCardTimes(card, data);
+      } catch (error) {
+        previousColumn?.appendChild(card);
+        syncEmptyStates();
+        updateCounts();
+        alert(error.message);
+      }
+    }
+
     document.querySelectorAll(".task-card").forEach((card) => {
       card.addEventListener("dragstart", (event) => {
         draggedCard = card;
@@ -193,33 +220,13 @@
         body.classList.remove("drag-over");
       });
 
-      body.addEventListener("drop", async (event) => {
+      body.addEventListener("drop", (event) => {
         event.preventDefault();
         body.classList.remove("drag-over");
-
-        if (!draggedCard || draggedCard.dataset.estado === body.dataset.estado) {
-          return;
-        }
-
-        const card = draggedCard;
-        const previousColumn = sourceColumn;
-        const targetEstado = body.dataset.estado;
-        body.appendChild(card);
-        syncEmptyStates();
-        updateCounts();
-
-        try {
-          const data = await persistState(card, targetEstado);
-          card.dataset.estado = data.estado;
-          updateCardTimes(card, data);
-        } catch (error) {
-          if (previousColumn) previousColumn.appendChild(card);
-          syncEmptyStates();
-          updateCounts();
-          alert(error.message);
-        }
+        moveCard(draggedCard, body);
       });
     });
+    enableTouchKanban({board:document.querySelector('.kanban'),cardSelector:'.task-card',columnSelector:'.kanban-body',handleSelector:'.task-drag-handle',onDrop:moveCard});
   })();
 </script>
 {% endblock %}
