@@ -8,7 +8,7 @@
 <style>
   .task-drag-handle{display:inline-flex;align-items:center;justify-content:center;min-width:36px;min-height:36px;color:#64748b;cursor:grab;user-select:none}
   .mobile-drag-hint{display:none}
-  @media(max-width:600px){.kanban{grid-template-columns:repeat(4,minmax(0,84vw));gap:10px;overscroll-behavior-x:contain}.kanban-column{min-width:0}.mobile-drag-hint{display:block;color:#64748b;font-size:13px;margin:0 0 8px}}
+  @media(max-width:600px){.kanban{grid-template-columns:repeat(4,84vw);gap:10px;max-width:100%;overscroll-behavior-x:contain}.kanban-column{min-width:0}.mobile-drag-hint{display:block;color:#64748b;font-size:13px;margin:0 0 8px}}
 </style>
 <div class="actions">
   <div class="d-flex align-items-center gap-2 text-muted">
