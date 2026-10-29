@@ -22,6 +22,16 @@
   <aside class="panel"><strong>Planificación</strong><div class="small text-muted mt-2">Inicio: {{ task.inicio_planificado|default:"Sin fecha" }}</div><div class="small text-muted">Fin: {{ task.fin_planificado|default:"Sin fecha" }}</div></aside>
 </div>
 
+<section class="panel mb-3">
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <div><h3 class="mb-1">Finanzas de esta tarea</h3><p class="text-muted mb-0">Movimientos vinculados directamente a la tarea. Los totales incluyen solo los confirmados.</p></div>
+    <div class="d-flex gap-2"><a class="btn btn-sm btn-outline-success" href="{% url 'movimiento_ingreso_create' %}?tarea={{ task.pk }}">＋ Ingreso</a><a class="btn btn-sm btn-outline-danger" href="{% url 'movimiento_gasto_create' %}?tarea={{ task.pk }}">＋ Gasto</a></div>
+  </div>
+  <div class="d-flex flex-wrap gap-3 my-3"><span>Ingresos: <strong class="text-success">${{ ingresos|floatformat:2 }}</strong></span><span>Gastos: <strong class="text-danger">${{ gastos|floatformat:2 }}</strong></span><span>Balance: <strong>${{ balance|floatformat:2 }}</strong></span></div>
+  {% if movements %}<div class="table-wrap"><table class="table table-hover align-middle mb-0"><thead><tr><th>Fecha</th><th>Concepto</th><th>Tipo</th><th>Estado</th><th>Monto</th><th></th></tr></thead><tbody>{% for movement in movements %}<tr><td>{{ movement.fecha|date:"d/m/Y" }}</td><td>{{ movement.concepto }}</td><td>{{ movement.get_tipo_display }}</td><td>{{ movement.get_estado_display }}</td><td>${{ movement.monto|floatformat:2 }}</td><td><a href="{% url 'movimiento_update' movement.pk %}">Ver / editar</a></td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="text-muted mb-0">Aún no hay ingresos o gastos vinculados a esta tarea.</p>{% endif %}
+  {% if task.etiqueta_automatica_id %}<p class="small text-muted mt-3 mb-0">¿Buscas movimientos antiguos asociados por etiqueta? <a href="{% url 'movimiento_list' %}?tipo=gasto&amp;etiqueta={{ task.etiqueta_automatica_id }}">Ver gastos etiquetados</a> · <a href="{% url 'movimiento_list' %}?tipo=ingreso&amp;etiqueta={{ task.etiqueta_automatica_id }}">Ver ingresos etiquetados</a>.</p>{% endif %}
+</section>
+
 <section class="subtask-summary">
   <div class="subtask-stat"><small>Subtareas</small><strong>{{ subtask_total }}</strong></div>
   <div class="subtask-stat"><small>Finalizadas</small><strong data-subtask-done>{{ subtask_done }}</strong></div>

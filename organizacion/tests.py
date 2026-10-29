@@ -10,7 +10,7 @@ from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from core.models import Etiqueta, MovimientoFinanciero, Notificacion
+from core.models import Categoria, CuentaFinanciera, Etiqueta, MovimientoFinanciero, Notificacion
 from core.forms import MovimientoFinancieroForm
 from .forms import TareaForm
 from .models import Area, Proyecto, Recurrencia, Subtarea, Tarea
@@ -34,6 +34,67 @@ class OrganizationTests(TestCase):
         form = MovimientoFinancieroForm(user=self.other, tipo=MovimientoFinanciero.Tipo.GASTO)
         self.assertEqual(form.fields["etiquetas"].label, "Etiquetas")
         self.assertNotIn("proyecto", form.fields["etiquetas"].help_text.lower())
+        self.assertNotIn("tarea", form.fields)
+
+    def test_financial_only_user_cannot_prefill_or_submit_task(self):
+        task = Tarea.objects.create(usuario=self.user, titulo="Privada")
+        self.client.force_login(self.other)
+        url = reverse("movimiento_gasto_create") + f"?tarea={task.pk}"
+        response = self.client.get(url)
+        self.assertNotContains(response, 'name="tarea"')
+        form = MovimientoFinancieroForm(
+            data={"tarea": str(task.pk)}, user=self.other, tipo=MovimientoFinanciero.Tipo.GASTO
+        )
+        self.assertNotIn("tarea", form.fields)
+
+    def test_task_finances_only_include_explicit_confirmed_movements(self):
+        task = Tarea.objects.create(usuario=self.user, titulo="Compra")
+        other_task = Tarea.objects.create(usuario=self.user, titulo="Compra")
+        income = MovimientoFinanciero.objects.create(usuario=self.user, tarea=task, tipo="ingreso", estado="confirmado", monto="100.00", fecha=timezone.localdate(), concepto="Reembolso")
+        expense = MovimientoFinanciero.objects.create(usuario=self.user, tarea=task, tipo="gasto", estado="confirmado", monto="35.50", fecha=timezone.localdate(), concepto="Material")
+        MovimientoFinanciero.objects.create(usuario=self.user, tarea=task, tipo="gasto", estado="pendiente", monto="12.00", fecha=timezone.localdate(), concepto="Pendiente")
+        MovimientoFinanciero.objects.create(usuario=self.user, tarea=other_task, tipo="gasto", estado="confirmado", monto="80.00", fecha=timezone.localdate(), concepto="Otra tarea")
+        response = self.client.get(reverse("organizacion:tarea_detail", args=[task.pk]))
+        self.assertEqual(str(response.context["ingresos"]), "100.00")
+        self.assertEqual(str(response.context["gastos"]), "35.50")
+        self.assertEqual(str(response.context["balance"]), "64.50")
+        self.assertContains(response, "Pendiente")
+        self.assertNotContains(response, "Otra tarea")
+        self.assertContains(response, f"?tarea={task.pk}")
+
+    def test_task_selector_is_private_and_optional_for_organization_user(self):
+        own = Tarea.objects.create(usuario=self.user, titulo="Mía")
+        other = Tarea.objects.create(usuario=self.other, titulo="Ajena")
+        form = MovimientoFinancieroForm(user=self.user, tipo=MovimientoFinanciero.Tipo.INGRESO)
+        self.assertFalse(form.fields["tarea"].required)
+        self.assertIn(own, form.fields["tarea"].queryset)
+        self.assertNotIn(other, form.fields["tarea"].queryset)
+        response = self.client.get(reverse("movimiento_ingreso_create") + f"?tarea={own.pk}")
+        self.assertContains(response, f'<option value="{own.pk}" selected>')
+
+    def test_income_can_be_saved_with_task_and_finance_only_user_cannot_attach_one(self):
+        task = Tarea.objects.create(usuario=self.user, titulo="Servicio")
+        category = Categoria.objects.filter(usuario=self.user, tipo=Categoria.Tipo.FINANZAS).first()
+        account = CuentaFinanciera.objects.filter(usuario=self.user, activa=True).first()
+        data = {
+            "categoria": category.pk,
+            "cuenta": account.pk,
+            "concepto": "Cobro del servicio",
+            "monto": "42.00",
+            "fecha": timezone.localdate().isoformat(),
+            "tarea": task.pk,
+        }
+        response = self.client.post(reverse("movimiento_ingreso_create"), data)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(MovimientoFinanciero.objects.get(concepto="Cobro del servicio").tarea, task)
+
+        other_category = Categoria.objects.filter(usuario=self.other, tipo=Categoria.Tipo.FINANZAS).first()
+        other_account = CuentaFinanciera.objects.filter(usuario=self.other, activa=True).first()
+        self.client.force_login(self.other)
+        data.update(categoria=other_category.pk, cuenta=other_account.pk, concepto="Ingreso sin Organización")
+        response = self.client.post(reverse("movimiento_ingreso_create"), data)
+        self.assertEqual(response.status_code, 302)
+        self.assertIsNone(MovimientoFinanciero.objects.get(concepto="Ingreso sin Organización").tarea)
 
     def test_quick_capture_creates_private_inbox_task(self):
         response = self.client.post(reverse("organizacion:captura_rapida"), {"titulo": "Leer capítulo"})

@@ -211,6 +211,13 @@ def tarea_list(request):
 @organization_required
 def tarea_detail(request, pk):
     task = get_object_or_404(Tarea.objects.prefetch_related("subtareas", "etiquetas"), pk=pk, usuario=request.user)
+    movements = list(MovimientoFinanciero.objects.filter(
+        usuario=request.user,
+        tarea=task,
+    ).exclude(estado=MovimientoFinanciero.Estado.ELIMINADO).select_related("categoria", "cuenta").order_by("-fecha", "-pk"))
+    confirmed = [item for item in movements if item.estado == MovimientoFinanciero.Estado.CONFIRMADO]
+    ingresos = sum((item.monto for item in confirmed if item.tipo == MovimientoFinanciero.Tipo.INGRESO), 0)
+    gastos = sum((item.monto for item in confirmed if item.tipo == MovimientoFinanciero.Tipo.GASTO), 0)
     subtasks = list(task.subtareas.all())
     states = [Subtarea.Estado.BANDEJA, Subtarea.Estado.EN_PROGRESO, Subtarea.Estado.EN_ESPERA, Subtarea.Estado.COMPLETADA]
     subtask_columns = [{"key": key, "label": Subtarea.Estado(key).label, "items": [item for item in subtasks if item.estado == key]} for key in states]
@@ -222,6 +229,10 @@ def tarea_detail(request, pk):
         column["filter_url"] = f"{base_url}?{urlencode({'tab': column['key']})}"
     return render(request, "organizacion/tarea_detail.html", {
         "task": task, "subtask_form": SubtareaForm(),
+        "movements": movements,
+        "ingresos": ingresos,
+        "gastos": gastos,
+        "balance": ingresos - gastos,
         "subtask_columns": subtask_columns,
         "subtask_total": len([item for item in subtasks if item.estado != Subtarea.Estado.CANCELADA]),
         "subtask_done": len([item for item in subtasks if item.estado == Subtarea.Estado.COMPLETADA]),
