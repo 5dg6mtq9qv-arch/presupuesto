@@ -10,22 +10,23 @@
   .subtask-body{align-content:start;grid-auto-rows:max-content}.subtask-drag-handle{display:inline-flex;align-items:center;justify-content:center;min-width:36px;min-height:40px;cursor:grab;user-select:none}
   .mobile-drag-hint{display:none}
   @media(max-width:600px){.subtask-summary{gap:8px}.subtask-stat{padding:11px;min-width:0}.subtask-stat strong{font-size:20px}.subtask-board{grid-template-columns:repeat(4,84vw);gap:10px;max-width:100%;overscroll-behavior-x:contain}.subtask-column{min-width:0}.subtask-head{padding:12px}.subtask-body{min-height:200px;padding:9px}.subtask-add{flex-wrap:wrap}.subtask-add input{min-width:100%}.mobile-drag-hint{display:block;color:#64748b;font-size:13px;margin:0 0 8px}}
+  .subtask-mobile-view{display:none}.subtask-mobile-filters{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 12px}.subtask-mobile-filters button{flex:none;min-height:42px;padding:9px 13px;border:1px solid #dbe3ec;border-radius:999px;background:#fff;color:#475569;font-weight:600}.subtask-mobile-filters button[aria-pressed="true"]{background:#14a89a;border-color:#14a89a;color:#fff}.subtask-mobile-filters span{margin-left:4px;opacity:.8}.subtask-mobile-list{display:grid;gap:12px}.subtask-mobile-card{min-width:0;padding:16px;border:1px solid #e2e8f0;border-radius:15px;background:#fff;box-shadow:0 3px 12px rgba(15,23,42,.06)}.subtask-mobile-card strong{display:block;font-size:16px;overflow-wrap:anywhere}.subtask-mobile-card label{display:block;margin:14px 0 5px;font-size:12px;font-weight:600;color:#64748b}.subtask-mobile-card select{min-height:44px}.subtask-mobile-empty{padding:28px 16px;text-align:center;color:#64748b;background:#fff;border:1px dashed #cbd5e1;border-radius:14px}.subtask-mobile-feedback{min-height:20px;margin:4px 0;color:#b91c1c;font-size:13px}
+  @media(max-width:1000px), (pointer:coarse){.subtask-board,.mobile-drag-hint{display:none}.subtask-mobile-view{display:block}}
 </style>
 <div class="actions"><a class="btn btn-outline-secondary" href="{% url 'organizacion:tarea_list' %}">← Tablero de tareas</a><div class="d-flex gap-2"><a class="btn btn-primary" href="{% url 'organizacion:tarea_update' task.pk %}">Editar tarea</a><form method="post" action="{% url 'organizacion:tarea_delete' task.pk %}" onsubmit="return confirm('¿Eliminar esta tarea y sus subtareas?')">{% csrf_token %}<button class="btn btn-outline-danger">Eliminar</button></form></div></div>
 
 <div class="task-context">
-  <section class="panel"><div class="d-flex justify-content-between align-items-start gap-3"><div>{% for tag in task.etiquetas.all %}<span class="badge rounded-pill text-bg-info">{{ tag.nombre }}</span>{% endfor %}<h2 class="mt-2">{{ task.titulo }}</h2>{% if task.descripcion %}<p class="muted mb-0">{{ task.descripcion|linebreaksbr }}</p>{% endif %}</div><span class="badge text-bg-primary">{{ task.get_estado_display }}</span></div></section>
+  <section class="panel"><div class="d-flex justify-content-between align-items-start gap-3"><div>{% for tag in task.etiquetas.all %}<span class="badge rounded-pill text-bg-info">{{ tag.nombre }}</span>{% endfor %}<h2 class="mt-2">{{ task.titulo }}</h2>{% if task.descripcion %}<p class="muted mb-0">{{ task.descripcion|linebreaksbr }}</p>{% endif %}</div><span class="badge text-bg-primary">{{ task.get_estado_display }}</span></div>{% if task.inicio_planificado or task.fecha_planificada or task.fecha_limite %}<div class="d-flex flex-wrap gap-2 mt-3"><a class="btn btn-outline-primary" href="{% url 'organizacion:tarea_google_calendario' task.pk %}">Google Calendar</a><a class="btn btn-outline-secondary" href="{% url 'organizacion:tarea_calendario' task.pk %}">Descargar .ics</a></div>{% else %}<a class="btn btn-outline-primary mt-3" href="{% url 'organizacion:tarea_update' task.pk %}">Añadir fecha para usar el calendario</a>{% endif %}<form method="post" action="{% url 'organizacion:tarea_google_tasks' task.pk %}" class="mt-2">{% csrf_token %}<button class="btn btn-outline-secondary" type="submit">Agregar a Google Tasks</button></form><small class="text-muted d-block mt-1">En Tasks se guarda la fecha; las horas quedan en las notas.</small></section>
   <aside class="panel"><strong>Planificación</strong><div class="small text-muted mt-2">Inicio: {{ task.inicio_planificado|default:"Sin fecha" }}</div><div class="small text-muted">Fin: {{ task.fin_planificado|default:"Sin fecha" }}</div></aside>
 </div>
 
 <section class="subtask-summary">
   <div class="subtask-stat"><small>Subtareas</small><strong>{{ subtask_total }}</strong></div>
-  <div class="subtask-stat"><small>Finalizadas</small><strong>{{ subtask_done }}</strong></div>
-  <div class="subtask-stat"><small>Avance</small><strong>{{ task.progreso }}%</strong></div>
-  <div class="subtask-stat"><small>Estado de la tarea</small><strong style="font-size:18px">{{ task.get_estado_display }}</strong></div>
+  <div class="subtask-stat"><small>Finalizadas</small><strong data-subtask-done>{{ subtask_done }}</strong></div>
+  <div class="subtask-stat"><small>Avance</small><strong data-subtask-progress>{{ task.progreso }}%</strong></div>
+  <div class="subtask-stat"><small>Estado de la tarea</small><strong data-parent-state style="font-size:18px">{{ task.get_estado_display }}</strong></div>
 </section>
 
-<p class="mobile-drag-hint">Mantén el dedo en ⋮⋮ y mueve la subtarea hacia otra columna.</p>
 <div class="subtask-board" data-subtask-board>
   {% for column in subtask_columns %}
     <section class="subtask-column" data-state="{{ column.key }}">
@@ -40,6 +41,26 @@
     </section>
   {% endfor %}
 </div>
+<section class="subtask-mobile-view" data-mobile-subtasks aria-label="Subtareas por estado">
+  <div class="subtask-mobile-filters" role="group" aria-label="Filtrar subtareas por estado">
+    <button type="button" data-subtask-filter="all" aria-pressed="true">Todas <span data-subtask-count>{{ subtask_total }}</span></button>
+    {% for column in subtask_columns %}<button type="button" data-subtask-filter="{{ column.key }}" aria-pressed="false">{{ column.label }} <span data-subtask-count>{{ column.items|length }}</span></button>{% endfor %}
+  </div>
+  <p class="subtask-mobile-feedback" data-subtask-feedback role="status" aria-live="polite"></p>
+  <div class="subtask-mobile-list">
+    {% for column in subtask_columns %}{% for item in column.items %}
+      <article class="subtask-mobile-card" data-mobile-subtask data-state="{{ item.estado }}" data-url="{% url 'organizacion:subtarea_estado' item.pk %}">
+        <span class="badge text-bg-light border" data-subtask-state-label>{{ column.label }}</span>
+        <strong class="mt-2">{{ item.titulo }}</strong>
+        <label for="mobile-subtask-state-{{ item.pk }}">Mover a</label>
+        <select class="form-select" id="mobile-subtask-state-{{ item.pk }}" data-subtask-state-select>
+          {% for choice in subtask_columns %}<option value="{{ choice.key }}"{% if item.estado == choice.key %} selected{% endif %}>{{ choice.label }}</option>{% endfor %}
+        </select>
+      </article>
+    {% endfor %}{% endfor %}
+    <div class="subtask-mobile-empty" data-subtask-empty hidden>No hay subtareas en este estado.</div>
+  </div>
+</section>
 
 <form method="post" action="{% url 'organizacion:subtarea_create' task.pk %}" class="panel subtask-add">{% csrf_token %}{{ subtask_form.titulo }}<button class="btn btn-primary"><span class="material-symbols-outlined">add</span>Agregar subtarea</button></form>
 
@@ -73,6 +94,64 @@
     col.addEventListener('drop',e=>{e.preventDefault();col.classList.remove('is-over');moveCard(dragged,col);});
   });
   enableTouchKanban({board:document.querySelector('[data-subtask-board]'),cardSelector:'.subtask-card',columnSelector:'.subtask-column',handleSelector:'.subtask-drag-handle',onDrop:moveCard});
+  const mobile = document.querySelector('[data-mobile-subtasks]');
+  const cards = [...mobile.querySelectorAll('[data-mobile-subtask]')];
+  const filters = [...mobile.querySelectorAll('[data-subtask-filter]')];
+  const feedback = mobile.querySelector('[data-subtask-feedback]');
+  let activeFilter = 'all';
+  function refreshMobile() {
+    const counts = {all: cards.length};
+    cards.forEach(card => {counts[card.dataset.state] = (counts[card.dataset.state] || 0) + 1;});
+    let visible = 0;
+    cards.forEach(card => {
+      card.hidden = activeFilter !== 'all' && card.dataset.state !== activeFilter;
+      if (!card.hidden) visible++;
+    });
+    filters.forEach(button => {
+      button.setAttribute('aria-pressed', String(button.dataset.subtaskFilter === activeFilter));
+      button.querySelector('[data-subtask-count]').textContent = counts[button.dataset.subtaskFilter] || 0;
+    });
+    mobile.querySelector('[data-subtask-empty]').hidden = visible > 0;
+    document.querySelector('[data-subtask-done]').textContent = counts.completada || 0;
+    document.querySelector('[data-subtask-progress]').textContent = `${counts.all ? Math.round((counts.completada || 0) * 100 / counts.all) : 0}%`;
+  }
+  filters.forEach(button => button.addEventListener('click', () => {
+    activeFilter = button.dataset.subtaskFilter;
+    feedback.textContent = '';
+    refreshMobile();
+  }));
+  mobile.querySelectorAll('[data-subtask-state-select]').forEach(select => select.addEventListener('change', async () => {
+    const card = select.closest('[data-mobile-subtask]');
+    const oldState = card.dataset.state;
+    if (select.value === oldState) return;
+    select.disabled = true;
+    feedback.textContent = '';
+    try {
+      const response = await fetch(card.dataset.url, {method:'POST',headers:{'X-CSRFToken':token,'X-Requested-With':'XMLHttpRequest'},body:new URLSearchParams({estado:select.value})});
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'No se pudo mover la subtarea.');
+      card.dataset.state = result.estado;
+      card.querySelector('[data-subtask-state-label]').textContent = select.selectedOptions[0].textContent;
+      const desktopCard = [...document.querySelectorAll('.subtask-card')].find(item => item.dataset.url === card.dataset.url);
+      if (desktopCard) {
+        document.querySelector(`.subtask-column[data-state="${result.estado}"] .subtask-body`).appendChild(desktopCard);
+        desktopCard.dataset.state = result.estado;
+        refresh();
+      }
+      const label = filters.find(button => button.dataset.subtaskFilter === result.task_estado)?.firstChild.textContent.trim();
+      if (label) {
+        document.querySelector('[data-parent-state]').textContent = label;
+        document.querySelector('.task-context .badge.text-bg-primary').textContent = label;
+      }
+      refreshMobile();
+    } catch (error) {
+      select.value = oldState;
+      feedback.textContent = error.message;
+    } finally {
+      select.disabled = false;
+    }
+  }));
+  refreshMobile();
 })();
 </script>
 {% endblock %}

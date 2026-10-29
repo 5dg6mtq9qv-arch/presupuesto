@@ -11,4 +11,5 @@
   </div>
   {% if task.subtareas.all %}<div class="progress mt-2" style="height:6px"><div class="progress-bar" style="width:{{ task.progreso }}%"></div></div>{% endif %}
   {% if task.subtareas.all %}<a class="btn btn-sm btn-outline-primary mt-2 w-100" href="{% url 'organizacion:tarea_detail' task.pk %}"><span class="material-symbols-outlined" style="font-size:16px">account_tree</span> Abrir tablero de subtareas</a><div class="small text-muted mt-2">{{ task.subtareas.all|length }} subtareas · {{ task.progreso }}% completado</div>{% endif %}
+  {% if kanban_mode %}{% if task.inicio_planificado or task.fecha_planificada or task.fecha_limite %}<a class="btn btn-sm btn-outline-secondary mt-2 w-100" href="{% url 'organizacion:tarea_detail' task.pk %}"><span class="material-symbols-outlined" style="font-size:16px">event</span> Opciones de calendario</a>{% endif %}{% endif %}
 </article>

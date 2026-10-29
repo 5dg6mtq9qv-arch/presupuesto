@@ -7,18 +7,48 @@
   .org-stats{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:14px;margin-bottom:18px}.org-stat{padding:18px;border-radius:16px;background:linear-gradient(145deg,#fff,#f8fafc);border:1px solid #e2e8f0}.org-stat small{display:block;color:#64748b}.org-stat strong{font-size:28px}.org-progress-wrap{display:flex;gap:16px;align-items:center}.org-donut{--p:0;width:64px;height:64px;border-radius:50%;background:conic-gradient(#14a89a calc(var(--p)*1%),#e2e8f0 0);display:grid;place-items:center}.org-donut:after{content:attr(data-value);width:48px;height:48px;border-radius:50%;background:white;display:grid;place-items:center;font-weight:700}.org-state-bars{display:flex;gap:4px;height:8px;margin-top:10px}.org-state-bars span{border-radius:99px;min-width:3px}.org-kanban{display:grid;grid-template-columns:repeat(4,minmax(270px,1fr));gap:14px;overflow-x:auto;padding:2px 2px 18px}.org-kanban-column{min-width:270px;padding:0;background:#f8fafc;border:1px solid #e2e8f0;border-radius:18px;overflow:hidden;transition:.2s}.org-kanban-column.is-over{border-color:#14a89a;box-shadow:0 0 0 3px rgba(20,168,154,.14);transform:translateY(-2px)}.org-column-head{padding:16px;border-bottom:1px solid #e2e8f0;background:white;display:flex;justify-content:space-between}.org-column-body{display:grid;gap:11px;padding:12px;min-height:280px}.org-task-card{padding:14px;border:1px solid #e2e8f0;border-left:4px solid #94a3b8;border-radius:13px;background:white;box-shadow:0 3px 10px rgba(15,23,42,.05);cursor:grab;transition:.18s}.org-task-card:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(15,23,42,.1)}.is-dragging{opacity:.45!important;transform:rotate(1.5deg)!important}.priority-alta{border-left-color:#f59e0b}.priority-urgente{border-left-color:#dc2626}.org-drag-handle{color:#94a3b8}.org-empty{padding:24px 8px;text-align:center;color:#94a3b8;border:1px dashed #cbd5e1;border-radius:12px}.org-chart-legend{display:grid;gap:5px;margin-top:8px}.org-chart-row{display:grid;grid-template-columns:100px 1fr 34px;align-items:center;gap:8px;font-size:12px}.org-chart-track{height:7px;background:#e2e8f0;border-radius:99px;overflow:hidden}.org-chart-track i{display:block;height:100%;background:#14a89a;border-radius:99px}@media(max-width:900px){.org-stats{grid-template-columns:repeat(2,1fr)}.org-kanban{grid-template-columns:repeat(4,86vw)}}
   .org-column-body{align-content:start;grid-auto-rows:max-content}.org-drag-handle{display:inline-flex;align-items:center;justify-content:center;min-width:36px;min-height:40px;cursor:grab;user-select:none}.mobile-drag-hint{display:none}
   @media(max-width:600px){.org-stats{gap:8px}.org-stat{padding:12px;min-width:0}.org-stat strong{font-size:22px}.org-chart-row{grid-template-columns:72px 1fr 24px;gap:4px}.org-kanban{grid-template-columns:repeat(4,84vw);gap:10px;max-width:100%;overscroll-behavior-x:contain}.org-kanban-column{min-width:0}.org-column-head{padding:13px}.org-column-body{min-height:220px;padding:10px}.org-task-card{padding:12px}.mobile-drag-hint{display:block;color:#64748b;font-size:13px;margin:0 0 8px}}
+  .org-mobile-view{display:none}.org-mobile-filters{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 12px;scrollbar-width:thin}.org-mobile-filters button{flex:none;border:1px solid #dbe3ec;border-radius:999px;background:#fff;color:#475569;padding:9px 13px;min-height:42px;font-weight:600}.org-mobile-filters button[aria-pressed="true"]{background:#14a89a;color:#fff;border-color:#14a89a}.org-mobile-filters span{margin-left:4px;opacity:.8}.org-mobile-list{display:grid;gap:12px}.org-mobile-task{min-width:0;background:#fff;border:1px solid #e2e8f0;border-left:4px solid #94a3b8;border-radius:16px;padding:16px;box-shadow:0 3px 12px rgba(15,23,42,.06)}.org-mobile-task.priority-alta{border-left-color:#f59e0b}.org-mobile-task.priority-urgente{border-left-color:#dc2626}.org-mobile-task-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}.org-mobile-task-title{display:block;font-size:16px;font-weight:700;line-height:1.35;overflow-wrap:anywhere}.org-mobile-task-meta{color:#64748b;font-size:12px;margin-top:6px}.org-mobile-task label{display:block;font-size:12px;color:#64748b;font-weight:600;margin:14px 0 5px}.org-mobile-task select{min-height:44px}.org-mobile-empty{padding:28px 16px;text-align:center;color:#64748b;background:#fff;border:1px dashed #cbd5e1;border-radius:14px}.org-mobile-feedback{min-height:20px;color:#b91c1c;font-size:13px;margin:4px 0}
+  @media(max-width:1000px), (pointer:coarse){.org-kanban,.mobile-drag-hint{display:none}.org-mobile-view{display:block}}
 </style>
 <div class="actions"><form method="get" class="d-flex gap-2 flex-wrap"><input class="form-control" name="q" value="{{ q }}" placeholder="Buscar"><select class="form-select" name="etiqueta"><option value="">Todas las etiquetas</option>{% for tag in tags %}<option value="{{ tag.pk }}"{% if tag_filter == tag.pk|stringformat:'s' %} selected{% endif %}>{{ tag.nombre }}</option>{% endfor %}</select><button class="btn btn-outline-primary">Filtrar</button></form><a class="btn btn-primary" href="{% url 'organizacion:tarea_create' %}"><span class="material-symbols-outlined">add</span>Nueva tarea</a></div>
 <section class="org-stats">
   <div class="org-stat"><small>Total visible</small><strong>{{ total_tasks }}</strong><div class="org-state-bars">{% for column in columns %}<span title="{{ column.label }}: {{ column.count }}" style="width:{{ column.percent }}%;background:{% cycle '#64748b' '#2563eb' '#f59e0b' '#8b5cf6' '#14a89a' %}"></span>{% endfor %}</div></div>
-  <div class="org-stat"><small>Finalizadas</small><strong>{{ completed_tasks }}</strong><div class="small text-success">Trabajo completado</div></div>
+  <div class="org-stat"><small>Finalizadas</small><strong data-completed-count>{{ completed_tasks }}</strong><div class="small text-success">Trabajo completado</div></div>
   <div class="org-stat"><div class="org-progress-wrap"><div class="org-donut" style="--p:{{ progress_percent }}" data-value="{{ progress_percent }}%"></div><div><small>Avance general</small><strong>{{ progress_percent }}%</strong></div></div></div>
   <div class="org-stat"><small>Distribución por estado</small><div class="org-chart-legend">{% for column in columns %}<div class="org-chart-row"><span>{{ column.label }}</span><span class="org-chart-track"><i style="width:{{ column.percent }}%"></i></span><b>{{ column.count }}</b></div>{% endfor %}</div></div>
 </section>
-<p class="mobile-drag-hint">Mantén el dedo en ⋮⋮ y mueve la tarea hacia otra columna. Desliza el tablero para ver más estados.</p>
 <div class="org-kanban" data-kanban>
 {% for column in columns %}<section class="org-kanban-column" data-state="{{ column.key }}"><header class="org-column-head"><strong>{{ column.label }}</strong><span class="badge text-bg-light border" data-count>{{ column.count }}</span></header><div class="org-column-body">{% for task in column.tasks %}<div class="org-card-wrap" draggable="{% if task.subtareas.all %}false{% else %}true{% endif %}" data-kind="task" data-task-id="{{ task.pk }}" data-state="{{ task.estado }}" data-url="{% url 'organizacion:tarea_estado' task.pk %}">{% include "organizacion/_task_card.html" %}{% if task.subtareas.all %}<div class="small text-center text-muted mt-1">Estado automático por subtareas</div>{% endif %}</div>{% empty %}<div class="org-empty">Suelta una tarea aquí</div>{% endfor %}</div></section>{% endfor %}
 </div>
+<section class="org-mobile-view" data-mobile-tasks aria-label="Tareas por estado">
+  <div class="org-mobile-filters" role="group" aria-label="Filtrar tareas por estado">
+    <button type="button" data-mobile-filter="all" aria-pressed="true">Todas <span data-mobile-count>{{ total_tasks }}</span></button>
+    {% for column in columns %}<button type="button" data-mobile-filter="{{ column.key }}" aria-pressed="false">{{ column.label }} <span data-mobile-count>{{ column.count }}</span></button>{% endfor %}
+  </div>
+  <p class="org-mobile-feedback" data-mobile-feedback role="status" aria-live="polite"></p>
+  <div class="org-mobile-list">
+    {% for column in columns %}{% for task in column.tasks %}
+      <article class="org-mobile-task priority-{{ task.prioridad }}" data-mobile-task data-task-id="{{ task.pk }}" data-state="{{ task.estado }}" data-url="{% url 'organizacion:tarea_estado' task.pk %}">
+        <div class="org-mobile-task-head"><span class="badge text-bg-light border" data-mobile-state-label>{{ column.label }}</span><a href="{% url 'organizacion:tarea_detail' task.pk %}" aria-label="Abrir {{ task.titulo }}"><span class="material-symbols-outlined">chevron_right</span></a></div>
+        <a class="org-mobile-task-title" href="{% url 'organizacion:tarea_detail' task.pk %}">{{ task.titulo }}</a>
+        <div class="org-mobile-task-meta">{{ task.get_prioridad_display }}{% if task.fecha_limite %} · Vence {{ task.fecha_limite|date:"d/m H:i" }}{% endif %}</div>
+        {% if task.subtareas.all %}
+          <div class="small text-muted mt-3">Estado automático según sus subtareas · {{ task.progreso }}% completado</div>
+          <a class="btn btn-outline-primary btn-sm mt-2" href="{% url 'organizacion:tarea_detail' task.pk %}">Abrir subtareas</a>
+        {% else %}
+          <label for="mobile-task-state-{{ task.pk }}">Mover a</label>
+          <select class="form-select" id="mobile-task-state-{{ task.pk }}" data-mobile-state-select>
+            {% for choice in columns %}<option value="{{ choice.key }}"{% if task.estado == choice.key %} selected{% endif %}>{{ choice.label }}</option>{% endfor %}
+          </select>
+        {% endif %}
+        {% if task.inicio_planificado or task.fecha_planificada or task.fecha_limite %}<div class="d-flex flex-wrap gap-2 mt-3"><a class="btn btn-outline-primary btn-sm" href="{% url 'organizacion:tarea_google_calendario' task.pk %}">Google Calendar</a><a class="btn btn-outline-secondary btn-sm" href="{% url 'organizacion:tarea_calendario' task.pk %}">Descargar .ics</a></div>{% else %}<a class="small d-block mt-3" href="{% url 'organizacion:tarea_update' task.pk %}">Añadir fecha para usar el calendario</a>{% endif %}
+        <form method="post" action="{% url 'organizacion:tarea_google_tasks' task.pk %}" class="mt-2">{% csrf_token %}<button class="btn btn-outline-secondary btn-sm" type="submit">Agregar a Google Tasks</button></form>
+        <small class="text-muted d-block mt-1">En Tasks se guarda la fecha; las horas quedan en las notas.</small>
+      </article>
+    {% endfor %}{% endfor %}
+    <div class="org-mobile-empty" data-mobile-empty hidden>No hay tareas en este estado.</div>
+  </div>
+</section>
 <script src="{% static 'core/js/touch_kanban.js' %}"></script>
 <script>
 (() => {
@@ -54,6 +84,75 @@
     col.addEventListener('drop', e => {e.preventDefault();col.classList.remove('is-over');moveCard(dragged,col);});
   });
   enableTouchKanban({board:document.querySelector('[data-kanban]'),cardSelector:'.org-card-wrap[draggable="true"]',columnSelector:'.org-kanban-column',handleSelector:'.org-drag-handle',onDrop:moveCard});
+  const mobile = document.querySelector('[data-mobile-tasks]');
+  const mobileCards = [...mobile.querySelectorAll('[data-mobile-task]')];
+  const filters = [...mobile.querySelectorAll('[data-mobile-filter]')];
+  const feedback = mobile.querySelector('[data-mobile-feedback]');
+  let activeFilter = 'all';
+  function refreshMobile() {
+    const counts = {all: mobileCards.length};
+    mobileCards.forEach(card => {counts[card.dataset.state] = (counts[card.dataset.state] || 0) + 1;});
+    let visible = 0;
+    mobileCards.forEach(card => {
+      card.hidden = activeFilter !== 'all' && card.dataset.state !== activeFilter;
+      if (!card.hidden) visible++;
+    });
+    filters.forEach(button => {
+      button.setAttribute('aria-pressed', String(button.dataset.mobileFilter === activeFilter));
+      button.querySelector('[data-mobile-count]').textContent = counts[button.dataset.mobileFilter] || 0;
+    });
+    mobile.querySelector('[data-mobile-empty]').hidden = visible > 0;
+    document.querySelector('[data-completed-count]').textContent = counts.completada || 0;
+    const percent = counts.all ? Math.round((counts.completada || 0) * 100 / counts.all) : 0;
+    const donut = document.querySelector('.org-donut');
+    donut.style.setProperty('--p', percent);
+    donut.dataset.value = `${percent}%`;
+    document.querySelector('.org-progress-wrap strong').textContent = `${percent}%`;
+    document.querySelectorAll('.org-chart-row').forEach((row, index) => {
+      const state = filters[index + 1].dataset.mobileFilter;
+      const count = counts[state] || 0;
+      const share = counts.all ? Math.round(count * 100 / counts.all) : 0;
+      row.querySelector('b').textContent = count;
+      row.querySelector('i').style.width = `${share}%`;
+      const bar = document.querySelectorAll('.org-state-bars span')[index];
+      if (bar) {
+        bar.style.width = `${share}%`;
+        bar.title = `${filters[index + 1].firstChild.textContent.trim()}: ${count}`;
+      }
+    });
+  }
+  filters.forEach(button => button.addEventListener('click', () => {
+    activeFilter = button.dataset.mobileFilter;
+    feedback.textContent = '';
+    refreshMobile();
+  }));
+  mobile.querySelectorAll('[data-mobile-state-select]').forEach(select => select.addEventListener('change', async () => {
+    const card = select.closest('[data-mobile-task]');
+    const oldState = card.dataset.state;
+    if (select.value === oldState) return;
+    select.disabled = true;
+    feedback.textContent = '';
+    try {
+      const response = await fetch(card.dataset.url, {method:'POST',headers:{'X-CSRFToken':token,'X-Requested-With':'XMLHttpRequest'},body:new URLSearchParams({estado:select.value})});
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'No se pudo mover la tarea.');
+      card.dataset.state = result.estado;
+      card.querySelector('[data-mobile-state-label]').textContent = select.selectedOptions[0].textContent;
+      const desktopCard = document.querySelector(`.org-card-wrap[data-task-id="${card.dataset.taskId}"]`);
+      if (desktopCard) {
+        document.querySelector(`.org-kanban-column[data-state="${result.estado}"] .org-column-body`).appendChild(desktopCard);
+        desktopCard.dataset.state = result.estado;
+        refresh();
+      }
+      refreshMobile();
+    } catch (error) {
+      select.value = oldState;
+      feedback.textContent = error.message;
+    } finally {
+      select.disabled = false;
+    }
+  }));
+  refreshMobile();
 })();
 </script>
 {% endblock %}

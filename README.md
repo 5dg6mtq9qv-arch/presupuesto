@@ -30,6 +30,8 @@ La interfaz está en español, usa la zona horaria `America/Guayaquil` y puede i
   descripción, inicio y fin.
 - El calendario representa cada tarea como un evento continuo desde inicio
   hasta fin; la línea inferior muestra su duración y porcentaje de avance.
+- En móvil y tablet, las tareas y subtareas usan una lista con filtro y cambio de
+  estado mediante selector; el Kanban con arrastre queda para computadora.
 - Registro de auditoría, consumo de IA y estimación orientativa de costos.
 
 ## Documentación
@@ -76,6 +78,22 @@ Abre `http://127.0.0.1:8000/`. También existe `/registro/` para crear una cuent
 .venv/bin/python manage.py makemigrations --check --dry-run
 .venv/bin/python manage.py test
 ```
+
+## Calendarios del teléfono y Google Tasks
+
+En el detalle de una tarea con fecha se puede abrir una propuesta de evento en
+Google Calendar o descargar un archivo `.ics` para importarlo en otro calendario.
+Ambas opciones usan el inicio y el fin planificados. Son exportaciones puntuales:
+editar la tarea después no modifica automáticamente el evento ya agregado.
+
+Para habilitar **Agregar a Google Tasks**, activa la Google Tasks API en Google
+Cloud, crea un cliente OAuth de tipo aplicación web y registra
+`https://presupuesto.felixiot.site/organizacion/google-tasks/callback/` como URI
+de redirección autorizada (usa tu propio dominio si corresponde). Configura
+`GOOGLE_TASKS_CLIENT_ID` y `GOOGLE_TASKS_CLIENT_SECRET` en `.env`. Cada envío
+pide autorización a la cuenta Google del usuario y crea una tarea en su lista
+predeterminada; el servidor no guarda los tokens. Google Tasks solo acepta la
+fecha mediante su API, así que las horas de inicio y fin se copian a las notas.
 
 ## Tecnologías
 

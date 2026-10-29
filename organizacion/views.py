@@ -1,11 +1,19 @@
 import calendar as month_calendar
-from datetime import date, datetime, timedelta
+import json
+import secrets
+import time
+from datetime import date, datetime, timedelta, timezone as datetime_timezone
+from urllib.parse import urlencode
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
+from django.conf import settings
 from django.contrib import messages
 from django.db import transaction
 from django.db.models import Count, Q, Sum
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.views.decorators.http import require_POST
@@ -191,6 +199,154 @@ def tarea_detail(request, pk):
         "subtask_total": len([item for item in subtasks if item.estado != Subtarea.Estado.CANCELADA]),
         "subtask_done": len([item for item in subtasks if item.estado == Subtarea.Estado.COMPLETADA]),
     })
+
+
+def _ical_escape(value):
+    return str(value).replace("\\", "\\\\").replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n").replace(";", "\\;").replace(",", "\\,")
+
+
+def _ical_fold(line):
+    parts = []
+    current = ""
+    for char in line:
+        if len((current + char).encode("utf-8")) > 75:
+            parts.append(current)
+            current = " " + char
+        else:
+            current += char
+    parts.append(current)
+    return "\r\n".join(parts)
+
+
+def _calendar_span(task):
+    if task.inicio_planificado:
+        start = task.inicio_planificado
+        end = task.fin_planificado if task.inicio_planificado and task.fin_planificado and task.fin_planificado > start else start + timedelta(minutes=task.duracion_estimada_minutos or 60)
+        if timezone.is_naive(start):
+            start = timezone.make_aware(start)
+        if timezone.is_naive(end):
+            end = timezone.make_aware(end)
+        return start.astimezone(datetime_timezone.utc), end.astimezone(datetime_timezone.utc), False
+    if task.fecha_planificada:
+        return task.fecha_planificada, task.fecha_planificada + timedelta(days=1), True
+    if task.fecha_limite:
+        start = task.fecha_limite
+        if timezone.is_naive(start):
+            start = timezone.make_aware(start)
+        return start.astimezone(datetime_timezone.utc), (start + timedelta(minutes=task.duracion_estimada_minutos or 60)).astimezone(datetime_timezone.utc), False
+    return None
+
+
+@organization_required
+def tarea_calendario(request, pk):
+    task = get_object_or_404(Tarea, pk=pk, usuario=request.user)
+    span = _calendar_span(task)
+    if not span:
+        return HttpResponse("Esta tarea necesita una fecha para agregarla al calendario.", status=400)
+    start, end, all_day = span
+    lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Finanzas Claras//Tareas//ES", "CALSCALE:GREGORIAN", "METHOD:PUBLISH", "BEGIN:VEVENT"]
+    if all_day:
+        lines.extend([f"DTSTART;VALUE=DATE:{start:%Y%m%d}", f"DTEND;VALUE=DATE:{end:%Y%m%d}"])
+    else:
+        lines.extend([f"DTSTART:{start:%Y%m%dT%H%M%SZ}", f"DTEND:{end:%Y%m%dT%H%M%SZ}"])
+    lines.extend([
+        f"UID:tarea-{task.pk}@finanzasclaras.local",
+        f"DTSTAMP:{timezone.now().astimezone(datetime_timezone.utc):%Y%m%dT%H%M%SZ}",
+        f"SUMMARY:{_ical_escape(task.titulo)}",
+    ])
+    if task.descripcion:
+        lines.append(f"DESCRIPTION:{_ical_escape(task.descripcion)}")
+    lines.extend(["END:VEVENT", "END:VCALENDAR"])
+    response = HttpResponse("\r\n".join(_ical_fold(line) for line in lines) + "\r\n", content_type="text/calendar; charset=utf-8")
+    response["Content-Disposition"] = f'attachment; filename="tarea-{task.pk}.ics"'
+    response["Cache-Control"] = "private, no-store"
+    return response
+
+
+@organization_required
+def tarea_google_calendario(request, pk):
+    task = get_object_or_404(Tarea, pk=pk, usuario=request.user)
+    span = _calendar_span(task)
+    if not span:
+        return HttpResponse("Esta tarea necesita una fecha para agregarla al calendario.", status=400)
+    start, end, all_day = span
+    dates = f"{start:%Y%m%d}/{end:%Y%m%d}" if all_day else f"{start:%Y%m%dT%H%M%SZ}/{end:%Y%m%dT%H%M%SZ}"
+    url = "https://calendar.google.com/calendar/r/eventedit?" + urlencode({"action": "TEMPLATE", "dates": dates, "text": task.titulo, "details": task.descripcion})
+    return redirect(url)
+
+
+@organization_required
+@require_POST
+def tarea_google_tasks(request, pk):
+    get_object_or_404(Tarea, pk=pk, usuario=request.user)
+    if not settings.GOOGLE_TASKS_CLIENT_ID or not settings.GOOGLE_TASKS_CLIENT_SECRET:
+        messages.error(request, "Google Tasks aún no está configurado en esta instalación.")
+        return redirect("organizacion:tarea_detail", pk=pk)
+    state = secrets.token_urlsafe(32)
+    request.session["google_tasks_oauth"] = {"state": state, "task_pk": pk, "created": time.time()}
+    url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode({
+        "client_id": settings.GOOGLE_TASKS_CLIENT_ID,
+        "redirect_uri": request.build_absolute_uri(reverse("organizacion:google_tasks_callback")),
+        "response_type": "code",
+        "scope": "https://www.googleapis.com/auth/tasks",
+        "access_type": "online",
+        "state": state,
+    })
+    return redirect(url)
+
+
+@organization_required
+def google_tasks_callback(request):
+    pending = request.session.pop("google_tasks_oauth", None)
+    if not pending or not secrets.compare_digest(request.GET.get("state", ""), pending["state"]) or time.time() - pending["created"] > 600:
+        return HttpResponse("La autorización de Google Tasks ha caducado. Vuelve a intentarlo.", status=400)
+    task = get_object_or_404(Tarea, pk=pending["task_pk"], usuario=request.user)
+    if request.GET.get("error") or not request.GET.get("code"):
+        messages.error(request, "No se autorizó el envío a Google Tasks.")
+        return redirect("organizacion:tarea_detail", pk=task.pk)
+    try:
+        token_request = Request(
+            "https://oauth2.googleapis.com/token",
+            data=urlencode({
+                "code": request.GET["code"],
+                "client_id": settings.GOOGLE_TASKS_CLIENT_ID,
+                "client_secret": settings.GOOGLE_TASKS_CLIENT_SECRET,
+                "redirect_uri": request.build_absolute_uri(reverse("organizacion:google_tasks_callback")),
+                "grant_type": "authorization_code",
+            }).encode("utf-8"),
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        with urlopen(token_request, timeout=12) as response:
+            access_token = json.load(response)["access_token"]
+        notes = task.descripcion.strip()
+        if task.inicio_planificado:
+            notes += f"\nInicio: {timezone.localtime(task.inicio_planificado):%d/%m/%Y %H:%M}"
+        if task.fin_planificado:
+            notes += f"\nFin: {timezone.localtime(task.fin_planificado):%d/%m/%Y %H:%M}"
+        body = {"title": task.titulo, "notes": notes.strip()[:8192]}
+        if task.inicio_planificado:
+            due_date = timezone.localtime(task.inicio_planificado).date()
+        elif task.fecha_planificada:
+            due_date = task.fecha_planificada
+        elif task.fecha_limite:
+            due_date = timezone.localtime(task.fecha_limite).date()
+        else:
+            due_date = None
+        if due_date:
+            body["due"] = f"{due_date:%Y-%m-%d}T00:00:00.000Z"
+        api_request = Request(
+            "https://tasks.googleapis.com/tasks/v1/lists/@default/tasks",
+            data=json.dumps(body).encode("utf-8"),
+            headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json; charset=utf-8"},
+        )
+        with urlopen(api_request, timeout=12) as response:
+            if response.status not in (200, 201):
+                raise ValueError("Google Tasks no confirmó la creación.")
+    except (HTTPError, URLError, ValueError, KeyError, json.JSONDecodeError):
+        messages.error(request, "No se pudo agregar la tarea a Google Tasks. Inténtalo de nuevo.")
+    else:
+        messages.success(request, "Tarea agregada a Google Tasks. Las horas de inicio y fin se incluyeron en la descripción.")
+    return redirect("organizacion:tarea_detail", pk=task.pk)
 
 
 @organization_required

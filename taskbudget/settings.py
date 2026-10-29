@@ -88,6 +88,8 @@ EMAIL_CONFIG_ENCRYPTION_KEY = os.getenv("EMAIL_CONFIG_ENCRYPTION_KEY", "").strip
 # Optional independent key for Telegram bot tokens stored through the system panel.
 # When omitted, DJANGO_SECRET_KEY is used as the encryption root.
 TELEGRAM_CONFIG_ENCRYPTION_KEY = os.getenv("TELEGRAM_CONFIG_ENCRYPTION_KEY", "").strip()
+GOOGLE_TASKS_CLIENT_ID = os.getenv("GOOGLE_TASKS_CLIENT_ID", "").strip()
+GOOGLE_TASKS_CLIENT_SECRET = os.getenv("GOOGLE_TASKS_CLIENT_SECRET", "").strip()
 
 
 # Application definition
