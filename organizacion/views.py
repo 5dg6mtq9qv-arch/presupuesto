@@ -211,10 +211,13 @@ def tarea_list(request):
 @organization_required
 def tarea_detail(request, pk):
     task = get_object_or_404(Tarea.objects.prefetch_related("subtareas", "etiquetas"), pk=pk, usuario=request.user)
-    movements = list(MovimientoFinanciero.objects.filter(
-        usuario=request.user,
-        tarea=task,
-    ).exclude(estado=MovimientoFinanciero.Estado.ELIMINADO).select_related("categoria", "cuenta").order_by("-fecha", "-pk"))
+    tag_ids = [tag.pk for tag in task.etiquetas.all()]
+    movements = list(
+        MovimientoFinanciero.objects.filter(usuario=request.user, etiquetas__id__in=tag_ids)
+        .exclude(estado=MovimientoFinanciero.Estado.ELIMINADO)
+        .distinct()
+        .order_by("-fecha", "-pk")
+    ) if tag_ids else []
     confirmed = [item for item in movements if item.estado == MovimientoFinanciero.Estado.CONFIRMADO]
     ingresos = sum((item.monto for item in confirmed if item.tipo == MovimientoFinanciero.Tipo.INGRESO), 0)
     gastos = sum((item.monto for item in confirmed if item.tipo == MovimientoFinanciero.Tipo.GASTO), 0)

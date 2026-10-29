@@ -4384,17 +4384,10 @@ def movimiento_form_context(request, tipo, movimiento=None):
 
 def movimiento_initial_from_query(request):
     """Permite abrir el formulario con una etiqueta/proyecto ya seleccionado."""
-    initial = {}
     tag_id = request.GET.get("etiqueta", "")
     if tag_id.isdigit() and Etiqueta.objects.filter(pk=tag_id, usuario=request.user).exists():
-        initial["etiquetas"] = [int(tag_id)]
-    task_id = request.GET.get("tarea", "")
-    if task_id.isdigit():
-        from organizacion.access import can_access_organization
-        from organizacion.models import Tarea as TareaOrganizacion
-        if can_access_organization(request.user) and TareaOrganizacion.objects.filter(pk=task_id, usuario=request.user).exists():
-            initial["tarea"] = int(task_id)
-    return initial or None
+        return {"etiquetas": [int(tag_id)]}
+    return None
 
 
 @login_required

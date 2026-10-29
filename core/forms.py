@@ -836,7 +836,7 @@ class MovimientoFinancieroForm(UserScopedModelForm):
 
     class Meta:
         model = MovimientoFinanciero
-        fields = ["categoria", "cuenta", "metodo_pago", "acreedor_credito", "nuevo_acreedor_credito", "numero_cuotas_credito", "etiquetas", "tarea", "monto", "fecha", "fecha_pago", "concepto", "comprobante"]
+        fields = ["categoria", "cuenta", "metodo_pago", "acreedor_credito", "nuevo_acreedor_credito", "numero_cuotas_credito", "etiquetas", "monto", "fecha", "fecha_pago", "concepto", "comprobante"]
         labels = {
             "categoria": "Categoría",
             "concepto": "Descripción",
@@ -846,7 +846,6 @@ class MovimientoFinancieroForm(UserScopedModelForm):
             "fecha_pago": "Fecha máxima de pago",
             "acreedor_credito": "Acreedor",
             "numero_cuotas_credito": "Número de cuotas",
-            "tarea": "Tarea (opcional)",
         }
         help_texts = {
             "comprobante": "Opcional: sube una captura, foto o archivo del pago.",
@@ -893,13 +892,6 @@ class MovimientoFinancieroForm(UserScopedModelForm):
         self.fields["acreedor_credito"].empty_label = "Selecciona un acreedor"
         self.fields["etiquetas"].queryset = Etiqueta.objects.filter(usuario=user).order_by("nombre")
         self.fields["etiquetas"].label = "Etiquetas"
-        from organizacion.access import can_access_organization
-        if can_access_organization(user):
-            from organizacion.models import Tarea as TareaOrganizacion
-            self.fields["tarea"].queryset = TareaOrganizacion.objects.filter(usuario=user).order_by("titulo")
-            self.fields["tarea"].empty_label = "Sin tarea asociada"
-        else:
-            self.fields.pop("tarea", None)
         if self.tipo != MovimientoFinanciero.Tipo.GASTO:
             self.fields.pop("fecha_pago", None)
             self.fields.pop("acreedor_credito", None)

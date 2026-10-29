@@ -779,13 +779,6 @@ class MovimientoFinanciero(models.Model):
         blank=True,
     )
     etiquetas = models.ManyToManyField(Etiqueta, blank=True)
-    tarea = models.ForeignKey(
-        "organizacion.Tarea",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="movimientos_financieros",
-    )
     concepto = models.CharField(max_length=160)
     monto = models.DecimalField(max_digits=12, decimal_places=2)
     fecha = models.DateField()
