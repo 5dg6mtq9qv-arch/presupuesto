@@ -3,7 +3,7 @@ import json
 import secrets
 import time
 from datetime import date, datetime, timedelta, timezone as datetime_timezone
-from urllib.parse import urlencode
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -12,6 +12,7 @@ from django.contrib import messages
 from django.db import transaction
 from django.db.models import Count, Q, Sum
 from django.http import HttpResponse, JsonResponse
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -49,6 +50,18 @@ def _save_user_form(request, form_class, instance=None):
         form.save_m2m()
         return obj, form
     return None, form
+
+
+def _redirect_after_state_change(request, fallback, state=None, **kwargs):
+    target = request.POST.get("next", "")
+    if target and url_has_allowed_host_and_scheme(target, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+        if state and request.POST.get("mobile") == "1":
+            parts = urlsplit(target)
+            query = dict(parse_qsl(parts.query, keep_blank_values=True))
+            query["tab"] = state
+            target = urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+        return redirect(target)
+    return redirect(fallback, **kwargs)
 
 
 @organization_required
@@ -184,7 +197,15 @@ def tarea_list(request):
     total = sum(counts.values())
     done = counts[Tarea.Estado.COMPLETADA]
     columns = [{"key": key, "label": Tarea.Estado(key).label, "tasks": tasks.filter(estado=key), "count": counts[key], "percent": round(counts[key] * 100 / total) if total else 0} for key in states]
-    return render(request, "organizacion/tareas.html", {"columns": columns, "q": q, "tags": Etiqueta.objects.filter(usuario=request.user, tareas_organizacion__isnull=False).distinct().order_by("nombre"), "tag_filter": tag, "total_tasks": total, "completed_tasks": done, "progress_percent": round(done * 100 / total) if total else 0, "kanban_mode": True})
+    active_tab = request.GET.get("tab", "all")
+    if active_tab not in states:
+        active_tab = "all"
+    filters = {key: value for key, value in (("q", q), ("etiqueta", tag)) if value}
+    base_url = reverse("organizacion:tarea_list")
+    all_filter_url = f"{base_url}?{urlencode({**filters, 'tab': 'all'})}"
+    for column in columns:
+        column["filter_url"] = f"{base_url}?{urlencode({**filters, 'tab': column['key']})}"
+    return render(request, "organizacion/tareas.html", {"columns": columns, "q": q, "tags": Etiqueta.objects.filter(usuario=request.user, tareas_organizacion__isnull=False).distinct().order_by("nombre"), "tag_filter": tag, "total_tasks": total, "completed_tasks": done, "progress_percent": round(done * 100 / total) if total else 0, "kanban_mode": True, "active_tab": active_tab, "all_filter_url": all_filter_url, "mobile_visible_count": total if active_tab == "all" else counts[active_tab]})
 
 
 @organization_required
@@ -193,11 +214,20 @@ def tarea_detail(request, pk):
     subtasks = list(task.subtareas.all())
     states = [Subtarea.Estado.BANDEJA, Subtarea.Estado.EN_PROGRESO, Subtarea.Estado.EN_ESPERA, Subtarea.Estado.COMPLETADA]
     subtask_columns = [{"key": key, "label": Subtarea.Estado(key).label, "items": [item for item in subtasks if item.estado == key]} for key in states]
+    active_tab = request.GET.get("tab", "all")
+    if active_tab not in states:
+        active_tab = "all"
+    base_url = reverse("organizacion:tarea_detail", args=[pk])
+    for column in subtask_columns:
+        column["filter_url"] = f"{base_url}?{urlencode({'tab': column['key']})}"
     return render(request, "organizacion/tarea_detail.html", {
         "task": task, "subtask_form": SubtareaForm(),
         "subtask_columns": subtask_columns,
         "subtask_total": len([item for item in subtasks if item.estado != Subtarea.Estado.CANCELADA]),
         "subtask_done": len([item for item in subtasks if item.estado == Subtarea.Estado.COMPLETADA]),
+        "active_tab": active_tab,
+        "all_filter_url": f"{base_url}?tab=all",
+        "mobile_visible_count": len([item for item in subtasks if item.estado in states]) if active_tab == "all" else len(next(column["items"] for column in subtask_columns if column["key"] == active_tab)),
     })
 
 
@@ -397,7 +427,10 @@ def tarea_estado(request, pk):
     task = get_object_or_404(Tarea, pk=pk, usuario=request.user)
     if task.subtareas.exists():
         message = "Mueve las subtareas; el estado de la tarea se calcula automáticamente."
-        return JsonResponse({"error": message}, status=400) if request.headers.get("x-requested-with") == "XMLHttpRequest" else redirect(request.POST.get("next") or "organizacion:tarea_list")
+        if request.headers.get("x-requested-with") == "XMLHttpRequest":
+            return JsonResponse({"error": message}, status=400)
+        messages.error(request, message)
+        return _redirect_after_state_change(request, "organizacion:tarea_list")
     state = request.POST.get("estado")
     if state not in Tarea.Estado.values:
         return JsonResponse({"error": "Estado inválido"}, status=400)
@@ -409,7 +442,10 @@ def tarea_estado(request, pk):
     elif task.completada_en:
         task.completada_en = None
     task.save(update_fields=["estado", "inicio_real", "completada_en", "actualizada"])
-    return JsonResponse({"ok": True, "estado": state}) if request.headers.get("x-requested-with") == "XMLHttpRequest" else redirect(request.POST.get("next") or "organizacion:tarea_list")
+    if request.headers.get("x-requested-with") == "XMLHttpRequest":
+        return JsonResponse({"ok": True, "estado": state})
+    messages.success(request, f"Tarea movida a {task.get_estado_display()}.")
+    return _redirect_after_state_change(request, "organizacion:tarea_list", state=state)
 
 
 @organization_required
@@ -453,7 +489,8 @@ def subtarea_estado(request, pk):
         sincronizar_tarea_desde_subtareas(item.tarea)
     if request.headers.get("x-requested-with") == "XMLHttpRequest":
         return JsonResponse({"ok": True, "estado": state, "task_estado": item.tarea.estado})
-    return redirect(request.POST.get("next") or "organizacion:tarea_list")
+    messages.success(request, f"Subtarea movida a {item.get_estado_display()}.")
+    return _redirect_after_state_change(request, "organizacion:tarea_detail", state=state, pk=item.tarea_id)
 
 
 @organization_required

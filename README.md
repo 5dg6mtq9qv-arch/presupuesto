@@ -30,8 +30,8 @@ La interfaz está en español, usa la zona horaria `America/Guayaquil` y puede i
   descripción, inicio y fin.
 - El calendario representa cada tarea como un evento continuo desde inicio
   hasta fin; la línea inferior muestra su duración y porcentaje de avance.
-- En móvil y tablet, las tareas y subtareas usan una lista con filtro y cambio de
-  estado mediante selector; el Kanban con arrastre queda para computadora.
+- En móvil y tablet, las tareas y subtareas usan una lista con filtro y botones
+  para cambiar de estado; el Kanban con arrastre queda para computadora.
 - Registro de auditoría, consumo de IA y estimación orientativa de costos.
 
 ## Documentación

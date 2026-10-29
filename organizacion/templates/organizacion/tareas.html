@@ -9,6 +9,8 @@
   @media(max-width:600px){.org-stats{gap:8px}.org-stat{padding:12px;min-width:0}.org-stat strong{font-size:22px}.org-chart-row{grid-template-columns:72px 1fr 24px;gap:4px}.org-kanban{grid-template-columns:repeat(4,84vw);gap:10px;max-width:100%;overscroll-behavior-x:contain}.org-kanban-column{min-width:0}.org-column-head{padding:13px}.org-column-body{min-height:220px;padding:10px}.org-task-card{padding:12px}.mobile-drag-hint{display:block;color:#64748b;font-size:13px;margin:0 0 8px}}
   .org-mobile-view{display:none}.org-mobile-filters{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 12px;scrollbar-width:thin}.org-mobile-filters button{flex:none;border:1px solid #dbe3ec;border-radius:999px;background:#fff;color:#475569;padding:9px 13px;min-height:42px;font-weight:600}.org-mobile-filters button[aria-pressed="true"]{background:#14a89a;color:#fff;border-color:#14a89a}.org-mobile-filters span{margin-left:4px;opacity:.8}.org-mobile-list{display:grid;gap:12px}.org-mobile-task{min-width:0;background:#fff;border:1px solid #e2e8f0;border-left:4px solid #94a3b8;border-radius:16px;padding:16px;box-shadow:0 3px 12px rgba(15,23,42,.06)}.org-mobile-task.priority-alta{border-left-color:#f59e0b}.org-mobile-task.priority-urgente{border-left-color:#dc2626}.org-mobile-task-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}.org-mobile-task-title{display:block;font-size:16px;font-weight:700;line-height:1.35;overflow-wrap:anywhere}.org-mobile-task-meta{color:#64748b;font-size:12px;margin-top:6px}.org-mobile-task label{display:block;font-size:12px;color:#64748b;font-weight:600;margin:14px 0 5px}.org-mobile-task select{min-height:44px}.org-mobile-empty{padding:28px 16px;text-align:center;color:#64748b;background:#fff;border:1px dashed #cbd5e1;border-radius:14px}.org-mobile-feedback{min-height:20px;color:#b91c1c;font-size:13px;margin:4px 0}
   @media(max-width:1000px), (pointer:coarse){.org-kanban,.mobile-drag-hint{display:none}.org-mobile-view{display:block}}
+  .org-mobile-overview{display:grid;grid-template-columns:1fr auto;align-items:center;gap:6px 14px;padding:17px 18px;margin-bottom:14px;border-radius:18px;background:linear-gradient(135deg,#e8f8f5,#fff);border:1px solid #cbeae4}.org-mobile-overview small{display:block;color:#5c706d;font-weight:600}.org-mobile-overview strong{font-size:21px}.org-mobile-overview .org-mobile-completed{text-align:right}.org-mobile-progress{grid-column:1/-1;height:7px;background:#d9e8e5;border-radius:99px;overflow:hidden}.org-mobile-progress span{display:block;height:100%;background:#14a89a;border-radius:99px}.org-mobile-filters a{display:inline-flex;align-items:center;flex:none;min-height:42px;padding:9px 14px;border:1px solid #dbe3ec;border-radius:999px;background:#fff;color:#475569;font-weight:700;white-space:nowrap}.org-mobile-filters a[aria-current="page"]{background:#0d9488;border-color:#0d9488;color:#fff}.org-mobile-task{border-left-width:1px;padding:16px 16px 13px}.org-mobile-task.priority-alta,.org-mobile-task.priority-urgente{border-left-width:4px}.org-mobile-task-head{margin-bottom:6px}.org-mobile-state-badge{display:inline-flex;padding:5px 9px;border-radius:999px;background:#e8f8f5;color:#087c71;font-size:12px;font-weight:700}.org-mobile-task-title{color:#172b38}.org-mobile-task-meta{margin-top:8px;line-height:1.4}.org-mobile-task-dates{display:flex;flex-wrap:wrap;gap:5px 12px;margin-top:10px;color:#516779;font-size:12px}.org-mobile-state-form{margin-top:15px;padding-top:13px;border-top:1px solid #edf1f5}.org-mobile-state-form>span{display:block;margin-bottom:9px;color:#64748b;font-size:12px;font-weight:700}.org-mobile-state-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.org-mobile-state-actions button{min-height:44px;padding:8px;border:1px solid #cae5e0;border-radius:11px;background:#f3fbf9;color:#0b766e;font-weight:700}.org-mobile-state-actions button:active{background:#d9f3ed}.org-mobile-more{margin-top:13px;border-top:1px solid #edf1f5;padding-top:11px}.org-mobile-more summary{cursor:pointer;color:#64748b;font-size:13px;font-weight:700;min-height:30px}.org-mobile-more>div{padding:8px 0 2px}.org-mobile-more .btn{min-height:38px}.org-mobile-task .org-mobile-auto{margin-top:12px;color:#64748b;font-size:13px}.org-mobile-empty{margin-top:4px}
+  @media(max-width:1000px), (pointer:coarse){.org-stats{display:none}.org-mobile-view{display:block;max-width:720px;margin:0 auto}.org-kanban{display:none}.org-mobile-list{gap:10px}}
 </style>
 <div class="actions"><form method="get" class="d-flex gap-2 flex-wrap"><input class="form-control" name="q" value="{{ q }}" placeholder="Buscar"><select class="form-select" name="etiqueta"><option value="">Todas las etiquetas</option>{% for tag in tags %}<option value="{{ tag.pk }}"{% if tag_filter == tag.pk|stringformat:'s' %} selected{% endif %}>{{ tag.nombre }}</option>{% endfor %}</select><button class="btn btn-outline-primary">Filtrar</button></form><a class="btn btn-primary" href="{% url 'organizacion:tarea_create' %}"><span class="material-symbols-outlined">add</span>Nueva tarea</a></div>
 <section class="org-stats">
@@ -21,32 +23,40 @@
 {% for column in columns %}<section class="org-kanban-column" data-state="{{ column.key }}"><header class="org-column-head"><strong>{{ column.label }}</strong><span class="badge text-bg-light border" data-count>{{ column.count }}</span></header><div class="org-column-body">{% for task in column.tasks %}<div class="org-card-wrap" draggable="{% if task.subtareas.all %}false{% else %}true{% endif %}" data-kind="task" data-task-id="{{ task.pk }}" data-state="{{ task.estado }}" data-url="{% url 'organizacion:tarea_estado' task.pk %}">{% include "organizacion/_task_card.html" %}{% if task.subtareas.all %}<div class="small text-center text-muted mt-1">Estado automático por subtareas</div>{% endif %}</div>{% empty %}<div class="org-empty">Suelta una tarea aquí</div>{% endfor %}</div></section>{% endfor %}
 </div>
 <section class="org-mobile-view" data-mobile-tasks aria-label="Tareas por estado">
-  <div class="org-mobile-filters" role="group" aria-label="Filtrar tareas por estado">
-    <button type="button" data-mobile-filter="all" aria-pressed="true">Todas <span data-mobile-count>{{ total_tasks }}</span></button>
-    {% for column in columns %}<button type="button" data-mobile-filter="{{ column.key }}" aria-pressed="false">{{ column.label }} <span data-mobile-count>{{ column.count }}</span></button>{% endfor %}
+  <div class="org-mobile-overview">
+    <div><small>Tareas visibles</small><strong>{{ total_tasks }}</strong></div>
+    <div class="org-mobile-completed"><small>Finalizadas</small><strong>{{ completed_tasks }}</strong></div>
+    <div class="org-mobile-progress" aria-label="Avance {{ progress_percent }}%"><span style="width:{{ progress_percent }}%"></span></div>
   </div>
-  <p class="org-mobile-feedback" data-mobile-feedback role="status" aria-live="polite"></p>
+  <nav class="org-mobile-filters" aria-label="Filtrar tareas por estado">
+    <a href="{{ all_filter_url }}"{% if active_tab == 'all' %} aria-current="page"{% endif %}>Todas <span>{{ total_tasks }}</span></a>
+    {% for column in columns %}<a href="{{ column.filter_url }}"{% if active_tab == column.key %} aria-current="page"{% endif %}>{{ column.label }} <span>{{ column.count }}</span></a>{% endfor %}
+  </nav>
   <div class="org-mobile-list">
-    {% for column in columns %}{% for task in column.tasks %}
-      <article class="org-mobile-task priority-{{ task.prioridad }}" data-mobile-task data-task-id="{{ task.pk }}" data-state="{{ task.estado }}" data-url="{% url 'organizacion:tarea_estado' task.pk %}">
-        <div class="org-mobile-task-head"><span class="badge text-bg-light border" data-mobile-state-label>{{ column.label }}</span><a href="{% url 'organizacion:tarea_detail' task.pk %}" aria-label="Abrir {{ task.titulo }}"><span class="material-symbols-outlined">chevron_right</span></a></div>
+    {% for column in columns %}{% if active_tab == 'all' or active_tab == column.key %}{% for task in column.tasks %}
+      <article class="org-mobile-task priority-{{ task.prioridad }}" data-mobile-task>
+        <div class="org-mobile-task-head"><span class="org-mobile-state-badge">{{ column.label }}</span><a href="{% url 'organizacion:tarea_detail' task.pk %}" aria-label="Abrir {{ task.titulo }}"><span class="material-symbols-outlined">chevron_right</span></a></div>
         <a class="org-mobile-task-title" href="{% url 'organizacion:tarea_detail' task.pk %}">{{ task.titulo }}</a>
-        <div class="org-mobile-task-meta">{{ task.get_prioridad_display }}{% if task.fecha_limite %} · Vence {{ task.fecha_limite|date:"d/m H:i" }}{% endif %}</div>
+        <div class="org-mobile-task-meta">Prioridad {{ task.get_prioridad_display|lower }}{% if task.fecha_limite %} · Vence {{ task.fecha_limite|date:"d/m H:i" }}{% endif %}</div>
+        {% if task.inicio_planificado or task.fin_planificado %}<div class="org-mobile-task-dates">{% if task.inicio_planificado %}<span>Inicio {{ task.inicio_planificado|date:"d/m H:i" }}</span>{% endif %}{% if task.fin_planificado %}<span>Fin {{ task.fin_planificado|date:"d/m H:i" }}</span>{% endif %}</div>{% endif %}
         {% if task.subtareas.all %}
-          <div class="small text-muted mt-3">Estado automático según sus subtareas · {{ task.progreso }}% completado</div>
-          <a class="btn btn-outline-primary btn-sm mt-2" href="{% url 'organizacion:tarea_detail' task.pk %}">Abrir subtareas</a>
+          <div class="org-mobile-auto">Estado automático según sus subtareas · {{ task.progreso }}% completado</div>
+          <a class="btn btn-outline-primary btn-sm mt-2" href="{% url 'organizacion:tarea_detail' task.pk %}">Abrir subtareas y cambiar su estado</a>
         {% else %}
-          <label for="mobile-task-state-{{ task.pk }}">Mover a</label>
-          <select class="form-select" id="mobile-task-state-{{ task.pk }}" data-mobile-state-select>
-            {% for choice in columns %}<option value="{{ choice.key }}"{% if task.estado == choice.key %} selected{% endif %}>{{ choice.label }}</option>{% endfor %}
-          </select>
+          <form method="post" action="{% url 'organizacion:tarea_estado' task.pk %}" class="org-mobile-state-form" data-mobile-state-form>
+            {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><input type="hidden" name="mobile" value="1">
+            <span>Cambiar estado a</span>
+            <div class="org-mobile-state-actions">{% for choice in columns %}{% if choice.key != task.estado %}<button type="submit" name="estado" value="{{ choice.key }}">{{ choice.label }}</button>{% endif %}{% endfor %}</div>
+          </form>
         {% endif %}
-        {% if task.inicio_planificado or task.fecha_planificada or task.fecha_limite %}<div class="d-flex flex-wrap gap-2 mt-3"><a class="btn btn-outline-primary btn-sm" href="{% url 'organizacion:tarea_google_calendario' task.pk %}">Google Calendar</a><a class="btn btn-outline-secondary btn-sm" href="{% url 'organizacion:tarea_calendario' task.pk %}">Descargar .ics</a></div>{% else %}<a class="small d-block mt-3" href="{% url 'organizacion:tarea_update' task.pk %}">Añadir fecha para usar el calendario</a>{% endif %}
-        <form method="post" action="{% url 'organizacion:tarea_google_tasks' task.pk %}" class="mt-2">{% csrf_token %}<button class="btn btn-outline-secondary btn-sm" type="submit">Agregar a Google Tasks</button></form>
-        <small class="text-muted d-block mt-1">En Tasks se guarda la fecha; las horas quedan en las notas.</small>
+        <details class="org-mobile-more"><summary>Calendario y más opciones</summary><div>
+          {% if task.inicio_planificado or task.fecha_planificada or task.fecha_limite %}<div class="d-flex flex-wrap gap-2"><a class="btn btn-outline-primary btn-sm" href="{% url 'organizacion:tarea_google_calendario' task.pk %}">Google Calendar</a><a class="btn btn-outline-secondary btn-sm" href="{% url 'organizacion:tarea_calendario' task.pk %}">Descargar .ics</a></div>{% else %}<a class="small d-block" href="{% url 'organizacion:tarea_update' task.pk %}">Añadir fecha para usar el calendario</a>{% endif %}
+          <form method="post" action="{% url 'organizacion:tarea_google_tasks' task.pk %}" class="mt-2">{% csrf_token %}<button class="btn btn-outline-secondary btn-sm" type="submit">Agregar a Google Tasks</button></form>
+          <small class="text-muted d-block mt-1">En Tasks se guarda la fecha; las horas quedan en las notas.</small>
+        </div></details>
       </article>
-    {% endfor %}{% endfor %}
-    <div class="org-mobile-empty" data-mobile-empty hidden>No hay tareas en este estado.</div>
+    {% endfor %}{% endif %}{% endfor %}
+    {% if not mobile_visible_count %}<div class="org-mobile-empty">No hay tareas en este estado.</div>{% endif %}
   </div>
 </section>
 <script src="{% static 'core/js/touch_kanban.js' %}"></script>
@@ -84,75 +94,7 @@
     col.addEventListener('drop', e => {e.preventDefault();col.classList.remove('is-over');moveCard(dragged,col);});
   });
   enableTouchKanban({board:document.querySelector('[data-kanban]'),cardSelector:'.org-card-wrap[draggable="true"]',columnSelector:'.org-kanban-column',handleSelector:'.org-drag-handle',onDrop:moveCard});
-  const mobile = document.querySelector('[data-mobile-tasks]');
-  const mobileCards = [...mobile.querySelectorAll('[data-mobile-task]')];
-  const filters = [...mobile.querySelectorAll('[data-mobile-filter]')];
-  const feedback = mobile.querySelector('[data-mobile-feedback]');
-  let activeFilter = 'all';
-  function refreshMobile() {
-    const counts = {all: mobileCards.length};
-    mobileCards.forEach(card => {counts[card.dataset.state] = (counts[card.dataset.state] || 0) + 1;});
-    let visible = 0;
-    mobileCards.forEach(card => {
-      card.hidden = activeFilter !== 'all' && card.dataset.state !== activeFilter;
-      if (!card.hidden) visible++;
-    });
-    filters.forEach(button => {
-      button.setAttribute('aria-pressed', String(button.dataset.mobileFilter === activeFilter));
-      button.querySelector('[data-mobile-count]').textContent = counts[button.dataset.mobileFilter] || 0;
-    });
-    mobile.querySelector('[data-mobile-empty]').hidden = visible > 0;
-    document.querySelector('[data-completed-count]').textContent = counts.completada || 0;
-    const percent = counts.all ? Math.round((counts.completada || 0) * 100 / counts.all) : 0;
-    const donut = document.querySelector('.org-donut');
-    donut.style.setProperty('--p', percent);
-    donut.dataset.value = `${percent}%`;
-    document.querySelector('.org-progress-wrap strong').textContent = `${percent}%`;
-    document.querySelectorAll('.org-chart-row').forEach((row, index) => {
-      const state = filters[index + 1].dataset.mobileFilter;
-      const count = counts[state] || 0;
-      const share = counts.all ? Math.round(count * 100 / counts.all) : 0;
-      row.querySelector('b').textContent = count;
-      row.querySelector('i').style.width = `${share}%`;
-      const bar = document.querySelectorAll('.org-state-bars span')[index];
-      if (bar) {
-        bar.style.width = `${share}%`;
-        bar.title = `${filters[index + 1].firstChild.textContent.trim()}: ${count}`;
-      }
-    });
-  }
-  filters.forEach(button => button.addEventListener('click', () => {
-    activeFilter = button.dataset.mobileFilter;
-    feedback.textContent = '';
-    refreshMobile();
-  }));
-  mobile.querySelectorAll('[data-mobile-state-select]').forEach(select => select.addEventListener('change', async () => {
-    const card = select.closest('[data-mobile-task]');
-    const oldState = card.dataset.state;
-    if (select.value === oldState) return;
-    select.disabled = true;
-    feedback.textContent = '';
-    try {
-      const response = await fetch(card.dataset.url, {method:'POST',headers:{'X-CSRFToken':token,'X-Requested-With':'XMLHttpRequest'},body:new URLSearchParams({estado:select.value})});
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'No se pudo mover la tarea.');
-      card.dataset.state = result.estado;
-      card.querySelector('[data-mobile-state-label]').textContent = select.selectedOptions[0].textContent;
-      const desktopCard = document.querySelector(`.org-card-wrap[data-task-id="${card.dataset.taskId}"]`);
-      if (desktopCard) {
-        document.querySelector(`.org-kanban-column[data-state="${result.estado}"] .org-column-body`).appendChild(desktopCard);
-        desktopCard.dataset.state = result.estado;
-        refresh();
-      }
-      refreshMobile();
-    } catch (error) {
-      select.value = oldState;
-      feedback.textContent = error.message;
-    } finally {
-      select.disabled = false;
-    }
-  }));
-  refreshMobile();
+
 })();
 </script>
 {% endblock %}

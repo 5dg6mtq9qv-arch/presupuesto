@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
-from django.test import TestCase, override_settings
+from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -114,12 +114,49 @@ class OrganizationTests(TestCase):
 
         self.assertIsNotNone(task.inicio_real)
 
+    def test_mobile_state_buttons_submit_with_csrf_and_return_to_selected_tab(self):
+        task = Tarea.objects.create(usuario=self.user, titulo="Cambiar en móvil", estado=Tarea.Estado.BANDEJA)
+        mobile = Client(enforce_csrf_checks=True)
+        mobile.force_login(self.user)
+        tab_url = reverse("organizacion:tarea_list") + "?tab=bandeja"
+        page = mobile.get(tab_url)
+        self.assertContains(page, 'data-mobile-state-form')
+        self.assertContains(page, 'name="estado" value="en_progreso"')
+        response = mobile.post(
+            reverse("organizacion:tarea_estado", args=[task.pk]),
+            {"csrfmiddlewaretoken": mobile.cookies["csrftoken"].value, "estado": Tarea.Estado.EN_PROGRESO, "next": tab_url, "mobile": "1"},
+        )
+        self.assertRedirects(response, reverse("organizacion:tarea_list") + "?tab=en_progreso")
+        task.refresh_from_db()
+        self.assertEqual(task.estado, Tarea.Estado.EN_PROGRESO)
+        self.assertContains(mobile.get(tab_url), 'class="org-mobile-task priority-', count=0)
+        self.assertContains(mobile.get(reverse("organizacion:tarea_list") + "?tab=en_progreso"), 'class="org-mobile-task priority-', count=1)
+
+    def test_mobile_subtask_state_button_returns_to_detail(self):
+        task = Tarea.objects.create(usuario=self.user, titulo="Trabajo")
+        item = Subtarea.objects.create(tarea=task, titulo="Paso uno")
+        mobile = Client(enforce_csrf_checks=True)
+        mobile.force_login(self.user)
+        tab_url = reverse("organizacion:tarea_detail", args=[task.pk]) + "?tab=bandeja"
+        page = mobile.get(tab_url)
+        self.assertContains(page, 'data-subtask-state-form')
+        response = mobile.post(
+            reverse("organizacion:subtarea_estado", args=[item.pk]),
+            {"csrfmiddlewaretoken": mobile.cookies["csrftoken"].value, "estado": Subtarea.Estado.COMPLETADA, "next": tab_url, "mobile": "1"},
+        )
+        self.assertRedirects(response, reverse("organizacion:tarea_detail", args=[task.pk]) + "?tab=completada")
+        item.refresh_from_db()
+        task.refresh_from_db()
+        self.assertEqual(item.estado, Subtarea.Estado.COMPLETADA)
+        self.assertEqual(task.estado, Tarea.Estado.COMPLETADA)
+        self.assertContains(mobile.get(reverse("organizacion:tarea_detail", args=[task.pk]) + "?tab=completada"), "Paso uno")
+
     def test_mobile_task_controls_and_calendar_export(self):
         start = timezone.make_aware(datetime(2026, 11, 3, 9, 30))
         task = Tarea.objects.create(usuario=self.user, titulo="Reunión, revisión", descripcion="Línea uno\nLínea dos", inicio_planificado=start, fin_planificado=start + timedelta(hours=1))
         board = self.client.get(reverse("organizacion:tarea_list"))
         self.assertContains(board, 'data-mobile-tasks')
-        self.assertContains(board, 'data-mobile-state-select')
+        self.assertContains(board, 'data-mobile-state-form')
         self.assertContains(board, reverse("organizacion:tarea_calendario", args=[task.pk]))
         response = self.client.get(reverse("organizacion:tarea_calendario", args=[task.pk]))
         self.assertEqual(response.status_code, 200)
@@ -204,7 +241,7 @@ class OrganizationTests(TestCase):
         self.assertContains(detail, "Revisar bibliografía")
         self.assertContains(detail, "data-subtask-board")
         self.assertContains(detail, "data-mobile-subtasks")
-        self.assertContains(detail, "data-subtask-state-select")
+        self.assertContains(detail, "data-subtask-state-form")
         moved = self.client.post(reverse("organizacion:subtarea_estado", args=[item.pk]), {"estado": Subtarea.Estado.EN_PROGRESO}, HTTP_X_REQUESTED_WITH="XMLHttpRequest")
         self.assertEqual(moved.status_code, 200)
         task.refresh_from_db()
