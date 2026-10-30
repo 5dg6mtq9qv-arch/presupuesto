@@ -3,7 +3,7 @@
 {% block page_title %}{{ task.titulo }}{% endblock %}
 {% block page_subtitle %}Organiza el trabajo y sigue su avance{% endblock %}
 {% block content %}
-<link rel="stylesheet" href="{% static 'organizacion/tarea_detail.css' %}?v=2">
+<style>{% include "organizacion/styles/tarea_detail.css" %}</style>
 
 <div class="task-detail">
   <header class="task-hero">
