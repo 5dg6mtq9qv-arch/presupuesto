@@ -21,7 +21,10 @@
     .usage-filter .usage-search { grid-column: 1 / -1; }
     .usage-metrics { grid-template-columns: 1fr 1fr; }
   }
-  @media (max-width: 480px) { .usage-metrics { grid-template-columns: 1fr; } }
+  @media (max-width: 480px) {
+    .usage-filter, .usage-metrics { grid-template-columns: minmax(0, 1fr); }
+    .usage-filter .usage-search { grid-column: auto; }
+  }
 </style>
 
 <section class="panel">

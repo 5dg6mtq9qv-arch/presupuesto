@@ -1,112 +1,124 @@
 {% extends "base.html" %}
 {% load static %}
 {% block page_title %}{{ task.titulo }}{% endblock %}
-{% block page_subtitle %}Tarea · {{ task.get_estado_display }}{% endblock %}
+{% block page_subtitle %}Organiza el trabajo y sigue su avance{% endblock %}
 {% block content %}
-<style>
-  .subtask-summary{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:12px;margin-bottom:18px}.subtask-stat{padding:15px;border:1px solid #e2e8f0;border-radius:14px;background:#fff}.subtask-stat small{display:block;color:#64748b}.subtask-stat strong{font-size:24px}.subtask-board{display:grid;grid-template-columns:repeat(4,minmax(245px,1fr));gap:13px;overflow-x:auto;padding-bottom:16px}.subtask-column{min-width:245px;border:1px solid #e2e8f0;border-radius:16px;background:#f8fafc;overflow:hidden;transition:.18s}.subtask-column.is-over{border-color:#14a89a;box-shadow:0 0 0 3px rgba(20,168,154,.13);transform:translateY(-2px)}.subtask-head{display:flex;justify-content:space-between;padding:14px;background:#fff;border-bottom:1px solid #e2e8f0}.subtask-body{display:grid;gap:9px;padding:11px;min-height:240px}.subtask-card{padding:12px;border:1px solid #dbe3ec;border-radius:11px;background:#fff;box-shadow:0 3px 9px rgba(15,23,42,.05);cursor:grab}.subtask-card:hover{box-shadow:0 7px 17px rgba(15,23,42,.1)}.subtask-card.is-dragging{opacity:.45;transform:rotate(1deg)}.subtask-empty{padding:22px 8px;text-align:center;color:#94a3b8;border:1px dashed #cbd5e1;border-radius:11px}.subtask-add{display:flex;gap:9px;margin-top:16px}.subtask-add input{flex:1}.task-context{display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:18px}@media(max-width:900px){.subtask-summary{grid-template-columns:repeat(2,1fr)}.task-context{grid-template-columns:1fr}.subtask-board{grid-template-columns:repeat(4,84vw)}}
-</style>
-<style>
-  .subtask-body{align-content:start;grid-auto-rows:max-content}.subtask-drag-handle{display:inline-flex;align-items:center;justify-content:center;min-width:36px;min-height:40px;cursor:grab;user-select:none}
-  .mobile-drag-hint{display:none}
-  @media(max-width:600px){.subtask-summary{gap:8px}.subtask-stat{padding:11px;min-width:0}.subtask-stat strong{font-size:20px}.subtask-board{grid-template-columns:repeat(4,84vw);gap:10px;max-width:100%;overscroll-behavior-x:contain}.subtask-column{min-width:0}.subtask-head{padding:12px}.subtask-body{min-height:200px;padding:9px}.subtask-add{flex-wrap:wrap}.subtask-add input{min-width:100%}.mobile-drag-hint{display:block;color:#64748b;font-size:13px;margin:0 0 8px}}
-  .subtask-mobile-view{display:none}.subtask-mobile-filters{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 12px}.subtask-mobile-filters button{flex:none;min-height:42px;padding:9px 13px;border:1px solid #dbe3ec;border-radius:999px;background:#fff;color:#475569;font-weight:600}.subtask-mobile-filters button[aria-pressed="true"]{background:#14a89a;border-color:#14a89a;color:#fff}.subtask-mobile-filters span{margin-left:4px;opacity:.8}.subtask-mobile-list{display:grid;gap:12px}.subtask-mobile-card{min-width:0;padding:16px;border:1px solid #e2e8f0;border-radius:15px;background:#fff;box-shadow:0 3px 12px rgba(15,23,42,.06)}.subtask-mobile-card strong{display:block;font-size:16px;overflow-wrap:anywhere}.subtask-mobile-card label{display:block;margin:14px 0 5px;font-size:12px;font-weight:600;color:#64748b}.subtask-mobile-card select{min-height:44px}.subtask-mobile-empty{padding:28px 16px;text-align:center;color:#64748b;background:#fff;border:1px dashed #cbd5e1;border-radius:14px}.subtask-mobile-feedback{min-height:20px;margin:4px 0;color:#b91c1c;font-size:13px}
-  @media(max-width:1000px), (pointer:coarse){.subtask-board,.mobile-drag-hint{display:none}.subtask-mobile-view{display:block}}
-  .subtask-mobile-overview{display:grid;grid-template-columns:1fr auto;gap:8px 16px;align-items:center;padding:16px 18px;margin-bottom:14px;border:1px solid #cbeae4;border-radius:18px;background:linear-gradient(135deg,#e8f8f5,#fff)}.subtask-mobile-overview small{display:block;color:#5c706d;font-weight:600}.subtask-mobile-overview strong{font-size:20px}.subtask-mobile-overview .subtask-mobile-done{text-align:right}.subtask-mobile-progress{grid-column:1/-1;height:7px;border-radius:99px;overflow:hidden;background:#d9e8e5}.subtask-mobile-progress span{display:block;height:100%;border-radius:99px;background:#14a89a}.subtask-mobile-filters a{display:inline-flex;align-items:center;flex:none;min-height:42px;padding:9px 14px;border:1px solid #dbe3ec;border-radius:999px;background:#fff;color:#475569;font-weight:700;white-space:nowrap}.subtask-mobile-filters a[aria-current="page"]{background:#0d9488;border-color:#0d9488;color:#fff}.subtask-mobile-card{padding:16px}.subtask-mobile-card .subtask-mobile-state{display:inline-flex;padding:5px 9px;border-radius:999px;background:#e8f8f5;color:#087c71;font-size:12px;font-weight:700}.subtask-mobile-card strong{margin-top:10px}.subtask-mobile-state-form{margin-top:15px;padding-top:13px;border-top:1px solid #edf1f5}.subtask-mobile-state-form>span{display:block;margin-bottom:9px;color:#64748b;font-size:12px;font-weight:700}.subtask-mobile-state-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.subtask-mobile-state-actions button{min-height:44px;padding:8px;border:1px solid #cae5e0;border-radius:11px;background:#f3fbf9;color:#0b766e;font-weight:700}.subtask-mobile-state-actions button:active{background:#d9f3ed}
-  @media(max-width:1000px), (pointer:coarse){.subtask-summary,.subtask-board{display:none}.subtask-mobile-view{display:block;max-width:720px;margin:0 auto}.subtask-mobile-list{gap:10px}}
-</style>
-<div class="actions"><a class="btn btn-outline-secondary" href="{% url 'organizacion:tarea_list' %}">← Tablero de tareas</a><div class="d-flex gap-2"><a class="btn btn-primary" href="{% url 'organizacion:tarea_update' task.pk %}">Editar tarea</a><form method="post" action="{% url 'organizacion:tarea_delete' task.pk %}" onsubmit="return confirm('¿Eliminar esta tarea y sus subtareas?')">{% csrf_token %}<button class="btn btn-outline-danger">Eliminar</button></form></div></div>
+<link rel="stylesheet" href="{% static 'organizacion/tarea_detail.css' %}?v=2">
 
-<div class="task-context">
-  <section class="panel"><div class="d-flex justify-content-between align-items-start gap-3"><div>{% for tag in task.etiquetas.all %}<span class="badge rounded-pill text-bg-info">{{ tag.nombre }}</span>{% endfor %}<h2 class="mt-2">{{ task.titulo }}</h2>{% if task.descripcion %}<p class="muted mb-0">{{ task.descripcion|linebreaksbr }}</p>{% endif %}</div><span class="badge text-bg-primary">{{ task.get_estado_display }}</span></div>{% if task.inicio_planificado or task.fecha_planificada or task.fecha_limite %}<div class="d-flex flex-wrap gap-2 mt-3"><a class="btn btn-outline-primary" href="{% url 'organizacion:tarea_google_calendario' task.pk %}">Google Calendar</a><a class="btn btn-outline-secondary" href="{% url 'organizacion:tarea_calendario' task.pk %}">Descargar .ics</a></div>{% else %}<a class="btn btn-outline-primary mt-3" href="{% url 'organizacion:tarea_update' task.pk %}">Añadir fecha para usar el calendario</a>{% endif %}<form method="post" action="{% url 'organizacion:tarea_google_tasks' task.pk %}" class="mt-2">{% csrf_token %}<button class="btn btn-outline-secondary" type="submit">Agregar a Google Tasks</button></form><small class="text-muted d-block mt-1">En Tasks se guarda la fecha; las horas quedan en las notas.</small></section>
-  <aside class="panel"><strong>Planificación</strong><div class="small text-muted mt-2">Inicio: {{ task.inicio_planificado|default:"Sin fecha" }}</div><div class="small text-muted">Fin: {{ task.fin_planificado|default:"Sin fecha" }}</div></aside>
-</div>
+<div class="task-detail">
+  <header class="task-hero">
+    <div class="task-hero-main">
+      <a class="task-back" href="{% url 'organizacion:tarea_list' %}"><span class="material-symbols-outlined" aria-hidden="true">arrow_back</span> Tablero</a>
+      <div class="task-heading">
+        <div>
+          <div class="task-tags">{% for tag in task.etiquetas.all %}<span class="task-tag" style="--tag-color:{{ tag.color }}">{{ tag.nombre }}</span>{% endfor %}<span class="task-state">{{ task.get_estado_display }}</span></div>
+          <h2>{{ task.titulo }}</h2>
+          {% if task.descripcion %}<p>{{ task.descripcion|linebreaksbr }}</p>{% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="task-actions">
+      <a class="btn btn-outline-primary" href="{% url 'organizacion:tarea_update' task.pk %}"><span class="material-symbols-outlined" aria-hidden="true">edit</span> Editar</a>
+      <form method="post" action="{% url 'organizacion:tarea_delete' task.pk %}" onsubmit="return confirm('¿Eliminar esta tarea y sus subtareas?')">{% csrf_token %}<button class="btn btn-outline-danger" type="submit"><span class="material-symbols-outlined" aria-hidden="true">delete</span> Eliminar</button></form>
+    </div>
+  </header>
 
-<section class="panel mb-3">
-  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
-    <div><h3 class="mb-1">Finanzas de esta tarea</h3><p class="text-muted mb-0">Movimientos que comparten la etiqueta de la tarea. Los totales incluyen solo los confirmados.</p></div>
-    {% if task.etiqueta_automatica_id %}<div class="d-flex gap-2"><a class="btn btn-sm btn-outline-success" href="{% url 'movimiento_ingreso_create' %}?etiqueta={{ task.etiqueta_automatica_id }}">＋ Ingreso</a><a class="btn btn-sm btn-outline-danger" href="{% url 'movimiento_gasto_create' %}?etiqueta={{ task.etiqueta_automatica_id }}">＋ Gasto</a></div>{% endif %}
-  </div>
-  <div class="d-flex flex-wrap gap-3 my-3"><span>Ingresos: <strong class="text-success">${{ ingresos|floatformat:2 }}</strong></span><span>Gastos: <strong class="text-danger">${{ gastos|floatformat:2 }}</strong></span><span>Balance: <strong>${{ balance|floatformat:2 }}</strong></span></div>
-  {% if movements %}<div class="table-wrap"><table class="table table-hover align-middle mb-0"><thead><tr><th>Fecha</th><th>Concepto</th><th>Tipo</th><th>Estado</th><th>Monto</th><th></th></tr></thead><tbody>{% for movement in movements %}<tr><td>{{ movement.fecha|date:"d/m/Y" }}</td><td>{{ movement.concepto }}</td><td>{{ movement.get_tipo_display }}</td><td>{{ movement.get_estado_display }}</td><td>${{ movement.monto|floatformat:2 }}</td><td><a href="{% url 'movimiento_update' movement.pk %}">Ver / editar</a></td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="text-muted mb-0">Aún no hay ingresos o gastos con la etiqueta de esta tarea.</p>{% endif %}
-</section>
-
-<section class="subtask-summary">
-  <div class="subtask-stat"><small>Subtareas</small><strong>{{ subtask_total }}</strong></div>
-  <div class="subtask-stat"><small>Finalizadas</small><strong data-subtask-done>{{ subtask_done }}</strong></div>
-  <div class="subtask-stat"><small>Avance</small><strong data-subtask-progress>{{ task.progreso }}%</strong></div>
-  <div class="subtask-stat"><small>Estado de la tarea</small><strong data-parent-state style="font-size:18px">{{ task.get_estado_display }}</strong></div>
-</section>
-
-<div class="subtask-board" data-subtask-board>
-  {% for column in subtask_columns %}
-    <section class="subtask-column" data-state="{{ column.key }}">
-      <header class="subtask-head"><strong>{{ column.label }}</strong><span class="badge text-bg-light border" data-count>{{ column.items|length }}</span></header>
-      <div class="subtask-body">
-        {% for item in column.items %}
-          <article class="subtask-card" draggable="true" data-state="{{ item.estado }}" data-url="{% url 'organizacion:subtarea_estado' item.pk %}">
-            <div class="d-flex align-items-start gap-2"><span class="material-symbols-outlined subtask-drag-handle" style="font-size:24px;color:#64748b;padding:4px">drag_indicator</span><div style="flex:1"><strong>{{ item.titulo }}</strong><div class="small text-muted">Subtarea de {{ task.titulo }}</div></div>{% if item.completada %}<span class="material-symbols-outlined text-success">check_circle</span>{% endif %}</div>
-          </article>
-        {% empty %}<div class="subtask-empty">Suelta una subtarea aquí</div>{% endfor %}
+  <div class="task-overview">
+    <section class="task-panel task-plan" aria-labelledby="task-plan-title">
+      <div class="task-panel-heading"><span class="task-icon task-icon-blue material-symbols-outlined" aria-hidden="true">calendar_month</span><h3 id="task-plan-title">Planificación</h3></div>
+      <div class="task-dates"><div><small>Inicio</small><strong>{% if task.inicio_planificado %}{{ task.inicio_planificado|date:"d M Y, H:i" }}{% else %}Sin fecha{% endif %}</strong></div><span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span><div><small>Fin</small><strong>{% if task.fin_planificado %}{{ task.fin_planificado|date:"d M Y, H:i" }}{% elif task.fecha_limite %}{{ task.fecha_limite|date:"d M Y, H:i" }}{% else %}Sin fecha{% endif %}</strong></div></div>
+      <div class="task-plan-actions">
+        {% if task.inicio_planificado or task.fecha_planificada or task.fecha_limite %}<a class="btn btn-sm btn-outline-primary" href="{% url 'organizacion:tarea_google_calendario' task.pk %}">Google Calendar</a><a class="btn btn-sm btn-outline-secondary" href="{% url 'organizacion:tarea_calendario' task.pk %}">Descargar .ics</a>{% else %}<a class="btn btn-sm btn-outline-primary" href="{% url 'organizacion:tarea_update' task.pk %}">Añadir fecha</a>{% endif %}
+        <form method="post" action="{% url 'organizacion:tarea_google_tasks' task.pk %}">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary" type="submit">Agregar a Google Tasks</button></form>
       </div>
     </section>
-  {% endfor %}
-</div>
-<section class="subtask-mobile-view" data-mobile-subtasks aria-label="Subtareas por estado">
-  <div class="subtask-mobile-overview"><div><small>Subtareas</small><strong>{{ subtask_total }}</strong></div><div class="subtask-mobile-done"><small>Finalizadas</small><strong>{{ subtask_done }}</strong></div><div class="subtask-mobile-progress" aria-label="Avance {{ task.progreso }}%"><span style="width:{{ task.progreso }}%"></span></div></div>
-  <nav class="subtask-mobile-filters" aria-label="Filtrar subtareas por estado">
-    <a href="{{ all_filter_url }}"{% if active_tab == 'all' %} aria-current="page"{% endif %}>Todas <span>{{ subtask_total }}</span></a>
-    {% for column in subtask_columns %}<a href="{{ column.filter_url }}"{% if active_tab == column.key %} aria-current="page"{% endif %}>{{ column.label }} <span>{{ column.items|length }}</span></a>{% endfor %}
-  </nav>
-  <div class="subtask-mobile-list">
-    {% for column in subtask_columns %}{% if active_tab == 'all' or active_tab == column.key %}{% for item in column.items %}
-      <article class="subtask-mobile-card" data-mobile-subtask>
-        <span class="subtask-mobile-state">{{ column.label }}</span>
-        <strong class="mt-2">{{ item.titulo }}</strong>
-        <form method="post" action="{% url 'organizacion:subtarea_estado' item.pk %}" class="subtask-mobile-state-form" data-subtask-state-form>
-          {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><input type="hidden" name="mobile" value="1">
-          <span>Cambiar estado a</span>
-          <div class="subtask-mobile-state-actions">{% for choice in subtask_columns %}{% if choice.key != item.estado %}<button type="submit" name="estado" value="{{ choice.key }}">{{ choice.label }}</button>{% endif %}{% endfor %}</div>
-        </form>
-      </article>
-    {% endfor %}{% endif %}{% endfor %}
-    {% if not mobile_visible_count %}<div class="subtask-mobile-empty">No hay subtareas en este estado.</div>{% endif %}
+    <section class="task-panel task-progress-panel" aria-labelledby="task-progress-title">
+      <div class="task-panel-heading"><span class="task-icon task-icon-teal material-symbols-outlined" aria-hidden="true">donut_large</span><h3 id="task-progress-title">Avance de subtareas</h3></div>
+      <div class="task-progress-content"><div class="task-progress-ring" style="--progress:{{ task.progreso }}" role="img" aria-label="{{ task.progreso }}% completado"><span>{{ task.progreso }}%</span></div><div class="task-progress-copy"><strong><span data-subtask-done>{{ subtask_done }}</span> de {{ subtask_total }} finalizadas</strong><small>Estado actual: {{ task.get_estado_display }}</small></div></div>
+      <div class="task-progress-track" aria-hidden="true"><span style="width:{{ task.progreso }}%"></span></div>
+    </section>
   </div>
-</section>
 
-<form method="post" action="{% url 'organizacion:subtarea_create' task.pk %}" class="panel subtask-add">{% csrf_token %}{{ subtask_form.titulo }}<button class="btn btn-primary"><span class="material-symbols-outlined">add</span>Agregar subtarea</button></form>
+  <section class="task-panel task-finance" aria-labelledby="task-finance-title">
+    <div class="task-finance-intro"><span class="task-icon task-icon-mint material-symbols-outlined" aria-hidden="true">payments</span><div><h3 id="task-finance-title">Finanzas</h3><small>Movimientos confirmados con etiquetas de esta tarea</small></div></div>
+    <div class="task-finance-amounts"><div><small>Ingresos</small><strong class="text-success">${{ ingresos|floatformat:2 }}</strong></div><div><small>Gastos</small><strong class="text-danger">${{ gastos|floatformat:2 }}</strong></div><div><small>Balance</small><strong>${{ balance|floatformat:2 }}</strong></div></div>
+    {% if task.etiqueta_automatica_id %}<div class="task-finance-actions"><a class="btn btn-sm btn-outline-success" href="{% url 'movimiento_ingreso_create' %}?etiqueta={{ task.etiqueta_automatica_id }}">＋ Ingreso</a><a class="btn btn-sm btn-outline-danger" href="{% url 'movimiento_gasto_create' %}?etiqueta={{ task.etiqueta_automatica_id }}">＋ Gasto</a></div>{% endif %}
+  </section>
 
+  <section class="task-subtasks" aria-labelledby="task-subtasks-title">
+    <div class="task-section-heading"><div><h3 id="task-subtasks-title">Subtareas</h3><p>Mueve las tarjetas entre columnas para actualizar su estado.</p></div><div class="task-section-actions"><span class="task-subtask-total">{{ subtask_total }} en total</span><button class="btn btn-primary" type="button" data-add-subtask><span class="material-symbols-outlined" aria-hidden="true">add</span> Agregar subtarea</button></div></div>
+    <div class="subtask-board" data-subtask-board>
+      {% for column in subtask_columns %}<section class="subtask-column subtask-column-{{ column.key }}" data-state="{{ column.key }}">
+        <header class="subtask-head"><div><span class="material-symbols-outlined subtask-column-icon" aria-hidden="true">{% if column.key == 'bandeja' %}inbox{% elif column.key == 'en_progreso' %}pending_actions{% elif column.key == 'en_espera' %}hourglass_empty{% else %}task_alt{% endif %}</span><strong>{{ column.label }}</strong></div><span class="subtask-count" data-count>{{ column.items|length }}</span></header>
+        <div class="subtask-body">{% for item in column.items %}<article class="subtask-card" draggable="true" data-state="{{ item.estado }}" data-url="{% url 'organizacion:subtarea_estado' item.pk %}"><strong>{{ item.titulo }}</strong>{% if item.completada %}<span class="material-symbols-outlined text-success" aria-label="Finalizada">check_circle</span>{% endif %}<span class="material-symbols-outlined subtask-drag-handle" aria-hidden="true">drag_indicator</span></article>{% empty %}<div class="subtask-empty"><span class="material-symbols-outlined" aria-hidden="true">{% if column.key == 'bandeja' %}inbox{% elif column.key == 'en_progreso' %}play_circle{% elif column.key == 'en_espera' %}pause_circle{% else %}task_alt{% endif %}</span><strong>Sin subtareas</strong><small>Arrastra una tarjeta aquí para cambiar su estado.</small></div>{% endfor %}</div>
+      </section>{% endfor %}
+    </div>
+    <div class="subtask-mobile-view" data-mobile-subtasks aria-label="Subtareas por estado">
+      <nav class="subtask-mobile-filters" aria-label="Filtrar subtareas por estado"><a href="{{ all_filter_url }}"{% if active_tab == 'all' %} aria-current="page"{% endif %}>Todas <span>{{ subtask_total }}</span></a>{% for column in subtask_columns %}<a href="{{ column.filter_url }}"{% if active_tab == column.key %} aria-current="page"{% endif %}>{{ column.label }} <span>{{ column.items|length }}</span></a>{% endfor %}</nav>
+      <div class="subtask-mobile-list">{% for column in subtask_columns %}{% if active_tab == 'all' or active_tab == column.key %}{% for item in column.items %}<article class="subtask-mobile-card"><span class="subtask-mobile-state">{{ column.label }}</span><strong>{{ item.titulo }}</strong><form method="post" action="{% url 'organizacion:subtarea_estado' item.pk %}" class="subtask-mobile-state-form" data-subtask-state-form>{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><input type="hidden" name="mobile" value="1"><span>Cambiar estado a</span><div class="subtask-mobile-state-actions">{% for choice in subtask_columns %}{% if choice.key != item.estado %}<button type="submit" name="estado" value="{{ choice.key }}">{{ choice.label }}</button>{% endif %}{% endfor %}</div></form></article>{% endfor %}{% endif %}{% endfor %}{% if not mobile_visible_count %}<div class="subtask-mobile-empty">No hay subtareas en este estado.</div>{% endif %}</div>
+    </div>
+    <form method="post" action="{% url 'organizacion:subtarea_create' task.pk %}" class="subtask-add" data-subtask-create-form hidden>{% csrf_token %}<label for="{{ subtask_form.titulo.id_for_label }}">Nueva subtarea</label><div>{{ subtask_form.titulo }}<button class="btn btn-primary" type="submit">Agregar</button></div></form>
+  </section>
+
+  {% if movements %}<details class="task-panel task-movements"><summary>Ver movimientos asociados <span>{{ movements|length }}</span></summary><div class="table-wrap"><table class="table table-hover align-middle mb-0"><thead><tr><th>Fecha</th><th>Concepto</th><th>Tipo</th><th>Estado</th><th>Monto</th><th></th></tr></thead><tbody>{% for movement in movements %}<tr><td>{{ movement.fecha|date:"d/m/Y" }}</td><td>{{ movement.concepto }}</td><td>{{ movement.get_tipo_display }}</td><td>{{ movement.get_estado_display }}</td><td>${{ movement.monto|floatformat:2 }}</td><td><a href="{% url 'movimiento_update' movement.pk %}">Ver / editar</a></td></tr>{% endfor %}</tbody></table></div></details>{% endif %}
+</div>
 <script src="{% static 'core/js/touch_kanban.js' %}"></script>
 <script>
 (() => {
-  const token=decodeURIComponent(document.cookie.split('; ').find(row=>row.startsWith('csrftoken='))?.split('=')[1]||'');
-  let dragged=null;
-  const refresh=()=>document.querySelectorAll('.subtask-column').forEach(col=>{const count=col.querySelectorAll('.subtask-card').length;col.querySelector('[data-count]').textContent=count;const empty=col.querySelector('.subtask-empty');if(count&&empty)empty.remove();if(!count&&!empty){const node=document.createElement('div');node.className='subtask-empty';node.textContent='Suelta una subtarea aquí';col.querySelector('.subtask-body').appendChild(node);}});
-  async function moveCard(card,col){
-    if(!card||card.dataset.state===col.dataset.state)return;
-    const previous=card.parentElement;
-    const oldState=card.dataset.state;
+  const board = document.querySelector('[data-subtask-board]');
+  const token = decodeURIComponent(document.cookie.split('; ').find(row => row.startsWith('csrftoken='))?.split('=')[1] || '');
+  let dragged = null;
+  const refresh = () => board.querySelectorAll('.subtask-column').forEach(col => {
+    const count = col.querySelectorAll('.subtask-card').length;
+    col.querySelector('[data-count]').textContent = count;
+    const empty = col.querySelector('.subtask-empty');
+    if (count && empty) empty.remove();
+    if (!count && !empty) { const node = document.createElement('div'); node.className = 'subtask-empty'; node.innerHTML = '<strong>Sin subtareas</strong><small>Arrastra una tarjeta aquí para cambiar su estado.</small>'; col.querySelector('.subtask-body').appendChild(node); }
+  });
+  async function moveCard(card, col) {
+    if (!card || card.dataset.state === col.dataset.state) return;
+    const previous = card.parentElement, oldState = card.dataset.state;
     col.querySelector('.subtask-body').appendChild(card);
     refresh();
-    try{
-      const body=new URLSearchParams({estado:col.dataset.state});
-      const response=await fetch(card.dataset.url,{method:'POST',headers:{'X-CSRFToken':token,'X-Requested-With':'XMLHttpRequest'},body});
-      if(!response.ok)throw new Error();
-      card.dataset.state=col.dataset.state;
+    try {
+      const response = await fetch(card.dataset.url, {method:'POST', headers:{'X-CSRFToken':token,'X-Requested-With':'XMLHttpRequest'}, body:new URLSearchParams({estado:col.dataset.state})});
+      if (!response.ok) throw new Error();
+      card.dataset.state = col.dataset.state;
       window.location.reload();
-    }catch(_){previous.appendChild(card);card.dataset.state=oldState;refresh();alert('No se pudo mover la subtarea.');}
+    } catch (_) { previous.appendChild(card); card.dataset.state = oldState; refresh(); alert('No se pudo mover la subtarea.'); }
   }
-  document.querySelectorAll('.subtask-card').forEach(card=>{
-    card.addEventListener('dragstart',e=>{dragged=card;card.classList.add('is-dragging');e.dataTransfer.effectAllowed='move';});
-    card.addEventListener('dragend',()=>{card.classList.remove('is-dragging');document.querySelectorAll('.subtask-column').forEach(c=>c.classList.remove('is-over'));dragged=null;});
+  board.querySelectorAll('.subtask-card').forEach(card => {
+    card.addEventListener('dragstart', event => { dragged = card; card.classList.add('is-dragging'); event.dataTransfer.effectAllowed = 'move'; });
+    card.addEventListener('dragend', () => { card.classList.remove('is-dragging'); board.querySelectorAll('.subtask-column').forEach(col => col.classList.remove('is-over')); dragged = null; });
   });
-  document.querySelectorAll('.subtask-column').forEach(col=>{
-    col.addEventListener('dragover',e=>{e.preventDefault();col.classList.add('is-over');});
-    col.addEventListener('dragleave',()=>col.classList.remove('is-over'));
-    col.addEventListener('drop',e=>{e.preventDefault();col.classList.remove('is-over');moveCard(dragged,col);});
+  board.querySelectorAll('.subtask-column').forEach(col => {
+    col.addEventListener('dragover', event => { event.preventDefault(); col.classList.add('is-over'); });
+    col.addEventListener('dragleave', () => col.classList.remove('is-over'));
+    col.addEventListener('drop', event => { event.preventDefault(); col.classList.remove('is-over'); moveCard(dragged, col); });
   });
-  enableTouchKanban({board:document.querySelector('[data-subtask-board]'),cardSelector:'.subtask-card',columnSelector:'.subtask-column',handleSelector:'.subtask-drag-handle',onDrop:moveCard});
-
+  enableTouchKanban({board, cardSelector:'.subtask-card', columnSelector:'.subtask-column', handleSelector:'.subtask-drag-handle', onDrop:moveCard});
+  const addButton = document.querySelector('[data-add-subtask]');
+  const createForm = document.querySelector('[data-subtask-create-form]');
+  const titleInput = createForm.querySelector('[name="titulo"]');
+  addButton.addEventListener('click', async () => {
+    if (!window.Swal) { createForm.hidden = false; titleInput.focus(); return; }
+    const result = await Swal.fire({
+      title: 'Agregar subtarea',
+      customClass: {popup: 'subtask-swal'},
+      input: 'text',
+      inputLabel: 'Nombre de la subtarea',
+      inputPlaceholder: 'Escribe la subtarea…',
+      inputAttributes: {maxlength: '180', autocomplete: 'off'},
+      showCancelButton: true,
+      confirmButtonText: 'Agregar',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#25a194',
+      inputValidator: value => !value?.trim() ? 'Escribe un nombre para la subtarea.' : undefined,
+    });
+    if (!result.isConfirmed) return;
+    titleInput.value = result.value.trim();
+    createForm.submit();
+  });
 })();
 </script>
 {% endblock %}

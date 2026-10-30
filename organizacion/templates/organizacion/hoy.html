@@ -1,10 +1,12 @@
 {% extends "base.html" %}
+{% load static %}
 {% block page_title %}Mi día{% endblock %}
 {% block page_subtitle %}Decide qué hacer hoy sin perder de vista lo importante{% endblock %}
 {% block content %}
 <style>
   .org-quick{display:flex;gap:10px}.org-quick input{flex:1}.org-grid{display:grid;grid-template-columns:2fr 1fr;gap:18px}.org-stack{display:grid;gap:10px}.org-task-card{padding:14px;border:1px solid var(--bs-border-color);border-left:4px solid #94a3b8;border-radius:12px;background:#fff}.priority-alta{border-left-color:#f59e0b}.priority-urgente{border-left-color:#dc2626}.org-section-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}.org-project{padding:14px 0;border-bottom:1px solid var(--bs-border-color)}.org-project-head,.org-money{display:flex;justify-content:space-between;gap:10px}.org-money{font-size:12px;margin-top:7px}.org-money .income{color:#047857}.org-money .expense{color:#b91c1c}.org-mini-track{height:6px;background:#e2e8f0;border-radius:99px;overflow:hidden;margin-top:8px}.org-mini-track span{display:block;height:100%;background:#14a89a;border-radius:99px}@media(max-width:900px){.org-grid{grid-template-columns:1fr}.org-quick{flex-direction:column}}
 </style>
+<link rel="stylesheet" href="{% static 'organizacion/tareas.css' %}">
 <form class="panel org-quick" method="post" action="{% url 'organizacion:captura_rapida' %}">{% csrf_token %}{{ quick_form.titulo }}<button class="btn btn-primary" type="submit"><span class="material-symbols-outlined">add</span> Capturar</button></form>
 <div class="actions">
   <div class="d-flex gap-2 flex-wrap"><a class="btn btn-primary" href="{% url 'organizacion:tarea_create' %}">Nueva tarea</a><a class="btn btn-outline-primary" href="{% url 'organizacion:semana' %}">Planificar semana</a></div>

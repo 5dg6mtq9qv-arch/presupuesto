@@ -1706,7 +1706,7 @@
     .receipt-upload { max-width: 680px; text-align: center; }
     .receipt-upload .form-grid { text-align: left; }
     .receipt-camera { width: 72px; height: 72px; display: grid; place-items: center; margin: 0 auto 12px; border-radius: 22px; color: var(--primary); background: var(--primary-soft); font-size: 36px; }
-    .receipt-file-input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none; }
+    input.receipt-file-input[type="file"] { position: absolute; width: 1px; height: 1px; min-height: 1px; padding: 0; overflow: hidden; opacity: 0; pointer-events: none; }
     .receipt-source-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 22px; }
     .receipt-source-option { min-height: 112px; display: flex; align-items: center; gap: 13px; border: 1px solid var(--line-strong); border-radius: 14px; background: var(--surface); color: var(--text); cursor: pointer; padding: 16px; text-align: left; font: inherit; }
     .receipt-source-option:hover { border-color: var(--primary); background: var(--primary-soft); }
@@ -1733,7 +1733,7 @@
     }
 
     @media (max-width: 980px) {
-      .app-shell { grid-template-columns: 1fr; }
+      .app-shell { grid-template-columns: minmax(0, 1fr); }
       .sidebar {
         width: min(82vw, 300px);
         position: fixed;
@@ -1826,6 +1826,7 @@
     }
 
     @media (max-width: 640px) {
+      .topbar .quick-actions { display: none; }
       body.welcome-tour-open .sidebar {
         padding-bottom: calc(min(58dvh, 500px) + 32px);
       }
@@ -1866,7 +1867,8 @@
       .debt-filter-heading, .debt-card-header { flex-direction: column; }
       .debt-filter-heading > .btn { width: 100%; }
       .debt-filter-form { grid-template-columns: 1fr; }
-      .debt-search-field { grid-column: auto; }
+      .debt-filter-form .debt-search-field,
+      .debt-filter-form .debt-filter-submit { grid-column: auto; }
       .debt-card-tools { width: 100%; justify-content: space-between; }
       .debt-card-body { padding: 15px; gap: 16px; }
       .debt-plan-heading { align-items: flex-start; flex-direction: column; gap: 8px; }
