@@ -2706,6 +2706,33 @@ class GuidedFinancialFlowsTests(TestCase):
         self.assertContains(recurrentes, "¿Qué se repite?")
         self.assertContains(recurrentes, "¿Cómo debe aplicarse?")
 
+    def test_recurrentes_muestra_confirmacion_para_movimiento_pendiente(self):
+        recurrente = MovimientoRecurrente.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+            concepto="Pago mensual",
+            monto="150.00",
+            dia_mes=1,
+        )
+        movimiento = MovimientoFinanciero.objects.create(
+            usuario=self.user,
+            recurrente=recurrente,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+            estado=MovimientoFinanciero.Estado.PENDIENTE,
+            concepto="Pago mensual",
+            monto="150.00",
+            fecha=datetime(2026, 11, 1).date(),
+        )
+
+        response = self.client.get(reverse("recurrente_list"))
+        self.assertContains(response, reverse("movimiento_confirmar", args=[movimiento.pk]))
+        self.assertContains(response, "Confirmar pago pendiente")
+
+        movimiento.estado = MovimientoFinanciero.Estado.CONFIRMADO
+        movimiento.save(update_fields=["estado"])
+        response = self.client.get(reverse("recurrente_list"))
+        self.assertNotContains(response, "Confirmar pago pendiente")
+
     def test_crea_deuda_solo_con_cuotas_pendientes(self):
         acreedor = Acreedor.objects.create(usuario=self.user, nombre="Banco Simple")
 

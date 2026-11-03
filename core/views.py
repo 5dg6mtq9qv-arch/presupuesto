@@ -24,7 +24,7 @@ from django.core.cache import cache
 from django.core.mail import EmailMessage, EmailMultiAlternatives
 from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
 from django.db import transaction
-from django.db.models import Count, Max, Min, Prefetch, Q, Sum
+from django.db.models import Count, Max, Min, OuterRef, Prefetch, Q, Subquery, Sum
 from django.db.models.functions import TruncMonth
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -1955,7 +1955,14 @@ def recurrente_list(request):
             messages.success(request, "Movimiento recurrente creado.")
             return redirect("recurrente_list")
 
-    recurrentes = MovimientoRecurrente.objects.filter(usuario=request.user).select_related("categoria__parent", "cuenta", "metodo_pago")
+    pendiente = MovimientoFinanciero.objects.filter(
+        usuario=request.user,
+        recurrente_id=OuterRef("pk"),
+        estado=MovimientoFinanciero.Estado.PENDIENTE,
+    ).order_by("-fecha", "-pk")
+    recurrentes = MovimientoRecurrente.objects.filter(usuario=request.user).select_related(
+        "categoria__parent", "cuenta", "metodo_pago"
+    ).annotate(pendiente_id=Subquery(pendiente.values("pk")[:1]))
     q = request.GET.get("q", "").strip()
     if q:
         recurrentes = recurrentes.filter(Q(concepto__icontains=q) | Q(categoria__nombre__icontains=q) | Q(categoria__parent__nombre__icontains=q))
