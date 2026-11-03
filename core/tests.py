@@ -3015,6 +3015,40 @@ class DeudaListFilterTests(TestCase):
         self.assertNotContains(hasta_response, "Deuda posterior")
 
 
+class MovimientoFechaFiltroTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="filtro-fechas", password="test")
+        self.client.force_login(self.user)
+        for tipo in (MovimientoFinanciero.Tipo.INGRESO, MovimientoFinanciero.Tipo.GASTO):
+            for dia, concepto in ((1, "Anterior"), (15, "En rango"), (30, "Posterior")):
+                MovimientoFinanciero.objects.create(
+                    usuario=self.user,
+                    tipo=tipo,
+                    concepto=f"{tipo} {concepto}",
+                    monto="10.00",
+                    fecha=datetime(2026, 10, dia).date(),
+                )
+
+    def test_filtra_ambos_tipos_por_rango_inclusivo_y_conserva_fechas(self):
+        for tipo in ("ingreso", "gasto"):
+            with self.subTest(tipo=tipo):
+                response = self.client.get(reverse("movimiento_list"), {
+                    "tipo": tipo,
+                    "fecha_desde": "2026-10-15",
+                    "fecha_hasta": "2026-10-15",
+                })
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual([item.concepto for item in response.context["movimientos"]], [f"{tipo} En rango"])
+                self.assertContains(response, 'name="fecha_desde" value="2026-10-15"')
+                self.assertContains(response, 'name="fecha_hasta" value="2026-10-15"')
+
+    def test_acepta_un_solo_limite_de_fecha(self):
+        desde = self.client.get(reverse("movimiento_list"), {"tipo": "gasto", "fecha_desde": "2026-10-15"})
+        hasta = self.client.get(reverse("movimiento_list"), {"tipo": "ingreso", "fecha_hasta": "2026-10-15"})
+        self.assertEqual(len(desde.context["movimientos"]), 2)
+        self.assertEqual(len(hasta.context["movimientos"]), 2)
+
+
 class MovimientoRecurrenteServiceTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(

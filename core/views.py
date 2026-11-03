@@ -4292,6 +4292,18 @@ def movimiento_list(request):
     cuenta_id = request.GET.get("cuenta", "")
     metodo_id = request.GET.get("metodo", "")
     etiqueta_id = request.GET.get("etiqueta", "")
+    fecha_desde = request.GET.get("fecha_desde", "")
+    fecha_hasta = request.GET.get("fecha_hasta", "")
+    fecha_desde_valida = parse_date(fecha_desde)
+    fecha_hasta_valida = parse_date(fecha_hasta)
+    if fecha_desde_valida:
+        movimientos = movimientos.filter(fecha__gte=fecha_desde_valida)
+    else:
+        fecha_desde = ""
+    if fecha_hasta_valida:
+        movimientos = movimientos.filter(fecha__lte=fecha_hasta_valida)
+    else:
+        fecha_hasta = ""
     if q:
         movimientos = movimientos.filter(
             Q(concepto__icontains=q)
@@ -4351,7 +4363,7 @@ def movimiento_list(request):
             "cuentas_confirmacion": cuentas_confirmacion,
             "metodos": MetodoPago.objects.filter(usuario=request.user, activo=True).order_by("nombre"),
             "etiquetas": Etiqueta.objects.filter(usuario=request.user).order_by("nombre"),
-            "filters": {"q": q, "estado": estado, "categoria": categoria_id, "cuenta": cuenta_id, "metodo": metodo_id, "etiqueta": etiqueta_id},
+            "filters": {"q": q, "estado": estado, "categoria": categoria_id, "cuenta": cuenta_id, "metodo": metodo_id, "etiqueta": etiqueta_id, "fecha_desde": fecha_desde, "fecha_hasta": fecha_hasta},
         },
     )
 

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block page_title %}Recurrentes{% endblock %}
-{% block page_subtitle %}Ingresos, gastos y pagos esperados para proyectar saldos{% endblock %}
+{% block page_subtitle %}Programa ingresos y gastos mensuales y decide cómo se confirman{% endblock %}
 
 {% block content %}
 <div class="actions">
@@ -45,6 +45,11 @@
       <button class="btn btn-primary" type="submit" title="Crear" aria-label="Crear"><span class="material-symbols-outlined">add</span><span>Crear recurrente</span></button>
     </div>
   </form>
+</section>
+
+<section class="panel">
+  <p class="muted mb-2">Al llegar el día programado, el sistema crea un movimiento en Ingresos o Gastos. Con confirmación manual queda pendiente hasta que confirmas la recepción o el pago y eliges la cuenta; entonces cambia el saldo. Con aplicación automática y una cuenta seleccionada, se confirma al generarse.</p>
+  <a href="{% url 'movimiento_list' %}?tipo=gasto&amp;estado=pendiente">Ver gastos pendientes</a>
 </section>
 
 <section class="panel">

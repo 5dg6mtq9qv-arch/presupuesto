@@ -23,6 +23,14 @@
       <input class="form-control" id="q" name="q" value="{{ filters.q }}" placeholder="Descripción o categoría">
     </div>
     <div>
+      <label for="fecha_desde">Fecha desde</label>
+      <input class="form-control" type="date" id="fecha_desde" name="fecha_desde" value="{{ filters.fecha_desde }}">
+    </div>
+    <div>
+      <label for="fecha_hasta">Fecha hasta</label>
+      <input class="form-control" type="date" id="fecha_hasta" name="fecha_hasta" value="{{ filters.fecha_hasta }}">
+    </div>
+    <div>
       <label for="categoria">Categoría</label>
       <select class="form-select" id="categoria" name="categoria">
         <option value="">Todas</option>
@@ -107,6 +115,7 @@
             </td>
             <td>
               <strong>{{ movimiento.concepto }}</strong>
+              {% if movimiento.recurrente %}<div class="small text-muted">Generado por recurrente</div>{% endif %}
               {% if movimiento.ajuste_saldo %}
                 <div class="small text-muted">{{ movimiento.nota }}</div>
                 <span class="badge rounded-pill text-bg-light border">Conciliación de saldo</span>
