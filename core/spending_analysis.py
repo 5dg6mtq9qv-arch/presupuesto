@@ -1,4 +1,4 @@
-"""Monthly category spending data for the dedicated analysis page."""
+"""Daily, monthly, and category data for income and spending analysis."""
 
 import calendar
 from decimal import Decimal
@@ -10,7 +10,7 @@ from .models import MovimientoFinanciero
 MONTH_NAMES = ("", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic")
 
 
-def build_spending_analysis(user, *, today=None, month_count=12):
+def build_movement_analysis(user, movement_type, *, today=None, month_count=12):
     today = today or timezone.localdate()
     current_month = today.replace(day=1)
     months = []
@@ -33,7 +33,7 @@ def build_spending_analysis(user, *, today=None, month_count=12):
     categories = {}
     movements = MovimientoFinanciero.objects.filter(
         usuario=user,
-        tipo=MovimientoFinanciero.Tipo.GASTO,
+        tipo=movement_type,
         estado=MovimientoFinanciero.Estado.CONFIRMADO,
         ajuste_saldo__isnull=True,
         fecha__gte=months[0],
@@ -77,3 +77,15 @@ def build_spending_analysis(user, *, today=None, month_count=12):
             for item in category_rows
         ],
     }
+
+
+def build_spending_analysis(user, *, today=None, month_count=12):
+    return build_movement_analysis(
+        user, MovimientoFinanciero.Tipo.GASTO, today=today, month_count=month_count,
+    )
+
+
+def build_income_analysis(user, *, today=None, month_count=12):
+    return build_movement_analysis(
+        user, MovimientoFinanciero.Tipo.INGRESO, today=today, month_count=month_count,
+    )

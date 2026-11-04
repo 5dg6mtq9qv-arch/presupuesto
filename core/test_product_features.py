@@ -162,6 +162,60 @@ class ProductFeaturesTests(TestCase):
         self.assertContains(response, 'id="spending-monthly-chart"', html=False)
         self.assertContains(response, 'id="spending-category-chart"', html=False)
 
+    def test_analisis_ingresos_tiene_vista_lateral_y_solo_ingresos_confirmados(self):
+        hoy = timezone.localdate()
+        categoria = Categoria.objects.create(
+            usuario=self.user, nombre="Salario de prueba", tipo=Categoria.Tipo.FINANZAS,
+        )
+        for tipo, estado, monto in (
+            (MovimientoFinanciero.Tipo.INGRESO, MovimientoFinanciero.Estado.CONFIRMADO, "120.00"),
+            (MovimientoFinanciero.Tipo.INGRESO, MovimientoFinanciero.Estado.PENDIENTE, "80.00"),
+            (MovimientoFinanciero.Tipo.GASTO, MovimientoFinanciero.Estado.CONFIRMADO, "40.00"),
+        ):
+            MovimientoFinanciero.objects.create(
+                usuario=self.user, tipo=tipo, estado=estado, categoria=categoria,
+                concepto="Prueba de análisis", monto=monto, fecha=hoy,
+            )
+
+        response = self.client.get(reverse("analisis_ingresos"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["spending_data"]["totalDaily"][-1][hoy.day - 1], 120.0)
+        self.assertContains(response, "Análisis de ingresos")
+        self.assertContains(response, "Evolución del ingreso por día")
+        self.assertContains(response, 'data-analysis-kind="income"', html=False)
+        self.assertContains(self.client.get(reverse("analisis_gastos")), reverse("analisis_ingresos"))
+
+    @patch("core.spending_analysis.timezone.localdate", return_value=date(2026, 11, 4))
+    def test_analisis_gastos_asigna_credito_al_mes_de_compra_y_no_al_pago(self, _localdate):
+        categoria = Categoria.objects.create(
+            usuario=self.user, nombre="Compra de prueba", tipo=Categoria.Tipo.FINANZAS,
+        )
+        credito = MetodoPago.objects.create(
+            usuario=self.user, nombre="Tarjeta de prueba", tipo=MetodoPago.Tipo.CREDITO,
+        )
+        compra = MovimientoFinanciero.objects.create(
+            usuario=self.user, tipo=MovimientoFinanciero.Tipo.GASTO,
+            estado=MovimientoFinanciero.Estado.CONFIRMADO,
+            categoria=categoria, metodo_pago=credito,
+            concepto="Compra a crédito", monto="100.00", fecha=date(2026, 10, 18),
+        )
+        deuda = Deuda.objects.create(
+            usuario=self.user, movimiento_origen=compra, categoria=categoria,
+            acreedor="Tarjeta de prueba", concepto="Compra a crédito",
+            monto_inicial="100.00", saldo_actual="0.00", fecha_inicio=compra.fecha,
+            estado=Deuda.Estado.PAGADA,
+        )
+        PagoDeuda.objects.create(
+            deuda=deuda, monto="100.00", fecha=date(2026, 11, 2),
+            estado=PagoDeuda.Estado.CONFIRMADO,
+        )
+
+        response = self.client.get(reverse("analisis_gastos"))
+        spending = response.context["spending_data"]
+        self.assertEqual(spending["totalDaily"][-2][17], 100.0)
+        self.assertEqual(sum(spending["totalDaily"][-1]), 0.0)
+        self.assertContains(response, '<option value="full_month" selected>', html=False)
+
     def test_pdf_explains_when_deferred_debt_plan_is_manageable(self):
         today = timezone.localdate()
         account = self.user.cuentafinanciera_set.filter(activa=True).first()

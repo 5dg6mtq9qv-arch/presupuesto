@@ -30,11 +30,14 @@
 .spending-month-picker[open] summary { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
 .spending-month-picker[open] summary::after { transform: rotate(225deg); }
 .spending-month-picker summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-.spending-month-options { position: absolute; z-index: 10; top: calc(100% + 6px); left: 0; width: min(100%, 420px); max-height: 280px; overflow-y: auto; padding: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow-lg); }
-.spending-month-options label { display: flex; align-items: center; gap: 10px; min-height: 36px; width: 100%; padding: 7px 10px; margin: 0; border-radius: 7px; cursor: pointer; font-size: 13px; font-weight: 500; white-space: nowrap; }
-.spending-month-options label:hover, .spending-month-options label:has(input:checked) { background: var(--primary-soft); }
-.spending-month-options label span { flex: 1; }
-.spending-month-options input.form-check-input { display: block; flex: 0 0 16px; width: 16px; height: 16px; min-height: 0; margin: 0; padding: 0; border-radius: 4px; accent-color: var(--primary); }
+.spending-month-options { position: absolute; z-index: 10; top: calc(100% + 6px); left: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; width: min(100%, 420px); max-height: 290px; overflow-y: auto; padding: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow-lg); }
+.spending-month-options button { display: flex; align-items: center; justify-content: space-between; gap: 4px; min-width: 0; min-height: 38px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text); cursor: pointer; font: inherit; font-size: 12px; font-weight: 600; text-align: left; white-space: nowrap; }
+.spending-month-options button:hover { border-color: var(--primary); background: var(--surface-soft); }
+.spending-month-options button[aria-pressed="true"] { border-color: var(--primary); background: var(--primary-soft); color: var(--primary-hover); }
+.spending-month-options button[aria-pressed="true"]::after { content: "✓"; margin-left: auto; font-size: 15px; font-weight: 800; }
+.spending-month-options button:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.spending-month-options button small { color: var(--muted); font-size: 10px; font-weight: 600; }
+.spending-comparison-help { display: block; margin-top: 5px; color: var(--muted); font-size: 11px; line-height: 1.35; }
 .spending-mode-switch button { flex: 1 1 auto; white-space: nowrap; }
 .spending-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(285px, 1fr); gap: 14px; }
 .spending-main-chart, .spending-secondary-panel { min-width: 0; }

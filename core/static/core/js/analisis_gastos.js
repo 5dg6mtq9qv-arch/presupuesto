@@ -4,6 +4,9 @@
   const source = document.getElementById("spending-analysis-data");
   if (!source) return;
   const data = JSON.parse(source.textContent);
+  const isIncome = document.querySelector("[data-analysis-kind]").dataset.analysisKind === "income";
+  const noun = isIncome ? "ingreso" : "gasto";
+  const plural = isIncome ? "ingresos" : "gastos";
   const months = data.months;
   const currentIndex = months.findIndex(month => month.current);
   if (currentIndex < 0) return;
@@ -15,11 +18,11 @@
   const percent = new Intl.NumberFormat("es-EC", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   const sum = values => values.reduce((total, value) => total + Number(value || 0), 0);
   const palette = ["#159a8c", "#8b68ca", "#f2a43a", "#4b83c5"];
-  const monthBoxes = all("[data-spending-month]");
-  let selected = monthBoxes.filter(box => box.checked).map(box => Number(box.value));
+  const monthButtons = all("[data-spending-month]");
+  let selected = monthButtons.filter(button => button.getAttribute("aria-pressed") === "true").map(button => Number(button.value));
   let categoryName = "";
   let mode = "cumulative";
-  let comparison = "same_day";
+  let comparison = "full_month";
   let activePanel = "daily";
   const charts = {};
 
@@ -80,7 +83,7 @@
     const earlier = previous();
     const mean = average(earlier.map(index => total(daily(index), index)));
     setText("[data-stat-current]", money.format(current));
-    setText("[data-stat-current-label]", categoryName ? "Gastado este mes · categoría" : "Gastado este mes");
+    setText("[data-stat-current-label]", `${isIncome ? "Ingresado" : "Gastado"} este mes${categoryName ? " · categoría" : ""}`);
     setText("[data-stat-average]", mean === null ? "Sin datos" : money.format(mean));
     setText("[data-stat-average-label]", `Promedio anterior (${earlier.length})`);
     one(".spending-stat:nth-child(2) div > span").textContent = comparison === "same_day" ? "Mismo corte de los meses elegidos" : "Meses anteriores completos";
@@ -91,7 +94,7 @@
     let detail = "Selecciona meses anteriores";
     if (mean !== null) {
       if (mean === 0) {
-        variation = current ? "Nuevo gasto" : "Sin gasto";
+        variation = current ? `Nuevo ${noun}` : `Sin ${noun}`;
       } else {
         const change = (current / mean - 1) * 100;
         variation = `${change > 0 ? "+" : ""}${percent.format(change)}%`;
@@ -129,7 +132,7 @@
       }));
       chart.update();
     }
-    setText("[data-daily-description]", `${mode === "cumulative" ? "Gasto acumulado" : "Gasto diario"} de los meses elegidos${categoryName ? ` · ${categoryName}` : ""}.`);
+    setText("[data-daily-description]", `${isIncome ? "Ingreso" : "Gasto"} ${mode === "cumulative" ? "acumulado" : "diario"} de los meses elegidos${categoryName ? ` · ${categoryName}` : ""}.`);
     setText("[data-current-cutoff]", `Actual hasta el día ${data.currentDay}`);
     const legend = one("[data-spending-legend]");
     legend.replaceChildren();
@@ -142,7 +145,7 @@
       legend.append(label);
     });
 
-    setText("[data-comparison-description]", comparison === "same_day" ? `Gastos hasta el día ${data.currentDay} (o último día del mes).` : "Meses anteriores completos; actual hasta hoy.");
+    setText("[data-comparison-description]", comparison === "same_day" ? `${isIncome ? "Ingresos" : "Gastos"} hasta el día ${data.currentDay} (o último día del mes).` : "Meses anteriores completos; actual hasta hoy.");
     setText("[data-comparison-relative]", "Vs. actual");
     const rows = one("[data-comparison-rows]");
     rows.replaceChildren();
@@ -160,7 +163,7 @@
       amount.textContent = money.format(value);
       const relative = document.createElement("td");
       relative.className = "text-end";
-      relative.textContent = index === currentIndex ? "—" : current ? `${percent.format((value / current - 1) * 100)}%` : value ? "Nuevo gasto" : "—";
+      relative.textContent = index === currentIndex ? "—" : current ? `${percent.format((value / current - 1) * 100)}%` : value ? `Nuevo ${noun}` : "—";
       row.append(label, amount, relative);
       rows.append(row);
     });
@@ -173,7 +176,7 @@
     })).filter(category => category.amount > 0 && (!categoryName || category.name === categoryName))
       .sort((a, b) => b.amount - a.amount).slice(0, 5);
     const maximum = categoryTotals[0]?.amount || 1;
-    if (!categoryTotals.length) top.textContent = "Sin gastos confirmados en este mes.";
+    if (!categoryTotals.length) top.textContent = `Sin ${plural} confirmados en este mes.`;
     categoryTotals.forEach(category => {
       const row = document.createElement("div");
       row.className = "spending-category-row";
@@ -197,7 +200,7 @@
     if (!chart) return;
     chart.data.labels = selected.map(index => months[index].label);
     chart.data.datasets = [{
-      label: comparison === "same_day" ? `Gasto hasta el día ${data.currentDay}` : "Gasto registrado",
+      label: comparison === "same_day" ? `${isIncome ? "Ingreso" : "Gasto"} hasta el día ${data.currentDay}` : `${isIncome ? "Ingreso" : "Gasto"} registrado`,
       data: selected.map(index => total(daily(index), index)),
       backgroundColor: selected.map(index => index === currentIndex ? "#159a8c" : "#8b68ca"),
       borderRadius: 7,
@@ -233,23 +236,38 @@
   const render = () => {
     setText("[data-months-count]", `Meses a comparar (${selected.length}/4)`);
     setText("[data-months-summary]", selected.map(index => months[index].label).join(", "));
+    setText("[data-comparison-help]", comparison === "same_day"
+      ? `Solo días 1–${data.currentDay} de cada mes. Los movimientos posteriores aparecen al elegir «Mes completo registrado».`
+      : `Meses anteriores completos; el actual llega hasta hoy. ${isIncome ? "Incluye todos los ingresos confirmados." : "Incluye compras a crédito confirmadas."}`);
     renderStats();
     renderDaily();
     renderMonthly();
     renderCategory();
   };
 
-  monthBoxes.forEach(box => box.addEventListener("change", () => {
-    const proposed = monthBoxes.filter(item => item.checked).map(item => Number(item.value));
+  monthButtons.forEach(button => button.addEventListener("click", () => {
+    const wasSelected = button.getAttribute("aria-pressed") === "true";
+    const proposed = wasSelected ? selected.filter(index => index !== Number(button.value))
+      : [...selected, Number(button.value)].sort((a, b) => a - b);
     if (proposed.length < 1 || proposed.length > 4) {
-      box.checked = !box.checked;
       one("[data-month-warning]").hidden = false;
       return;
     }
     one("[data-month-warning]").hidden = true;
+    button.setAttribute("aria-pressed", String(!wasSelected));
     selected = proposed;
     render();
   }));
+  const monthPicker = one("#spending-months");
+  document.addEventListener("click", event => {
+    if (!monthPicker.contains(event.target)) monthPicker.open = false;
+  });
+  monthPicker.addEventListener("keydown", event => {
+    if (event.key === "Escape") {
+      monthPicker.open = false;
+      monthPicker.querySelector("summary").focus();
+    }
+  });
   one("#spending-category").addEventListener("change", event => { categoryName = event.target.value; render(); });
   one("#spending-compare").addEventListener("change", event => { comparison = event.target.value; render(); });
   all("[data-spending-mode]").forEach(button => button.addEventListener("click", () => {

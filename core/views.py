@@ -128,7 +128,7 @@ from .services import (
     sincronizar_deuda_compra_credito,
     sincronizar_movimientos_recurrentes_pendientes,
 )
-from .spending_analysis import build_spending_analysis
+from .spending_analysis import build_income_analysis, build_spending_analysis
 from .bank_import import CSVImportError, confirm_import, create_import_preview
 from .amortization_import import AmortizationImportError, parse_amortization_file as parse_amortization_pdf
 from .receipt_capture import analyze_receipt, receipt_error_for_display
@@ -3302,6 +3302,15 @@ def analisis_gastos(request):
         request,
         "core/analisis_gastos.html",
         {"spending_data": build_spending_analysis(request.user)},
+    )
+
+
+@login_required
+def analisis_ingresos(request):
+    return render(
+        request,
+        "core/analisis_gastos.html",
+        {"spending_data": build_income_analysis(request.user), "is_income": True},
     )
 
 
