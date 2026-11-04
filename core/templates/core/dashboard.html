@@ -965,9 +965,12 @@
           : `Estimación lineal orientativa${diferencia}: no hubo gasto al mismo corte del mes de referencia; se usa el ritmo diario actual. No es un gasto confirmado.${pocosDias}`;
       }
     };
-    categoriaTendencia.addEventListener("change", renderTendencia);
-    mesBaseTendencia.addEventListener("change", renderTendencia);
-    mesComparadoTendencia.addEventListener("change", renderTendencia);
+    const filtrosTendencia = [categoriaTendencia, mesBaseTendencia, mesComparadoTendencia];
+    if (window.jQuery) {
+      window.jQuery(filtrosTendencia).on("change", renderTendencia);
+    } else {
+      filtrosTendencia.forEach(selector => selector.addEventListener("change", renderTendencia));
+    }
     renderTendencia();
 
     const budgetSource = data.presupuesto.labels.map((label, index) => {
