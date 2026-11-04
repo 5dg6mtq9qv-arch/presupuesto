@@ -1002,6 +1002,7 @@ class MovimientoRecurrente(models.Model):
         related_name="recurrentes_credito",
     )
     dia_pago_credito = models.PositiveSmallIntegerField(null=True, blank=True)
+    pago_mes_siguiente = models.BooleanField(default=False)
     concepto = models.CharField(max_length=160)
     monto = models.DecimalField(max_digits=12, decimal_places=2)
     frecuencia = models.CharField(max_length=20, choices=Frecuencia.choices, default=Frecuencia.MENSUAL)

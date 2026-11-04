@@ -767,8 +767,10 @@ def datos_credito_recurrente(recurrente, fecha):
     )
     if not es_credito:
         return False, None
+    anio_pago, mes_pago = (siguiente_mes(fecha.year, fecha.month)
+                           if recurrente.pago_mes_siguiente else (fecha.year, fecha.month))
     fecha_pago = fecha_recurrente_para_mes(
-        fecha.year, fecha.month, recurrente.dia_pago_credito,
+        anio_pago, mes_pago, recurrente.dia_pago_credito,
     )
     if fecha_pago < fecha:
         anio_pago, mes_pago = siguiente_mes(fecha.year, fecha.month)

@@ -1153,7 +1153,7 @@ class PresupuestoMensualForm(UserScopedModelForm):
 class MovimientoRecurrenteForm(UserScopedModelForm):
     class Meta:
         model = MovimientoRecurrente
-        fields = ["tipo", "categoria", "cuenta", "metodo_pago", "acreedor_credito", "dia_pago_credito", "concepto", "monto", "dia_mes", "aplicar_automaticamente", "activo", "nota"]
+        fields = ["tipo", "categoria", "cuenta", "metodo_pago", "acreedor_credito", "dia_pago_credito", "pago_mes_siguiente", "concepto", "monto", "dia_mes", "aplicar_automaticamente", "activo", "nota"]
         labels = {
             "categoria": "Categoría",
             "metodo_pago": "Método de pago",
@@ -1162,11 +1162,13 @@ class MovimientoRecurrenteForm(UserScopedModelForm):
             "aplicar_automaticamente": "Confirmar automáticamente",
             "acreedor_credito": "Acreedor de la tarjeta",
             "dia_pago_credito": "Día máximo de pago de la tarjeta",
+            "pago_mes_siguiente": "Pagar en el mes siguiente a la compra",
         }
         help_texts = {
             "cuenta": "Se propondrá al confirmar. Si activas la aplicación automática, esta cuenta se usará directamente.",
             "aplicar_automaticamente": "Al usar tarjeta se crea la cuota sin afectar la cuenta; para otros métodos se usa la cuenta prevista.",
             "dia_pago_credito": "Si el día de pago ya pasó al generarse la compra, la cuota vence el mes siguiente.",
+            "pago_mes_siguiente": "Ejemplo: compra el 4 de octubre y paga el 18 de noviembre.",
         }
         widgets = {
             "monto": forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
@@ -1217,6 +1219,7 @@ class MovimientoRecurrenteForm(UserScopedModelForm):
         else:
             cleaned_data["acreedor_credito"] = None
             cleaned_data["dia_pago_credito"] = None
+            cleaned_data["pago_mes_siguiente"] = False
         if cleaned_data.get("aplicar_automaticamente") and not es_credito and not cleaned_data.get("cuenta"):
             self.add_error("cuenta", "Selecciona la cuenta que se afectará automáticamente.")
         return cleaned_data
