@@ -147,9 +147,14 @@ class ProductFeaturesTests(TestCase):
         serie = next(item for item in tendencia["categorias"] if item["nombre"] == "Servicios de prueba")
         self.assertEqual(serie["valores"][-2:], [30.0, 5.0])
         self.assertEqual(serie["mismoCorte"][-2:], [10.0, 5.0])
+        self.assertEqual(serie["diarios"][-2][2], 10.0)
+        self.assertEqual(serie["diarios"][-2][19], 20.0)
+        self.assertEqual(serie["diarios"][-1][2], 5.0)
         self.assertEqual(tendencia["diasCorte"][-2:], [4, 4])
         self.assertContains(response, 'id="mes-base-tendencia"', html=False)
         self.assertContains(response, 'id="mes-comparado-tendencia"', html=False)
+        self.assertContains(response, 'id="tendenciaMesBaseChart"', html=False)
+        self.assertContains(response, 'id="tendenciaMesComparadoChart"', html=False)
 
     def test_pdf_explains_when_deferred_debt_plan_is_manageable(self):
         today = timezone.localdate()

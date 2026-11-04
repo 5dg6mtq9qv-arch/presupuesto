@@ -220,7 +220,7 @@
   <div class="panel-heading">
     <div>
       <h2 id="category-trend-title">¿Suben o bajan tus gastos por categoría?</h2>
-      <p class="muted mb-0">Gastos confirmados, incluidas compras a crédito; los pagos de cuotas no se suman otra vez. El punto separado muestra el mes en curso.</p>
+      <p class="muted mb-0">Gasto acumulado día a día en cada mes. Incluye compras a crédito, sin sumar otra vez sus cuotas pagadas.</p>
     </div>
     <div class="chart-toolbar">
       <label for="categoria-tendencia" class="form-label mb-0">Categoría</label>
@@ -247,7 +247,16 @@
     <div class="chart-insight" data-trend-projection-card hidden><small>Estimación al cierre</small><strong data-trend-projection>0,00</strong></div>
   </div>
   <p class="muted mb-3" data-trend-projection-note hidden></p>
-  <div class="chart-box"><canvas id="tendenciaCategoriasChart" aria-label="Evolución mensual de gastos por categoría" role="img"></canvas></div>
+  <div class="comparison-charts">
+    <div class="comparison-chart">
+      <h3 data-trend-chart-base-title>Mes base</h3>
+      <div class="chart-box"><canvas id="tendenciaMesBaseChart" aria-label="Gasto acumulado del mes base" role="img"></canvas></div>
+    </div>
+    <div class="comparison-chart">
+      <h3 data-trend-chart-compare-title>Mes comparado</h3>
+      <div class="chart-box"><canvas id="tendenciaMesComparadoChart" aria-label="Gasto acumulado del mes comparado" role="img"></canvas></div>
+    </div>
+  </div>
 </section>
 
 <div class="dashboard-grid">
@@ -882,49 +891,72 @@
       option.textContent = categoria.nombre;
       categoriaTendencia.append(option);
     });
-    const tendenciaChart = new Chart(document.getElementById("tendenciaCategoriasChart"), {
-      type: "line",
-      data: {
-        labels: tendencia.labels,
-        datasets: [{
-          label: "Todos los gastos", data: [...tendencia.total.slice(0, -1), null],
-          borderColor: "#25a194", backgroundColor: "rgba(37,161,148,.14)",
-          pointRadius: 4, pointHoverRadius: 6, tension: .3, fill: true,
-        }, {
-          label: "Mes en curso", data: [...tendencia.total.slice(0, -1).map(() => null), tendencia.total.at(-1)],
-          borderColor: "#25a194", backgroundColor: "#25a194",
-          pointRadius: 6, pointHoverRadius: 8, showLine: false,
-        }],
-      },
-      options: standardOptions(),
-    });
+    const crearGraficaMes = (id, color) => {
+      const options = standardOptions();
+      options.plugins.legend.display = false;
+      options.scales.x.title = {display: true, text: "Día del mes"};
+      return new Chart(document.getElementById(id), {
+        type: "line",
+        data: {
+          labels: [],
+          datasets: [{
+            label: "Gasto acumulado", data: [], borderColor: color,
+            backgroundColor: `${color}22`, pointRadius: 2, pointHoverRadius: 5,
+            tension: .25, fill: true,
+          }, {
+            label: "Mismo corte", data: [], borderColor: "#f59e0b",
+            backgroundColor: "#f59e0b", pointRadius: 6, pointHoverRadius: 8,
+            showLine: false,
+          }],
+        },
+        options,
+      });
+    };
+    const graficaBase = crearGraficaMes("tendenciaMesBaseChart", "#64748b");
+    const graficaComparada = crearGraficaMes("tendenciaMesComparadoChart", "#25a194");
+    const gastoAcumulado = (diarios, indice, limite) => {
+      let acumulado = 0;
+      return diarios[indice].map((monto, dia) => {
+        if (dia >= limite) return null;
+        acumulado += Number(monto);
+        return acumulado;
+      });
+    };
     const renderTendencia = () => {
       const categoria = categoriaTendencia.value === "" ? null : tendencia.categorias[Number(categoriaTendencia.value)];
       const valores = categoria ? categoria.valores : tendencia.total;
       const valoresMismoCorte = categoria ? categoria.mismoCorte : tendencia.totalMismoCorte;
+      const valoresDiarios = categoria ? categoria.diarios : tendencia.totalDiario;
       const baseIndex = Number(mesBaseTendencia.value);
       const comparadoIndex = Number(mesComparadoTendencia.value);
       const actualIndex = tendencia.labels.length - 1;
       const incluyeMesActual = baseIndex === actualIndex || comparadoIndex === actualIndex;
-      const dataset = tendenciaChart.data.datasets[0];
-      dataset.label = categoria ? categoria.nombre : "Todos los gastos";
-      dataset.data = [...valores.slice(0, -1), null];
-      dataset.borderColor = categoria?.color || "#25a194";
-      dataset.backgroundColor = categoria ? `${categoria.color}22` : "rgba(37,161,148,.14)";
-      dataset.pointRadius = tendencia.labels.map((_, index) => index === baseIndex || index === comparadoIndex ? 7 : 4);
-      const avance = tendenciaChart.data.datasets[1];
-      avance.data = [...valores.slice(0, -1).map(() => null), valores.at(-1)];
-      avance.borderColor = dataset.borderColor;
-      avance.backgroundColor = dataset.borderColor;
-      tendenciaChart.update();
-
       const base = Number((incluyeMesActual ? valoresMismoCorte : valores)[baseIndex] || 0);
       const comparado = Number((incluyeMesActual ? valoresMismoCorte : valores)[comparadoIndex] || 0);
       const nombreBase = tendencia.labels[baseIndex].replace(" · en curso", "");
       const nombreComparado = tendencia.labels[comparadoIndex].replace(" · en curso", "");
+      for (const [grafica, indice, color] of [
+        [graficaBase, baseIndex, "#64748b"],
+        [graficaComparada, comparadoIndex, categoria?.color || "#25a194"],
+      ]) {
+        const limite = indice === actualIndex ? tendencia.diasCorte[indice] : tendencia.diasMes[indice];
+        grafica.data.labels = valoresDiarios[indice].map((_, dia) => String(dia + 1));
+        grafica.data.datasets[0].data = gastoAcumulado(valoresDiarios, indice, limite);
+        grafica.data.datasets[1].data = grafica.data.labels.map((_, dia) =>
+          incluyeMesActual && indice !== actualIndex && dia === tendencia.diasCorte[indice] - 1
+            ? grafica.data.datasets[0].data[dia]
+            : null
+        );
+        grafica.data.datasets[0].borderColor = color;
+        grafica.data.datasets[0].backgroundColor = `${color}22`;
+        grafica.options.scales.y.max = Math.max(Number(valores[baseIndex]), Number(valores[comparadoIndex]), 1) * 1.1;
+        grafica.update();
+      }
+      setText("[data-trend-chart-base-title]", `${nombreBase}${baseIndex === actualIndex ? " · en curso" : ""}`);
+      setText("[data-trend-chart-compare-title]", `${nombreComparado}${comparadoIndex === actualIndex ? " · en curso" : ""}`);
       const notaComparacion = document.querySelector("[data-trend-comparison-note]");
       notaComparacion.textContent = incluyeMesActual
-        ? `Comparación justa: días 1–${tendencia.diasCorte[baseIndex]} de ${nombreBase} frente a 1–${tendencia.diasCorte[comparadoIndex]} de ${nombreComparado}.`
+        ? `Comparación justa: días 1–${tendencia.diasCorte[baseIndex]} de ${nombreBase} frente a 1–${tendencia.diasCorte[comparadoIndex]} de ${nombreComparado}. El punto ámbar marca el corte en el mes cerrado.`
         : "Se comparan los meses completos elegidos.";
       setText("[data-trend-base-label]", `${nombreBase}${incluyeMesActual ? " · mismo corte" : ""}`);
       setText("[data-trend-compare-label]", `${nombreComparado}${incluyeMesActual ? " · mismo corte" : ""}`);
