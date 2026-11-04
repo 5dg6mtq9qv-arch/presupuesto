@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% block page_title %}Conciliar estado de tarjeta{% endblock %}
-{% block page_subtitle %}Usa el PDF completo del banco o concilia únicamente un total{% endblock %}
+{% block page_subtitle %}Sube el estado o una foto; el análisis detecta cómo procesarlo{% endblock %}
 {% block content %}
 <section class="panel form-panel">
-  <div class="safe-notice"><span class="material-symbols-outlined">verified_user</span><div><strong>El PDF del banco tiene prioridad</strong><p>Con el PDF se revisan cargos, totales y registros sobrantes. Si solo tienes el total, sube una foto o escribe el monto para ver cuánto sobra o falta.</p></div></div>
+  <div class="safe-notice"><span class="material-symbols-outlined">verified_user</span><div><strong>Sube el archivo directamente</strong><p>El PDF permite revisar cargos y totales. Una foto permite conciliar el total. También puedes escribir el monto si no tienes un archivo.</p></div></div>
   <p class="muted">Si el acreedor aún no aparece, <a href="{% url 'deuda_list' %}">créalo en Deudas</a> y vuelve a esta pantalla.</p>
   <form class="form-grid" method="post" enctype="multipart/form-data">{% csrf_token %}
     {% include "core/includes/unfold_form_fields.html" %}
@@ -12,19 +12,14 @@
 </section>
 <script>
 (() => {
-  const mode = document.getElementById('id_tipo_entrada');
   const file = document.getElementById('id_archivo');
   const amount = document.getElementById('id_monto_total');
   const month = document.getElementById('id_mes');
-  if (!mode || !file || !amount || !month) return;
+  if (!file || !amount || !month) return;
   function update() {
-    const manual = mode.value === 'total_monto';
-    file.closest('.unfold-field, .mb-3, .field-wrapper')?.toggleAttribute('hidden', manual);
-    amount.closest('.unfold-field, .mb-3, .field-wrapper')?.toggleAttribute('hidden', !manual);
-    month.closest('.unfold-field, .mb-3, .field-wrapper')?.toggleAttribute('hidden', mode.value === 'pdf');
-    file.accept = mode.value === 'pdf' ? '.pdf,application/pdf' : '.jpg,.jpeg,.png,.webp,image/*';
+    month.closest('.unfold-field, .mb-3, .field-wrapper')?.toggleAttribute('hidden', !amount.value);
   }
-  mode.addEventListener('change', update);
+  amount.addEventListener('input', update);
   update();
 })();
 </script>
