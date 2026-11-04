@@ -109,6 +109,10 @@
       <span class="material-symbols-outlined">filter_alt</span><span>Aplicar</span>
     </button>
   </form>
+  <p class="muted mt-3 mb-0" role="status">
+    <strong>{{ cantidad_deudas_filtradas }}</strong> deuda{{ cantidad_deudas_filtradas|pluralize:"s" }} encontrada{{ cantidad_deudas_filtradas|pluralize:"s" }}
+    · Saldo pendiente total: <strong class="amount">{{ saldo_deudas_filtradas|floatformat:2 }}</strong>
+  </p>
 </section>
 
 <section class="debt-list" aria-label="Listado de deudas">

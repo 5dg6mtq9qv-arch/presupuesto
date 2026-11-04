@@ -3099,6 +3099,26 @@ class DeudaListFilterTests(TestCase):
         self.assertEqual(response.context["filters"]["pago_desde"], "2026-09-15")
         self.assertEqual(response.context["filters"]["pago_hasta"], "2026-09-15")
 
+    def test_resumen_muestra_total_de_las_deudas_filtradas(self):
+        response = self.client.get(reverse("deuda_list"), {
+            "pago_desde": "2026-09-15", "pago_hasta": "2026-09-15",
+        })
+        self.assertEqual(response.context["cantidad_deudas_filtradas"], 1)
+        self.assertEqual(response.context["saldo_deudas_filtradas"], Decimal("100.00"))
+        self.assertContains(response, "Saldo pendiente total:")
+
+    def test_resumen_incluye_deudas_de_otras_paginas(self):
+        for numero in range(11):
+            Deuda.objects.create(
+                usuario=self.user, acreedor="Banco", concepto=f"Extra {numero}",
+                monto_inicial="2.00", saldo_actual="2.00",
+                fecha_inicio="2026-01-01", estado=Deuda.Estado.CANCELADA,
+            )
+        response = self.client.get(reverse("deuda_list"))
+        self.assertEqual(len(response.context["deudas"]), 10)
+        self.assertEqual(response.context["cantidad_deudas_filtradas"], 14)
+        self.assertEqual(response.context["saldo_deudas_filtradas"], Decimal("322.00"))
+
     def test_filtra_por_fecha_de_generacion_independientemente(self):
         response = self.client.get(
             reverse("deuda_list"),

@@ -4742,6 +4742,10 @@ def deuda_list(request):
         deudas = deudas.order_by("acreedor", "fecha_vencimiento", "pk")
     elif orden == "acreedor_desc":
         deudas = deudas.order_by("-acreedor", "fecha_vencimiento", "pk")
+    resumen_filtrado = Deuda.objects.filter(
+        usuario=request.user,
+        pk__in=deudas.order_by().values("pk"),
+    ).aggregate(cantidad=Count("pk"), saldo_pendiente=Sum("saldo_actual"))
     page_obj, list_querystring = paginate_queryset(request, deudas)
     for deuda in page_obj:
         pagos = list(deuda.pagos.all())
@@ -4798,6 +4802,8 @@ def deuda_list(request):
             "deudas": page_obj,
             "page_obj": page_obj,
             "list_querystring": list_querystring,
+            "cantidad_deudas_filtradas": resumen_filtrado["cantidad"],
+            "saldo_deudas_filtradas": resumen_filtrado["saldo_pendiente"] or Decimal("0"),
             "categorias": categorias,
             "acreedores": Acreedor.objects.filter(usuario=request.user).order_by("nombre"),
             "cuotas_mes": cuotas_mes,
