@@ -14,8 +14,20 @@
     </div>
   </div>
 
+  <form method="get" class="mb-3">
+    <label for="acreedor-filtro" class="form-label">Acreedor</label>
+    <select id="acreedor-filtro" name="acreedor" class="form-select" onchange="this.form.submit()">
+      <option value="">Todos los acreedores</option>
+      {% for acreedor in acreedores_mes %}
+        <option value="{{ acreedor }}"{% if acreedor_seleccionado == acreedor %} selected{% endif %}>{{ acreedor }}</option>
+      {% endfor %}
+    </select>
+    <noscript><button class="btn btn-outline-primary mt-2" type="submit">Mostrar cuotas</button></noscript>
+  </form>
+
   <form class="form-grid" method="post">
     {% csrf_token %}
+    <input type="hidden" name="acreedor" value="{{ acreedor_seleccionado }}">
     <div style="grid-column: 1 / -1;">
       <label class="debt-payment bulk-payment-select-all">
         <input id="seleccionar-todas" type="checkbox" checked>

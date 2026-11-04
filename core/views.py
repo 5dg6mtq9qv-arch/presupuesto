@@ -5059,6 +5059,21 @@ def pagos_mes_confirmar(request):
         estado=PagoDeuda.Estado.PENDIENTE,
         fecha__range=(inicio_mes, fin_mes),
     ).select_related("deuda").order_by("fecha", "deuda__acreedor", "deuda_id", "cuota_numero", "pk")
+    acreedores_mes = list(
+        pagos_query.order_by("deuda__acreedor")
+        .values_list("deuda__acreedor", flat=True)
+        .distinct()
+    )
+    acreedor_seleccionado = (
+        request.POST.get("acreedor", "") if request.method == "POST"
+        else request.GET.get("acreedor", "")
+    )
+    if acreedor_seleccionado:
+        pagos_query = pagos_query.filter(deuda__acreedor=acreedor_seleccionado)
+    contexto_acreedores = {
+        "acreedores_mes": acreedores_mes,
+        "acreedor_seleccionado": acreedor_seleccionado,
+    }
     if request.method == "POST":
         pagos = list(pagos_query.select_for_update())
         deuda_ids = sorted({pago.deuda_id for pago in pagos})
@@ -5125,6 +5140,7 @@ def pagos_mes_confirmar(request):
                 "total": total,
                 "inicio_mes": inicio_mes,
                 "saldos_cuenta": saldos_cuenta,
+                **contexto_acreedores,
             },
         )
 
@@ -5150,6 +5166,7 @@ def pagos_mes_confirmar(request):
                 "total": total,
                 "inicio_mes": inicio_mes,
                 "saldos_cuenta": saldos_cuenta,
+                **contexto_acreedores,
             },
         )
 

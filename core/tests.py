@@ -2989,6 +2989,29 @@ class PagoAgrupadoMesTests(TestCase):
         self.assertEqual(saldo_actual_cuenta(self.cuenta), Decimal("400.00"))
 
     @patch("core.views.timezone.localdate")
+    def test_selector_de_acreedor_limita_cuotas_y_pago(self, localdate):
+        localdate.return_value = self.hoy
+        deuda_banco, cuota_banco = self.crear_cuota("Banco", "80.00", datetime(2026, 10, 5).date())
+        deuda_tarjeta, cuota_tarjeta = self.crear_cuota("Tarjeta", "45.00", datetime(2026, 10, 20).date())
+        deuda_tarjeta.acreedor = "Tarjeta Visa"
+        deuda_tarjeta.save(update_fields=["acreedor"])
+
+        pagina = self.client.get(reverse("pagos_mes_confirmar"), {"acreedor": "Tarjeta Visa"})
+        self.assertContains(pagina, 'id="acreedor-filtro"', html=False)
+        self.assertEqual([p.pk for p in pagina.context["pagos"]], [cuota_tarjeta.pk])
+        self.assertEqual(pagina.context["total"], Decimal("45.00"))
+
+        respuesta = self.client.post(reverse("pagos_mes_confirmar"), {
+            "acreedor": "Tarjeta Visa", "cuenta": self.cuenta.pk,
+            "pagos": [cuota_tarjeta.pk, cuota_banco.pk],
+        })
+        self.assertRedirects(respuesta, reverse("deuda_list"))
+        deuda_banco.refresh_from_db()
+        deuda_tarjeta.refresh_from_db()
+        self.assertEqual(deuda_banco.saldo_actual, Decimal("80.00"))
+        self.assertEqual(deuda_tarjeta.saldo_actual, Decimal("0.00"))
+
+    @patch("core.views.timezone.localdate")
     def test_monto_superior_al_seleccionado_no_registra_pagos(self, localdate):
         localdate.return_value = self.hoy
         deuda, cuota = self.crear_cuota("Primera", "80.00", datetime(2026, 10, 5).date())
