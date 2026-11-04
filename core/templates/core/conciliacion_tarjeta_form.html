@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block page_title %}Conciliar estado de tarjeta{% endblock %}
+{% block page_subtitle %}Compara los cargos de un PDF o varias fotos con tus gastos registrados{% endblock %}
+{% block content %}
+<section class="panel form-panel">
+  <div class="safe-notice"><span class="material-symbols-outlined">verified_user</span><div><strong>Revisión antes de guardar</strong><p>Selecciona el acreedor, la cuenta y el mes de emisión del estado. Podrás revisar cada cargo antes de crear o ajustar gastos.</p></div></div>
+  <p class="muted">Si faltan opciones, crea el <a href="{% url 'deuda_list' %}">acreedor en Deudas</a> o la <a href="{% url 'cuenta_list' %}">cuenta de tarjeta en Cuentas</a> y vuelve a esta pantalla.</p>
+  <form class="form-grid" method="post" enctype="multipart/form-data">{% csrf_token %}
+    {% include "core/includes/unfold_form_fields.html" %}
+    <div class="form-actions"><a class="btn btn-outline-secondary" href="{% url 'actividad_financiera' %}">Cancelar</a><button class="btn btn-primary" type="submit">Analizar estado</button></div>
+  </form>
+</section>
+{% endblock %}

@@ -1924,6 +1924,7 @@
         <ul class="nav-list">
           <li><a class="nav-link {% if 'movimiento' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'movimiento_list' %}"><span class="material-symbols-outlined">sync_alt</span> Ingresos y gastos</a></li>
           <li><a class="nav-link {% if request.resolver_match.url_name == 'actividad_financiera' %}active{% endif %}" href="{% url 'actividad_financiera' %}"><span class="material-symbols-outlined">history</span> Actividad</a></li>
+          <li><a class="nav-link {% if 'conciliacion_tarjeta' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'conciliacion_tarjeta_nueva' %}"><span class="material-symbols-outlined">credit_card</span> Conciliar tarjeta</a></li>
           <li><a class="nav-link {% if request.resolver_match.url_name == 'cuenta_transferir' %}active{% endif %}" href="{% url 'cuenta_transferir' %}" data-tour-target="internal-moves"><span class="material-symbols-outlined">swap_horiz</span> Movimientos entre cuentas</a></li>
           <li><a class="nav-link {% if 'deuda' in request.resolver_match.url_name or 'pago' in request.resolver_match.url_name or 'importacion_amortizacion' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'deuda_list' %}" data-tour-target="debts"><span class="material-symbols-outlined">receipt_long</span> Deudas y cuotas</a></li>
           <li><a class="nav-link {% if 'presupuesto' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'presupuesto_list' %}"><span class="material-symbols-outlined">price_check</span> Presupuestos</a></li>
@@ -2051,6 +2052,7 @@
         <a class="quick-sheet-option" href="{% url 'movimiento_gasto_create' %}"><span class="material-symbols-outlined">north_east</span><strong>Gasto</strong></a>
         <a class="quick-sheet-option" href="{% url 'comprobante_nuevo' %}"><span class="material-symbols-outlined">photo_camera</span><strong>Comprobante</strong></a>
         <a class="quick-sheet-option" href="{% url 'importacion_bancaria_nueva' %}"><span class="material-symbols-outlined">upload_file</span><strong>CSV bancario</strong></a>
+        <a class="quick-sheet-option" href="{% url 'conciliacion_tarjeta_nueva' %}"><span class="material-symbols-outlined">credit_card</span><strong>Estado de tarjeta</strong></a>
         <button class="quick-sheet-option" type="button" data-quick-debt-open><span class="material-symbols-outlined">receipt_long</span><strong>Deuda</strong></button>
       </div>
       <div data-quick-debt hidden>

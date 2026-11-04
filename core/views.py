@@ -74,6 +74,7 @@ from .forms import (
     ConfiguracionTelegramForm,
     ConfirmarImportacionAmortizacionForm,
     ImportacionBancariaForm,
+    ConciliacionTarjetaForm,
     ImportacionAmortizacionForm,
     RevisionComprobanteForm,
     SubcategoriaForm,
@@ -131,6 +132,8 @@ from .services import (
 )
 from .spending_analysis import build_income_analysis, build_spending_analysis
 from .bank_import import CSVImportError, confirm_import, create_import_preview
+from .bank_import import _import_category
+from .card_statement import StatementError, compare_charges, extract_statement
 from .amortization_import import AmortizationImportError, parse_amortization_file as parse_amortization_pdf
 from .receipt_capture import analyze_receipt, receipt_error_for_display
 from .telegram_config import (
@@ -5461,6 +5464,99 @@ def importacion_bancaria_nueva(request):
         else:
             return redirect("importacion_bancaria_preview", pk=batch.pk)
     return render(request, "core/importacion_bancaria_form.html", {"form": form})
+
+
+@login_required
+def conciliacion_tarjeta_nueva(request):
+    ensure_user_finance_setup(request.user)
+    form = ConciliacionTarjetaForm(request.POST or None, request.FILES or None, user=request.user)
+    if request.method == "POST" and form.is_valid():
+        try:
+            result = extract_statement(request.user, form.cleaned_data["archivo"], form.cleaned_data["mes"])
+        except StatementError as exc:
+            form.add_error("archivo", str(exc))
+        except Exception:
+            logger.exception("Statement analysis failed for user_id=%s", request.user.pk)
+            form.add_error("archivo", "No se pudo analizar el estado en este momento. Vuelve a intentar.")
+        else:
+            request.session["borrador_conciliacion_tarjeta"] = {
+                **result,
+                "cuenta_id": form.cleaned_data["cuenta"].pk,
+                "acreedor_id": form.cleaned_data["acreedor"].pk,
+                "mes": form.cleaned_data["mes"].strftime("%Y-%m"),
+            }
+            return redirect("conciliacion_tarjeta_revisar")
+    return render(request, "core/conciliacion_tarjeta_form.html", {"form": form})
+
+
+def _conciliacion_context(request):
+    draft = request.session.get("borrador_conciliacion_tarjeta")
+    if not draft:
+        return None
+    account = CuentaFinanciera.objects.filter(pk=draft.get("cuenta_id"), usuario=request.user).first()
+    creditor = Acreedor.objects.filter(pk=draft.get("acreedor_id"), usuario=request.user).first()
+    if not account or not creditor:
+        return None
+    rows, extras = compare_charges(request.user, account, draft)
+    return {"borrador": draft, "cuenta": account, "acreedor": creditor, "filas": rows, "extras": extras}
+
+
+@login_required
+def conciliacion_tarjeta_revisar(request):
+    context = _conciliacion_context(request)
+    if context is None:
+        messages.info(request, "Primero sube un estado de cuenta.")
+        return redirect("conciliacion_tarjeta_nueva")
+    return render(request, "core/conciliacion_tarjeta_revisar.html", context)
+
+
+@login_required
+@require_POST
+@transaction.atomic
+def conciliacion_tarjeta_confirmar(request):
+    context = _conciliacion_context(request)
+    if context is None:
+        return redirect("conciliacion_tarjeta_nueva")
+    rows = context["filas"]
+    actions = []
+    for row in rows:
+        action = request.POST.get(f"accion_{row['index']}", "omitir")
+        allowed = {"omitir", "crear"}
+        if row["match"]:
+            allowed.update({"existe", "ajustar"})
+        if action not in allowed:
+            return HttpResponseBadRequest("Acción de conciliación no válida.")
+        actions.append(action)
+    category = _import_category(request.user) if "crear" in actions else None
+    created = adjusted = 0
+    for row, action in zip(rows, actions):
+        if action == "crear":
+            MovimientoFinanciero.objects.create(
+                usuario=request.user, cuenta=context["cuenta"], categoria=category,
+                acreedor_credito=context["acreedor"],
+                tipo=MovimientoFinanciero.Tipo.GASTO,
+                estado=MovimientoFinanciero.Estado.CONFIRMADO,
+                concepto=row["concepto"], monto=Decimal(row["monto"]), fecha=parse_date(row["fecha"]),
+                fecha_pago=parse_date(row.get("fecha_pago") or ""),
+                nota=f"Estado de tarjeta {context['borrador']['mes']}; acreedor: {context['acreedor'].nombre}. Revisado por el usuario.",
+            )
+            created += 1
+        elif action == "ajustar" and row["match"]:
+            movement = MovimientoFinanciero.objects.select_for_update().get(
+                pk=row["match"].pk, usuario=request.user,
+                tipo=MovimientoFinanciero.Tipo.GASTO,
+            )
+            movement.monto = Decimal(row["monto"])
+            if row.get("fecha_pago"):
+                movement.fecha_pago = parse_date(row["fecha_pago"])
+            movement.nota = (movement.nota + "\n" if movement.nota else "") + (
+                f"Monto ajustado según estado de tarjeta {context['borrador']['mes']}; acreedor: {context['acreedor'].nombre}."
+            )
+            movement.save(update_fields=["monto", "fecha_pago", "nota"])
+            adjusted += 1
+    request.session.pop("borrador_conciliacion_tarjeta", None)
+    messages.success(request, f"Conciliación completada: {created} gastos creados y {adjusted} ajustados.")
+    return redirect("actividad_financiera")
 
 
 @login_required

@@ -1475,6 +1475,40 @@ class ImportacionBancariaForm(forms.ModelForm):
         return uploaded
 
 
+class MultipleStatementInput(forms.ClearableFileInput):
+    allow_multiple_selected = True
+
+
+class MultipleStatementField(forms.FileField):
+    def clean(self, data, initial=None):
+        return [super(MultipleStatementField, self).clean(item, initial) for item in (data if isinstance(data, (list, tuple)) else [data])]
+
+
+class ConciliacionTarjetaForm(forms.Form):
+    cuenta = forms.ModelChoiceField(queryset=CuentaFinanciera.objects.none(), label="Tarjeta o cuenta")
+    acreedor = forms.ModelChoiceField(queryset=Acreedor.objects.none(), label="Acreedor")
+    mes = forms.DateField(
+        label="Mes del estado de cuenta",
+        input_formats=["%Y-%m"],
+        widget=forms.DateInput(attrs={"type": "month", "class": "form-control"}, format="%Y-%m"),
+    )
+    archivo = MultipleStatementField(
+        label="PDF o fotos del estado de cuenta",
+        help_text="Un PDF o varias fotos JPG, PNG o WebP. Máximo 12 archivos y 20 MB en total.",
+        widget=MultipleStatementInput(attrs={"accept": ".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*", "class": "form-control"}),
+    )
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["cuenta"].queryset = CuentaFinanciera.objects.filter(usuario=user, activa=True).order_by("nombre")
+        self.fields["acreedor"].queryset = Acreedor.objects.filter(usuario=user, activo=True).order_by("nombre")
+        self.fields["cuenta"].widget.attrs["class"] = "form-select"
+        self.fields["acreedor"].widget.attrs["class"] = "form-select"
+
+    def clean_mes(self):
+        return self.cleaned_data["mes"].replace(day=1)
+
+
 class ImportacionAmortizacionForm(forms.Form):
     archivo = forms.FileField(
         label="Archivo o imagen con las cuotas",

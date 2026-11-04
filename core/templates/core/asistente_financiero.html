@@ -83,6 +83,11 @@
 
   <aside class="assistant-side-stack">
     <section class="panel">
+      <h2>Conciliar estado de tarjeta</h2>
+      <p class="muted">Sube un PDF o varias fotos, elige acreedor y mes, y revisa qué gastos existen o faltan.</p>
+      <a class="btn btn-outline-primary" href="{% url 'conciliacion_tarjeta_nueva' %}">Subir estado de cuenta</a>
+    </section>
+    <section class="panel">
       <div class="panel-heading"><div><h2>Recomendaciones de hoy</h2><p class="muted mb-0">El asistente recuerda tu respuesta</p></div></div>
       {% for recomendacion in recomendaciones %}
         <article class="assistant-rec">
