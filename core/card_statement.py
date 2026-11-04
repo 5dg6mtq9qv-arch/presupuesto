@@ -154,16 +154,15 @@ def extract_statement(user, files, statement_month):
     return {"cargos": charges, "desde": start.isoformat(), "hasta": end.isoformat()}
 
 
-def compare_charges(user, account, draft):
+def compare_charges(user, creditor, draft):
     start, end = date.fromisoformat(draft["desde"]), date.fromisoformat(draft["hasta"])
-    # Allow posting delays and existing expenses without a card account set.
+    # Also consider older expenses without a creditor, but never another creditor.
     from datetime import timedelta
     candidates = list(MovimientoFinanciero.objects.filter(
         usuario=user, tipo=MovimientoFinanciero.Tipo.GASTO,
         fecha__range=(start - timedelta(days=7), end + timedelta(days=7)),
     ).exclude(estado=MovimientoFinanciero.Estado.ELIMINADO).filter(
-        Q(cuenta=account) | Q(cuenta__isnull=True, acreedor_credito_id=draft.get("acreedor_id")) |
-        Q(cuenta__isnull=True, acreedor_credito__isnull=True),
+        Q(acreedor_credito=creditor) | Q(acreedor_credito__isnull=True),
     ).order_by("fecha", "pk"))
     used = set()
     rows = []
@@ -177,13 +176,15 @@ def compare_charges(user, account, draft):
             similarity = SequenceMatcher(None, charge["concepto"].casefold(), movement.concepto.casefold()).ratio()
             exact_amount = movement.monto == amount
             if (exact_amount and similarity >= .35) or (similarity >= .68 and abs((movement.fecha - day).days) <= 3):
-                ranked.append((exact_amount, similarity, movement.cuenta_id == account.pk,
+                ranked.append((movement.acreedor_credito_id == creditor.pk, exact_amount, similarity,
                                -abs((movement.fecha - day).days), movement))
         ranked.sort(key=lambda x: x[:4], reverse=True)
         match = ranked[0][4] if ranked else None
         if match:
             used.add(match.pk)
         rows.append({"index": index, **charge, "match": match,
-                     "status": "existe" if match and match.monto == amount else "diferencia" if match else "nuevo"})
-    extras = [movement for movement in candidates if movement.pk not in used and movement.cuenta_id == account.pk and start <= movement.fecha <= end]
+                     "status": "existe" if match and match.acreedor_credito_id == creditor.pk and match.monto == amount
+                     else "posible" if match and not match.acreedor_credito_id
+                     else "diferencia" if match else "nuevo"})
+    extras = [movement for movement in candidates if movement.pk not in used and movement.acreedor_credito_id == creditor.pk and start <= movement.fecha <= end]
     return rows, extras

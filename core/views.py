@@ -5481,7 +5481,6 @@ def conciliacion_tarjeta_nueva(request):
         else:
             request.session["borrador_conciliacion_tarjeta"] = {
                 **result,
-                "cuenta_id": form.cleaned_data["cuenta"].pk,
                 "acreedor_id": form.cleaned_data["acreedor"].pk,
                 "mes": form.cleaned_data["mes"].strftime("%Y-%m"),
             }
@@ -5493,12 +5492,11 @@ def _conciliacion_context(request):
     draft = request.session.get("borrador_conciliacion_tarjeta")
     if not draft:
         return None
-    account = CuentaFinanciera.objects.filter(pk=draft.get("cuenta_id"), usuario=request.user).first()
     creditor = Acreedor.objects.filter(pk=draft.get("acreedor_id"), usuario=request.user).first()
-    if not account or not creditor:
+    if not creditor:
         return None
-    rows, extras = compare_charges(request.user, account, draft)
-    return {"borrador": draft, "cuenta": account, "acreedor": creditor, "filas": rows, "extras": extras}
+    rows, extras = compare_charges(request.user, creditor, draft)
+    return {"borrador": draft, "acreedor": creditor, "filas": rows, "extras": extras}
 
 
 @login_required
@@ -5532,7 +5530,7 @@ def conciliacion_tarjeta_confirmar(request):
     for row, action in zip(rows, actions):
         if action == "crear":
             MovimientoFinanciero.objects.create(
-                usuario=request.user, cuenta=context["cuenta"], categoria=category,
+                usuario=request.user, categoria=category,
                 acreedor_credito=context["acreedor"],
                 tipo=MovimientoFinanciero.Tipo.GASTO,
                 estado=MovimientoFinanciero.Estado.CONFIRMADO,

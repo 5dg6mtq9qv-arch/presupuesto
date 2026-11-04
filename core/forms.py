@@ -1485,7 +1485,6 @@ class MultipleStatementField(forms.FileField):
 
 
 class ConciliacionTarjetaForm(forms.Form):
-    cuenta = forms.ModelChoiceField(queryset=CuentaFinanciera.objects.none(), label="Tarjeta o cuenta")
     acreedor = forms.ModelChoiceField(queryset=Acreedor.objects.none(), label="Acreedor")
     mes = forms.DateField(
         label="Mes del estado de cuenta",
@@ -1500,9 +1499,7 @@ class ConciliacionTarjetaForm(forms.Form):
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["cuenta"].queryset = CuentaFinanciera.objects.filter(usuario=user, activa=True).order_by("nombre")
         self.fields["acreedor"].queryset = Acreedor.objects.filter(usuario=user, activo=True).order_by("nombre")
-        self.fields["cuenta"].widget.attrs["class"] = "form-select"
         self.fields["acreedor"].widget.attrs["class"] = "form-select"
 
     def clean_mes(self):

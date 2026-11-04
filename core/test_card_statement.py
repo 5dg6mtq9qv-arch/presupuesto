@@ -20,12 +20,13 @@ class CardStatementTests(TestCase):
         self.account = CuentaFinanciera.objects.create(usuario=self.user, nombre="Tarjeta", tipo=CuentaFinanciera.Tipo.TARJETA)
         self.creditor = Acreedor.objects.create(usuario=self.user, nombre="Banco")
         self.existing = MovimientoFinanciero.objects.create(
-            usuario=self.user, cuenta=self.account, tipo=MovimientoFinanciero.Tipo.GASTO,
+            usuario=self.user, cuenta=self.account, acreedor_credito=self.creditor,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
             concepto="NETFLIX.COM", monto="8.99", fecha=date(2026, 9, 14),
         )
         self.draft = {
             "mes": "2026-10", "desde": "2026-09-04", "hasta": "2026-10-03",
-            "cuenta_id": self.account.pk, "acreedor_id": self.creditor.pk,
+            "acreedor_id": self.creditor.pk,
             "cargos": [
                 {"fecha": "2026-09-14", "fecha_pago": "2026-10-19", "concepto": "NETFLIX.COM", "monto": "8.99"},
                 {"fecha": "2026-09-15", "fecha_pago": "2026-10-19", "concepto": "NUEVA COMPRA", "monto": "12.00"},
@@ -34,7 +35,7 @@ class CardStatementTests(TestCase):
 
     def test_matches_across_statement_month_without_reusing_expense(self):
         self.draft["cargos"].append(dict(self.draft["cargos"][0]))
-        rows, _ = compare_charges(self.user, self.account, self.draft)
+        rows, _ = compare_charges(self.user, self.creditor, self.draft)
         self.assertEqual([row["status"] for row in rows], ["existe", "nuevo", "nuevo"])
 
     def test_desktop_navigation_links_to_reconciliation(self):
@@ -45,7 +46,7 @@ class CardStatementTests(TestCase):
     def test_multiple_images_review_then_explicit_create(self, extract):
         extract.return_value = {key: self.draft[key] for key in ("desde", "hasta", "cargos")}
         response = self.client.post(reverse("conciliacion_tarjeta_nueva"), {
-            "cuenta": self.account.pk, "acreedor": self.creditor.pk, "mes": "2026-10",
+            "acreedor": self.creditor.pk, "mes": "2026-10",
             "archivo": [
                 SimpleUploadedFile("a.jpg", b"image-a", content_type="image/jpeg"),
                 SimpleUploadedFile("b.jpg", b"image-b", content_type="image/jpeg"),
@@ -61,6 +62,21 @@ class CardStatementTests(TestCase):
         self.assertEqual(created.monto, Decimal("12.00"))
         self.assertEqual(created.fecha, date(2026, 9, 15))
         self.assertEqual(created.fecha_pago, date(2026, 10, 19))
+        self.assertEqual(created.acreedor_credito, self.creditor)
+        self.assertIsNone(created.cuenta)
+
+    def test_unlinked_expense_requires_manual_review(self):
+        self.existing.acreedor_credito = None
+        self.existing.save(update_fields=["acreedor_credito"])
+        rows, _ = compare_charges(self.user, self.creditor, self.draft)
+        self.assertEqual(rows[0]["status"], "posible")
+
+    def test_does_not_match_another_creditor(self):
+        other = Acreedor.objects.create(usuario=self.user, nombre="Otro banco")
+        self.existing.acreedor_credito = other
+        self.existing.save(update_fields=["acreedor_credito"])
+        rows, _ = compare_charges(self.user, self.creditor, self.draft)
+        self.assertEqual(rows[0]["status"], "nuevo")
 
     def test_adjust_requires_user_selection(self):
         self.draft["cargos"] = [{"fecha": "2026-09-14", "concepto": "NETFLIX.COM", "monto": "10.99"}]

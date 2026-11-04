@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 {% block page_title %}Revisar estado de tarjeta{% endblock %}
-{% block page_subtitle %}{{ acreedor.nombre }} · {{ cuenta.nombre }} · estado {{ borrador.mes }}{% endblock %}
+{% block page_subtitle %}{{ acreedor.nombre }} · estado {{ borrador.mes }}{% endblock %}
 {% block content %}
 <section class="panel">
   <div class="panel-heading"><div><h2>{{ filas|length }} cargos detectados</h2><p class="muted">Período del estado: {{ borrador.desde }} a {{ borrador.hasta }}. Comprueba importes, fechas y coincidencias: la lectura de IA puede equivocarse.</p></div></div>
   <form method="post" action="{% url 'conciliacion_tarjeta_confirmar' %}">{% csrf_token %}
     <div class="table-wrap"><table class="table"><thead><tr><th>Fecha de consumo</th><th>Fecha máxima de pago</th><th>Cargo del estado</th><th>Importe</th><th>En tus gastos</th><th>Aprobar o no</th></tr></thead><tbody>
       {% for fila in filas %}<tr><td>{{ fila.fecha }}</td><td>{{ fila.fecha_pago|default:"No identificada" }}</td><td>{{ fila.concepto }}</td><td class="amount">${{ fila.monto }}</td><td>
-        {% if fila.match %}<strong>{{ fila.match.concepto }}</strong><br><small>Consumo {{ fila.match.fecha|date:"d/m/Y" }} · Pago {{ fila.match.fecha_pago|date:"d/m/Y"|default:"Sin fecha" }} · ${{ fila.match.monto|floatformat:2 }}</small><br>{% if fila.status == 'existe' %}<span class="badge text-bg-success">Existe</span>{% else %}<span class="badge text-bg-warning">Importe distinto</span>{% endif %}
+        {% if fila.match %}<strong>{{ fila.match.concepto }}</strong><br><small>Consumo {{ fila.match.fecha|date:"d/m/Y" }} · Pago {{ fila.match.fecha_pago|date:"d/m/Y"|default:"Sin fecha" }} · ${{ fila.match.monto|floatformat:2 }}</small><br>{% if fila.status == 'existe' %}<span class="badge text-bg-success">Existe</span>{% elif fila.status == 'posible' %}<span class="badge text-bg-warning">Posible coincidencia sin acreedor</span>{% else %}<span class="badge text-bg-warning">Importe distinto</span>{% endif %}
         {% else %}<span class="badge">No encontrado</span>{% endif %}
       </td><td><select class="form-select" name="accion_{{ fila.index }}" aria-label="Acción para {{ fila.concepto }}">
         <option value="omitir"{% if not fila.match %} selected{% endif %}>No seleccionar</option>
