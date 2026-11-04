@@ -3274,6 +3274,65 @@ class MovimientoRecurrenteServiceTests(TestCase):
         )
         self.assertTrue(all(m.cuenta_id is None for m in creados))
 
+    def test_tarjeta_recurrente_paga_el_mes_siguiente_cada_mes_sin_duplicar(self):
+        credito = MetodoPago.objects.create(usuario=self.user, nombre="Tarjeta mensual", tipo=MetodoPago.Tipo.CREDITO)
+        acreedor = Acreedor.objects.create(usuario=self.user, nombre="Visa mensual")
+        recurrente = MovimientoRecurrente.objects.create(
+            usuario=self.user, tipo=MovimientoFinanciero.Tipo.GASTO,
+            metodo_pago=credito, acreedor_credito=acreedor, dia_pago_credito=18,
+            pago_mes_siguiente=True, concepto="Internet", monto="16.39", dia_mes=4,
+            aplicar_automaticamente=True,
+        )
+        self.set_creado(recurrente, 2026, 9, 1)
+
+        generar_movimientos_recurrentes(
+            hasta_fecha=datetime(2026, 11, 4).date(), usuario=self.user,
+        )
+        generar_movimientos_recurrentes(
+            hasta_fecha=datetime(2026, 11, 4).date(), usuario=self.user,
+        )
+
+        self.assertEqual(
+            list(MovimientoFinanciero.objects.filter(recurrente=recurrente).order_by("fecha")
+                 .values_list("fecha", "estado")),
+            [
+                (datetime(2026, 9, 4).date(), MovimientoFinanciero.Estado.CONFIRMADO),
+                (datetime(2026, 10, 4).date(), MovimientoFinanciero.Estado.CONFIRMADO),
+                (datetime(2026, 11, 4).date(), MovimientoFinanciero.Estado.CONFIRMADO),
+            ],
+        )
+        self.assertEqual(
+            list(PagoDeuda.objects.filter(deuda__movimiento_origen__recurrente=recurrente)
+                 .order_by("fecha").values_list("fecha", "monto", "estado")),
+            [
+                (datetime(2026, 10, 18).date(), Decimal("16.39"), PagoDeuda.Estado.PENDIENTE),
+                (datetime(2026, 11, 18).date(), Decimal("16.39"), PagoDeuda.Estado.PENDIENTE),
+                (datetime(2026, 12, 18).date(), Decimal("16.39"), PagoDeuda.Estado.PENDIENTE),
+            ],
+        )
+
+    @patch("core.views.timezone.localdate", return_value=datetime(2026, 11, 4).date())
+    def test_inicio_genera_recurrente_automatico_si_no_corrio_la_tarea(self, _localdate):
+        credito = MetodoPago.objects.create(usuario=self.user, nombre="Tarjeta", tipo=MetodoPago.Tipo.CREDITO)
+        acreedor = Acreedor.objects.create(usuario=self.user, nombre="Visa")
+        recurrente = MovimientoRecurrente.objects.create(
+            usuario=self.user, tipo=MovimientoFinanciero.Tipo.GASTO,
+            metodo_pago=credito, acreedor_credito=acreedor, dia_pago_credito=18,
+            pago_mes_siguiente=True, concepto="Internet", monto="16.39", dia_mes=4,
+            aplicar_automaticamente=True,
+        )
+        self.set_creado(recurrente, 2026, 10, 1)
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("dashboard"))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            PagoDeuda.objects.filter(deuda__movimiento_origen__recurrente=recurrente,
+                                     fecha=datetime(2026, 11, 18).date(),
+                                     estado=PagoDeuda.Estado.PENDIENTE).count(),
+            1,
+        )
+
     def test_tarjeta_recurrente_manual_confirma_sin_cuenta(self):
         credito = MetodoPago.objects.create(usuario=self.user, nombre="Tarjeta", tipo=MetodoPago.Tipo.CREDITO)
         acreedor = Acreedor.objects.create(usuario=self.user, nombre="Visa")

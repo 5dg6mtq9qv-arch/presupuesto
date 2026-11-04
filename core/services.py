@@ -698,7 +698,7 @@ def movimientos_recurrentes_programados(usuario, fecha_inicio, fecha_fin, tipo=N
     return programados
 
 
-def generar_movimientos_recurrentes(hasta_fecha=None, usuario=None):
+def generar_movimientos_recurrentes(hasta_fecha=None, usuario=None, *, solo_automaticos=False):
     hasta_fecha = hasta_fecha or timezone.localdate()
     recurrentes = MovimientoRecurrente.objects.filter(activo=True).select_related(
         "usuario",
@@ -709,6 +709,8 @@ def generar_movimientos_recurrentes(hasta_fecha=None, usuario=None):
     )
     if usuario is not None:
         recurrentes = recurrentes.filter(usuario=usuario)
+    if solo_automaticos:
+        recurrentes = recurrentes.filter(aplicar_automaticamente=True)
 
     creados = []
     omitidos = 0

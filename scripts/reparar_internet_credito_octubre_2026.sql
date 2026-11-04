@@ -1,6 +1,7 @@
--- Ejecutar despues de aplicar la migracion core.0052.
+-- Ejecutar despues de aplicar las migraciones core.0052 y core.0053.
 -- Corrige la compra confirmada de Internet del 04/10/2026 y crea UNA cuota
--- pendiente para Visa Pacifico el 18/11/2026. No cambia el modo automatico.
+-- pendiente para Visa Pacifico el 18/11/2026. Activa la generacion
+-- automatica mensual: compra el dia 4, cuota el 18 del mes siguiente.
 -- El bloque es atomico: ante cualquier discrepancia no se guarda nada.
 DO $reparacion$
 DECLARE
@@ -41,6 +42,7 @@ BEGIN
 
     UPDATE finanzas.movimiento_recurrente
     SET acreedor_credito_id = v_acreedor_id, dia_pago_credito = 18,
+        pago_mes_siguiente = TRUE, aplicar_automaticamente = TRUE,
         cuenta_id = NULL
     WHERE id = v_recurrente_id;
 

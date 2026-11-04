@@ -118,6 +118,7 @@ from .services import (
     crear_historial_inicial_deuda,
     cuotas_deudas_programadas,
     ensure_user_finance_setup,
+    generar_movimientos_recurrentes,
     generar_recomendaciones_financieras,
     generar_pagos_deudas,
     generar_notificaciones_usuario,
@@ -2948,6 +2949,7 @@ def dashboard(request):
     fin_mes_siguiente = inicio_mes_siguiente.replace(
         day=calendar.monthrange(inicio_mes_siguiente.year, inicio_mes_siguiente.month)[1]
     )
+    generar_movimientos_recurrentes(hasta_fecha=hoy, usuario=request.user, solo_automaticos=True)
     generar_pagos_deudas(hasta_fecha=fin_mes_siguiente, usuario=request.user)
     tareas_hoy = Tarea.objects.none()
     tareas = Tarea.objects.none()

@@ -68,7 +68,7 @@
         {% for recurrente in recurrentes %}
           <tr>
             <td><span class="badge rounded-pill {% if recurrente.tipo == 'ingreso' %}text-bg-success{% else %}text-bg-warning{% endif %}">{{ recurrente.get_tipo_display }}</span></td>
-            <td><strong>{{ recurrente.concepto }}</strong>{% if recurrente.acreedor_credito %}<div class="small text-muted">{{ recurrente.acreedor_credito }} · una cuota, día {{ recurrente.dia_pago_credito }}</div>{% endif %}</td>
+            <td><strong>{{ recurrente.concepto }}</strong>{% if recurrente.acreedor_credito %}<div class="small text-muted">{{ recurrente.acreedor_credito }} · una cuota, día {{ recurrente.dia_pago_credito }}{% if recurrente.pago_mes_siguiente %} del mes siguiente{% endif %}</div>{% endif %}</td>
             <td>{% if recurrente.categoria %}{% if recurrente.categoria.parent %}{{ recurrente.categoria.parent.nombre }} > {% endif %}{{ recurrente.categoria.nombre }}{% else %}<span class="muted">Sin categoría</span>{% endif %}</td>
             <td class="amount">{{ recurrente.monto }}</td>
             <td>{{ recurrente.dia_mes }}</td>
