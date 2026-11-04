@@ -1,6 +1,7 @@
-from datetime import timedelta
+from datetime import date, timedelta
 from io import BytesIO
 import tempfile
+from unittest.mock import patch
 
 from PIL import Image
 from pypdf import PdfReader
@@ -125,6 +126,30 @@ class ProductFeaturesTests(TestCase):
         self.assertEqual(serie["valores"][-3:], [20.0, 30.0, 5.0])
         self.assertIn("en curso", tendencia["labels"][-1])
         self.assertContains(response, "¿Suben o bajan tus gastos por categoría?")
+
+    @patch("core.views.timezone.localdate", return_value=date(2026, 11, 4))
+    def test_dashboard_ofrece_comparacion_hasta_el_mismo_dia(self, _localdate):
+        categoria = Categoria.objects.create(
+            usuario=self.user, nombre="Servicios de prueba", tipo=Categoria.Tipo.FINANZAS,
+        )
+        for fecha, monto in (
+            (date(2026, 10, 3), "10.00"),
+            (date(2026, 10, 20), "20.00"),
+            (date(2026, 11, 3), "5.00"),
+        ):
+            MovimientoFinanciero.objects.create(
+                usuario=self.user, tipo=MovimientoFinanciero.Tipo.GASTO,
+                estado=MovimientoFinanciero.Estado.CONFIRMADO,
+                categoria=categoria, concepto="Servicio", monto=monto, fecha=fecha,
+            )
+        response = self.client.get(reverse("dashboard"))
+        tendencia = response.context["chart_data"]["tendenciaCategorias"]
+        serie = next(item for item in tendencia["categorias"] if item["nombre"] == "Servicios de prueba")
+        self.assertEqual(serie["valores"][-2:], [30.0, 5.0])
+        self.assertEqual(serie["mismoCorte"][-2:], [10.0, 5.0])
+        self.assertEqual(tendencia["diasCorte"][-2:], [4, 4])
+        self.assertContains(response, 'id="mes-base-tendencia"', html=False)
+        self.assertContains(response, 'id="mes-comparado-tendencia"', html=False)
 
     def test_pdf_explains_when_deferred_debt_plan_is_manageable(self):
         today = timezone.localdate()

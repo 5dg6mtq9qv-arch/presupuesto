@@ -229,11 +229,24 @@
       </select>
     </div>
   </div>
-  <div class="chart-insights">
-    <div class="chart-insight"><small>Último mes cerrado</small><strong data-trend-last>0,00</strong></div>
-    <div class="chart-insight"><small>Cambio frente al anterior</small><strong data-trend-change>Sin datos</strong></div>
-    <div class="chart-insight"><small>Este mes hasta hoy</small><strong data-trend-current>0,00</strong></div>
+  <div class="d-flex flex-wrap gap-3 align-items-end mb-3">
+    <div>
+      <label for="mes-base-tendencia" class="form-label">Mes base</label>
+      <select id="mes-base-tendencia" class="form-select" aria-label="Mes base para comparar gastos"></select>
+    </div>
+    <div>
+      <label for="mes-comparado-tendencia" class="form-label">Comparar con</label>
+      <select id="mes-comparado-tendencia" class="form-select" aria-label="Mes con el que se comparan los gastos"></select>
+    </div>
+    <p class="muted mb-2" data-trend-comparison-note role="status"></p>
   </div>
+  <div class="chart-insights category-trend-insights">
+    <div class="chart-insight"><small data-trend-base-label>Mes base</small><strong data-trend-base>0,00</strong></div>
+    <div class="chart-insight"><small data-trend-compare-label>Mes comparado</small><strong data-trend-compare>0,00</strong></div>
+    <div class="chart-insight"><small>Cambio</small><strong data-trend-change>Sin datos</strong></div>
+    <div class="chart-insight" data-trend-projection-card hidden><small>Estimación al cierre</small><strong data-trend-projection>0,00</strong></div>
+  </div>
+  <p class="muted mb-3" data-trend-projection-note hidden></p>
   <div class="chart-box"><canvas id="tendenciaCategoriasChart" aria-label="Evolución mensual de gastos por categoría" role="img"></canvas></div>
 </section>
 
@@ -851,6 +864,18 @@
 
     const tendencia = data.tendenciaCategorias;
     const categoriaTendencia = document.getElementById("categoria-tendencia");
+    const mesBaseTendencia = document.getElementById("mes-base-tendencia");
+    const mesComparadoTendencia = document.getElementById("mes-comparado-tendencia");
+    tendencia.labels.forEach((label, index) => {
+      for (const selector of [mesBaseTendencia, mesComparadoTendencia]) {
+        const option = document.createElement("option");
+        option.value = String(index);
+        option.textContent = label;
+        selector.append(option);
+      }
+    });
+    mesBaseTendencia.value = String(tendencia.labels.length - 2);
+    mesComparadoTendencia.value = String(tendencia.labels.length - 1);
     tendencia.categorias.forEach((categoria, index) => {
       const option = document.createElement("option");
       option.value = String(index);
@@ -876,32 +901,73 @@
     const renderTendencia = () => {
       const categoria = categoriaTendencia.value === "" ? null : tendencia.categorias[Number(categoriaTendencia.value)];
       const valores = categoria ? categoria.valores : tendencia.total;
+      const valoresMismoCorte = categoria ? categoria.mismoCorte : tendencia.totalMismoCorte;
+      const baseIndex = Number(mesBaseTendencia.value);
+      const comparadoIndex = Number(mesComparadoTendencia.value);
+      const actualIndex = tendencia.labels.length - 1;
+      const incluyeMesActual = baseIndex === actualIndex || comparadoIndex === actualIndex;
       const dataset = tendenciaChart.data.datasets[0];
       dataset.label = categoria ? categoria.nombre : "Todos los gastos";
       dataset.data = [...valores.slice(0, -1), null];
       dataset.borderColor = categoria?.color || "#25a194";
       dataset.backgroundColor = categoria ? `${categoria.color}22` : "rgba(37,161,148,.14)";
+      dataset.pointRadius = tendencia.labels.map((_, index) => index === baseIndex || index === comparadoIndex ? 7 : 4);
       const avance = tendenciaChart.data.datasets[1];
       avance.data = [...valores.slice(0, -1).map(() => null), valores.at(-1)];
       avance.borderColor = dataset.borderColor;
       avance.backgroundColor = dataset.borderColor;
       tendenciaChart.update();
-      const ultimo = Number(valores.at(-2) || 0);
-      const anterior = Number(valores.at(-3) || 0);
+
+      const base = Number((incluyeMesActual ? valoresMismoCorte : valores)[baseIndex] || 0);
+      const comparado = Number((incluyeMesActual ? valoresMismoCorte : valores)[comparadoIndex] || 0);
+      const nombreBase = tendencia.labels[baseIndex].replace(" · en curso", "");
+      const nombreComparado = tendencia.labels[comparadoIndex].replace(" · en curso", "");
+      const notaComparacion = document.querySelector("[data-trend-comparison-note]");
+      notaComparacion.textContent = incluyeMesActual
+        ? `Comparación justa: días 1–${tendencia.diasCorte[baseIndex]} de ${nombreBase} frente a 1–${tendencia.diasCorte[comparadoIndex]} de ${nombreComparado}.`
+        : "Se comparan los meses completos elegidos.";
+      setText("[data-trend-base-label]", `${nombreBase}${incluyeMesActual ? " · mismo corte" : ""}`);
+      setText("[data-trend-compare-label]", `${nombreComparado}${incluyeMesActual ? " · mismo corte" : ""}`);
+      setText("[data-trend-base]", money.format(base));
+      setText("[data-trend-compare]", money.format(comparado));
       const cambio = document.querySelector("[data-trend-change]");
-      setText("[data-trend-last]", money.format(ultimo));
-      setText("[data-trend-current]", money.format(Number(valores.at(-1) || 0)));
       cambio.classList.remove("text-danger", "text-success");
-      if (!anterior && !ultimo) cambio.textContent = "Sin gasto en ambos meses";
-      else if (!anterior) { cambio.textContent = "Nuevo gasto"; cambio.classList.add("text-danger"); }
+      if (baseIndex === comparadoIndex) cambio.textContent = "Elige meses distintos";
+      else if (!base && !comparado) cambio.textContent = "Sin gasto en ambos meses";
+      else if (!base) { cambio.textContent = "Nuevo gasto"; cambio.classList.add("text-danger"); }
       else {
-        const variacion = (ultimo - anterior) / anterior * 100;
+        const variacion = (comparado - base) / base * 100;
         cambio.textContent = `${variacion > 0 ? "+" : ""}${variacion.toFixed(1)}%`;
         if (variacion > 0) cambio.classList.add("text-danger");
         if (variacion < 0) cambio.classList.add("text-success");
       }
+
+      const proyeccionCard = document.querySelector("[data-trend-projection-card]");
+      const proyeccionNota = document.querySelector("[data-trend-projection-note]");
+      proyeccionCard.hidden = !incluyeMesActual || baseIndex === comparadoIndex;
+      proyeccionNota.hidden = proyeccionCard.hidden;
+      if (!proyeccionCard.hidden) {
+        const referenciaIndex = baseIndex === actualIndex ? comparadoIndex : baseIndex;
+        const referenciaCompleta = Number(valores[referenciaIndex] || 0);
+        const referenciaMismoCorte = Number(valoresMismoCorte[referenciaIndex] || 0);
+        const avanceActual = Number(valoresMismoCorte[actualIndex] || 0);
+        const hayPatron = referenciaMismoCorte > 0;
+        const estimado = hayPatron
+          ? avanceActual * referenciaCompleta / referenciaMismoCorte
+          : avanceActual * tendencia.diasMesActual / tendencia.diasCorte[actualIndex];
+        setText("[data-trend-projection]", money.format(estimado));
+        const diferencia = referenciaCompleta > 0
+          ? ` (${((estimado / referenciaCompleta - 1) * 100) >= 0 ? "+" : ""}${((estimado / referenciaCompleta - 1) * 100).toFixed(1)}% frente al cierre de ${tendencia.labels[referenciaIndex]})`
+          : "";
+        const pocosDias = tendencia.diasCorte[actualIndex] < 7 ? " Hay pocos días registrados; puede variar mucho." : "";
+        proyeccionNota.textContent = hayPatron
+          ? `Estimación orientativa${diferencia}: aplica al gasto actual la proporción entre el mismo corte y el cierre del mes de referencia. No es un gasto confirmado.${pocosDias}`
+          : `Estimación lineal orientativa${diferencia}: no hubo gasto al mismo corte del mes de referencia; se usa el ritmo diario actual. No es un gasto confirmado.${pocosDias}`;
+      }
     };
     categoriaTendencia.addEventListener("change", renderTendencia);
+    mesBaseTendencia.addEventListener("change", renderTendencia);
+    mesComparadoTendencia.addEventListener("change", renderTendencia);
     renderTendencia();
 
     const budgetSource = data.presupuesto.labels.map((label, index) => {

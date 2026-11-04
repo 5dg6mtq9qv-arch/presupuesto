@@ -574,6 +574,7 @@
     .chart-control:hover { color: var(--primary); }
     .chart-control.is-active { color: var(--primary); background: var(--surface); box-shadow: 0 1px 5px rgba(15, 23, 42, .09); }
     .chart-insights { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 4px 0 14px; }
+    .chart-insights.category-trend-insights { grid-template-columns: repeat(4, minmax(0, 1fr)); }
     .chart-insight { min-width: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); padding: 9px 11px; }
     .chart-insight small, .chart-insight strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .chart-insight small { color: var(--muted); font-size: 10px; font-weight: 750; text-transform: uppercase; }
@@ -1854,6 +1855,7 @@
       .finance-swal .swal2-html-container { margin-right: 18px; margin-left: 18px; }
       .finance-swal .swal2-select.form-select { margin-right: 18px !important; margin-left: 18px !important; }
       .chart-insights { grid-template-columns: 1fr; }
+      .chart-insights.category-trend-insights { grid-template-columns: 1fr; }
       .payment-overview { grid-template-columns: 1fr 1fr; }
       .budget-period-form { display: grid; grid-template-columns: 1fr 90px auto; }
       .budget-envelope-values { grid-template-columns: repeat(3, minmax(0, 1fr)); }

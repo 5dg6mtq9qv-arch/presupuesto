@@ -3084,6 +3084,7 @@ def dashboard(request):
     )
     meses_tendencia = meses[-7:]
     gastos_tendencia = {}
+    gastos_tendencia_mismo_corte = {}
     colores_tendencia = {}
     for movimiento in movimientos_historicos.filter(
         tipo=MovimientoFinanciero.Tipo.GASTO,
@@ -3093,8 +3094,13 @@ def dashboard(request):
     ).select_related("categoria__parent"):
         nombre, color = categoria_grafica(movimiento.categoria)
         valores = gastos_tendencia.setdefault(nombre, [Decimal("0")] * len(meses_tendencia))
+        valores_mismo_corte = gastos_tendencia_mismo_corte.setdefault(
+            nombre, [Decimal("0")] * len(meses_tendencia)
+        )
         indice = (movimiento.fecha.year - meses_tendencia[0].year) * 12 + movimiento.fecha.month - meses_tendencia[0].month
         valores[indice] += movimiento.monto
+        if movimiento.fecha.day <= hoy.day:
+            valores_mismo_corte[indice] += movimiento.monto
         colores_tendencia[nombre] = color
     categorias_tendencia = sorted(
         gastos_tendencia,
@@ -3103,6 +3109,10 @@ def dashboard(request):
     )
     totales_tendencia = [
         float(sum((valores[indice] for valores in gastos_tendencia.values()), Decimal("0")))
+        for indice in range(len(meses_tendencia))
+    ]
+    totales_tendencia_mismo_corte = [
+        float(sum((valores[indice] for valores in gastos_tendencia_mismo_corte.values()), Decimal("0")))
         for indice in range(len(meses_tendencia))
     ]
     ingresos_historicos = {
@@ -3214,9 +3224,13 @@ def dashboard(request):
         "tendenciaCategorias": {
             "labels": [mes.strftime("%m/%Y") + (" · en curso" if mes == inicio_mes else "") for mes in meses_tendencia],
             "total": totales_tendencia,
+            "totalMismoCorte": totales_tendencia_mismo_corte,
+            "diasCorte": [min(hoy.day, calendar.monthrange(mes.year, mes.month)[1]) for mes in meses_tendencia],
+            "diasMesActual": calendar.monthrange(hoy.year, hoy.month)[1],
             "categorias": [
                 {"nombre": nombre, "color": colores_tendencia[nombre],
-                 "valores": [float(valor) for valor in gastos_tendencia[nombre]]}
+                 "valores": [float(valor) for valor in gastos_tendencia[nombre]],
+                 "mismoCorte": [float(valor) for valor in gastos_tendencia_mismo_corte[nombre]]}
                 for nombre in categorias_tendencia
             ],
         },
