@@ -4,19 +4,83 @@
 {% block content %}
 <section class="panel">
   <div class="panel-heading"><div><h2>{{ filas|length }} cargos detectados</h2><p class="muted">Período del estado: {{ borrador.desde }} a {{ borrador.hasta }}. Comprueba importes, fechas y coincidencias: la lectura de IA puede equivocarse.</p></div></div>
+  {% if error_conciliacion %}<div class="alert alert-danger" role="alert">{{ error_conciliacion }}</div>{% endif %}
+  <div class="table-wrap"><table class="table"><thead><tr><th>Comprobación del estado</th><th>Importe</th></tr></thead><tbody>
+    <tr><td>{% if borrador.modo == 'total' %}Total del banco a conciliar{% else %}Cargos/débitos facturados en el PDF{% endif %}</td><td>{% if totales.cargos_estado is not None %}${{ totales.cargos_estado|floatformat:2 }}{% else %}No identificados{% endif %}</td></tr>
+    {% if totales.consumos_periodo is not None %}<tr><td>Consumos del período (referencia distinta)</td><td>${{ totales.consumos_periodo|floatformat:2 }}</td></tr>{% endif %}
+    {% if totales.total_pagar is not None %}<tr><td>Total a pagar (puede incluir saldo anterior)</td><td>${{ totales.total_pagar|floatformat:2 }}</td></tr>{% endif %}
+    {% if totales.diferencia_resumen is not None %}<tr><td>Diferencia de la ecuación del resumen</td><td>${{ totales.diferencia_resumen|floatformat:2 }}</td></tr>{% endif %}
+    {% if borrador.modo != 'total' %}<tr><td>Suma de cargos individuales extraídos{% if not filas %} (sin detalle disponible){% endif %}</td><td>${{ totales.extraido|floatformat:2 }}</td></tr>{% endif %}
+    {% if totales.diferencia_detalle is not None %}<tr><td>Diferencia entre el detalle y los cargos facturados</td><td>${{ totales.diferencia_detalle|floatformat:2 }}</td></tr>{% endif %}
+    <tr><td>Registrado para {{ acreedor.nombre }}: gastos</td><td>${{ totales.movimientos|floatformat:2 }}</td></tr>
+    <tr><td>Registrado para {{ acreedor.nombre }}: cuotas de {{ totales.mes_pago|date:"m/Y" }}</td><td>${{ totales.cuotas|floatformat:2 }}</td></tr>
+    <tr><td><strong>Total registrado</strong></td><td><strong>${{ totales.registrado|floatformat:2 }}</strong></td></tr>
+    <tr><td><strong>Total tras las acciones elegidas</strong></td><td><strong id="total-proyectado">${{ totales.proyectado|floatformat:2 }}</strong></td></tr>
+    {% if borrador.modo == 'total' %}<tr><td>Cuota única propuesta por lo que falta</td><td><strong id="cuota-proyectada">${{ totales.cuota_ajuste|floatformat:2 }}</strong></td></tr>{% endif %}
+    <tr><td><strong>Diferencia pendiente de cuadrar</strong></td><td><strong id="diferencia-proyectada">{% if totales.diferencia_proyectada is not None %}${{ totales.diferencia_proyectada|floatformat:2 }}{% else %}No verificable: falta total de cargos{% endif %}</strong></td></tr>
+  </tbody></table></div>
+  {% if not borrador.periodo_detectado %}<p class="muted">No se identificó el período de corte. La comparación usa el mes seleccionado y las fechas máximas de pago registradas.</p>{% endif %}
+  {% if borrador.modo == 'total' %}<p class="muted">Con un total solamente no se conocen los cargos individuales. Puedes retirar o desplazar gastos registrados, o crear una cuota única por lo que falta. Vence el {{ fecha_cuota|date:"d/m/Y" }}.</p>{% elif not filas %}<div class="alert alert-warning">Falta el detalle de cargos en el PDF. Sube el estado completo para crear o ajustar consumos individuales.</div>{% endif %}
+  {% if totales.cargos_estado is None %}<div class="alert alert-warning">No se encontró el total de cargos/débitos. El total a pagar, por sí solo, no permite cuadrar los gastos porque puede incluir saldos anteriores y pagos.</div>{% endif %}
+  {% if totales.cuotas_detalle %}<details><summary>Ver cuotas registradas incluidas en el total</summary><ul>{% for cuota in totales.cuotas_detalle %}<li>{{ cuota.fecha|date:"d/m/Y" }} · {{ cuota.deuda.concepto }} · ${{ cuota.monto|floatformat:2 }}</li>{% endfor %}</ul></details>{% endif %}
   <form method="post" action="{% url 'conciliacion_tarjeta_confirmar' %}">{% csrf_token %}
     <div class="table-wrap"><table class="table"><thead><tr><th>Fecha de consumo</th><th>Fecha máxima de pago</th><th>Cargo del estado</th><th>Importe</th><th>En tus gastos</th><th>Aprobar o no</th></tr></thead><tbody>
       {% for fila in filas %}<tr><td>{{ fila.fecha }}</td><td>{{ fila.fecha_pago|default:"No identificada" }}</td><td>{{ fila.concepto }}</td><td class="amount">${{ fila.monto }}</td><td>
         {% if fila.match %}<strong>{{ fila.match.concepto }}</strong><br><small>Consumo {{ fila.match.fecha|date:"d/m/Y" }} · Pago {{ fila.match.fecha_pago|date:"d/m/Y"|default:"Sin fecha" }} · ${{ fila.match.monto|floatformat:2 }}</small><br>{% if fila.status == 'existe' %}<span class="badge text-bg-success">Existe</span>{% elif fila.status == 'posible' %}<span class="badge text-bg-warning">Posible coincidencia sin acreedor</span>{% else %}<span class="badge text-bg-warning">Importe distinto</span>{% endif %}
+        {% elif fila.payment %}<strong>{{ fila.payment.deuda.concepto }}</strong><br><small>Cuota {{ fila.payment.fecha|date:"d/m/Y" }} · ${{ fila.payment.monto|floatformat:2 }}</small><br><span class="badge text-bg-success">Cuota registrada</span>
         {% else %}<span class="badge">No encontrado</span>{% endif %}
       </td><td><select class="form-select" name="accion_{{ fila.index }}" aria-label="Acción para {{ fila.concepto }}">
-        <option value="omitir"{% if not fila.match %} selected{% endif %}>No seleccionar</option>
-        {% if fila.match %}<option value="existe"{% if fila.status == 'existe' %} selected{% endif %}>Ya existe, dejar igual</option><option value="ajustar">Ajustar importe existente</option>{% endif %}
-        <option value="crear">Crear gasto nuevo</option>
+        <option value="omitir"{% if fila.seleccion == 'omitir' or fila.status == 'nuevo' and not fila.seleccion or fila.status == 'posible' and not fila.seleccion or fila.status == 'diferencia' and not fila.seleccion %} selected{% endif %}>No seleccionar</option>
+        {% if fila.payment %}<option value="cuota"{% if fila.seleccion == 'cuota' or not fila.seleccion %} selected{% endif %}>Cuota registrada, dejar igual</option>{% endif %}
+        {% if fila.match %}{% if fila.status == 'posible' %}<option value="vincular"{% if fila.seleccion == 'vincular' %} selected{% endif %}>Vincular gasto al acreedor</option>{% else %}<option value="existe"{% if fila.seleccion == 'existe' or fila.status == 'existe' and not fila.seleccion %} selected{% endif %}>Ya existe, dejar igual</option>{% endif %}<option value="ajustar"{% if fila.seleccion == 'ajustar' %} selected{% endif %}>{% if fila.status == 'posible' %}Ajustar y vincular{% else %}Ajustar importe existente{% endif %}</option>{% endif %}
+        <option value="crear"{% if fila.seleccion == 'crear' %} selected{% endif %}>Crear gasto nuevo</option>
       </select></td></tr>{% endfor %}
     </tbody></table></div>
-    {% if extras %}<h3 class="mt-4">Gastos registrados sin cargo correspondiente</h3><p class="muted">Revisa estos gastos por separado; esta conciliación no los modifica.</p><div class="table-wrap"><table class="table"><thead><tr><th>Fecha</th><th>Concepto</th><th>Importe</th></tr></thead><tbody>{% for gasto in extras %}<tr><td>{{ gasto.fecha|date:"d/m/Y" }}</td><td>{{ gasto.concepto }}</td><td>${{ gasto.monto|floatformat:2 }}</td></tr>{% endfor %}</tbody></table></div>{% endif %}
+    {% if sobrantes %}<h3 class="mt-4">{% if borrador.modo == 'total' %}Gastos registrados que puedes revisar{% else %}Gastos registrados sin cargo correspondiente en el PDF{% endif %}</h3>
+      <p class="muted">Elige conservar, eliminar o desplazar la fecha máxima de pago al mes siguiente. Las cuotas de deuda se muestran arriba y se gestionan desde Deudas.</p>
+      <div class="table-wrap"><table class="table"><thead><tr><th>Consumo</th><th>Pago actual</th><th>Concepto</th><th>Importe</th><th>Acción</th></tr></thead><tbody>{% for gasto in sobrantes %}<tr>
+        <td>{{ gasto.fecha|date:"d/m/Y" }}</td><td>{{ gasto.fecha_pago|date:"d/m/Y"|default:"Sin fecha" }}</td><td>{{ gasto.concepto }}</td><td>${{ gasto.monto|floatformat:2 }}</td>
+        <td><select class="form-select" name="sobrante_{{ gasto.pk }}" aria-label="Acción para {{ gasto.concepto }}">
+          <option value="conservar"{% if not gasto.seleccion or gasto.seleccion == 'conservar' %} selected{% endif %}>Conservar</option>
+          <option value="eliminar"{% if gasto.seleccion == 'eliminar' %} selected{% endif %}>Eliminar registro</option>
+          <option value="desplazar"{% if gasto.seleccion == 'desplazar' %} selected{% endif %}>Desplazar pago al {{ gasto.nueva_fecha_pago|date:"d/m/Y" }}</option>
+        </select></td>
+      </tr>{% endfor %}</tbody></table></div>{% endif %}
+    {% if borrador.modo == 'total' %}<label class="form-check mt-3"><input class="form-check-input" type="checkbox" name="crear_cuota" value="1"{% if request.POST.crear_cuota == '1' or not request.POST and totales.diferencia_registrado > 0 %} checked{% endif %}> <span class="form-check-label">Crear una cuota única por la diferencia que falte</span></label>{% endif %}
     <div class="form-actions"><a class="btn btn-outline-secondary" href="{% url 'conciliacion_tarjeta_nueva' %}">Elegir otros archivos</a><button class="btn btn-primary" type="submit">Confirmar acciones</button></div>
   </form>
 </section>
+{{ proyeccion_datos|json_script:"datos-proyeccion-conciliacion" }}
+<script>
+(() => {
+  const data = JSON.parse(document.getElementById('datos-proyeccion-conciliacion').textContent);
+  const selects = [...document.querySelectorAll('select[name^="accion_"]')];
+  const extras = [...document.querySelectorAll('select[name^="sobrante_"]')];
+  const quota = document.querySelector('input[name="crear_cuota"]');
+  const cents = value => Math.round(Number(value) * 100);
+  const format = value => '$' + (value / 100).toFixed(2);
+  function update() {
+    let total = cents(data.registrado);
+    selects.forEach((select, index) => {
+      const row = data.filas[index];
+      if (select.value === 'crear' && row.sumable) total += cents(row.monto);
+      if (select.value === 'ajustar') total += row.incluido ? cents(row.monto) - cents(row.existente) : row.sumable ? cents(row.monto) : 0;
+      if (select.value === 'vincular' && row.sumable) total += cents(row.existente);
+    });
+    extras.forEach((select, index) => {
+      if (select.value !== 'conservar') total -= cents(data.sobrantes[index].monto);
+    });
+    let quotaCents = 0;
+    if (quota?.checked && data.objetivo !== null) {
+      quotaCents = Math.max(0, cents(data.objetivo) - total);
+      total += quotaCents;
+    }
+    document.getElementById('total-proyectado').textContent = format(total);
+    if (document.getElementById('cuota-proyectada')) document.getElementById('cuota-proyectada').textContent = format(quotaCents);
+    if (data.objetivo !== null) document.getElementById('diferencia-proyectada').textContent = format(cents(data.objetivo) - total);
+  }
+  [...selects, ...extras, quota].filter(Boolean).forEach(element => element.addEventListener('change', update));
+  update();
+})();
+</script>
 {% endblock %}

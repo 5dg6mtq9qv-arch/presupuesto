@@ -133,7 +133,7 @@ from .services import (
 from .spending_analysis import build_income_analysis, build_spending_analysis
 from .bank_import import CSVImportError, confirm_import, create_import_preview
 from .bank_import import _import_category
-from .card_statement import StatementError, compare_charges, extract_statement
+from .card_statement import StatementError, compare_charges, extract_statement, reconciliation_totals
 from .amortization_import import AmortizationImportError, parse_amortization_file as parse_amortization_pdf
 from .receipt_capture import analyze_receipt, receipt_error_for_display
 from .telegram_config import (
@@ -5472,17 +5472,32 @@ def conciliacion_tarjeta_nueva(request):
     form = ConciliacionTarjetaForm(request.POST or None, request.FILES or None, user=request.user)
     if request.method == "POST" and form.is_valid():
         try:
-            result = extract_statement(request.user, form.cleaned_data["archivo"], form.cleaned_data["mes"])
+            kind = form.cleaned_data["tipo_entrada"]
+            month = form.cleaned_data["mes"]
+            if kind == "total_monto":
+                result = {
+                    "cargos": [], "desde": month.isoformat(),
+                    "hasta": month.replace(day=calendar.monthrange(month.year, month.month)[1]).isoformat(),
+                    "fecha_pago": None, "periodo_detectado": False,
+                    "resumen": {"total_pagar": str(form.cleaned_data["monto_total"])},
+                }
+            else:
+                result = extract_statement(request.user, [form.cleaned_data["archivo"]], month,
+                                           summary_only=kind == "total_foto")
+                if kind == "total_foto" and not (result["resumen"].get("total_pagar") or result["resumen"].get("cargos_debitos")):
+                    raise StatementError("No se pudo leer un total en la foto. Prueba otra imagen o escribe el monto.")
         except StatementError as exc:
-            form.add_error("archivo", str(exc))
+            form.add_error("archivo" if kind != "total_monto" else "monto_total", str(exc))
         except Exception:
             logger.exception("Statement analysis failed for user_id=%s", request.user.pk)
             form.add_error("archivo", "No se pudo analizar el estado en este momento. Vuelve a intentar.")
         else:
             request.session["borrador_conciliacion_tarjeta"] = {
                 **result,
+                "modo": "pdf" if kind == "pdf" else "total",
+                "origen_total": kind,
                 "acreedor_id": form.cleaned_data["acreedor"].pk,
-                "mes": form.cleaned_data["mes"].strftime("%Y-%m"),
+                "mes": result.get("mes") or month.strftime("%Y-%m"),
             }
             return redirect("conciliacion_tarjeta_revisar")
     return render(request, "core/conciliacion_tarjeta_form.html", {"form": form})
@@ -5496,7 +5511,33 @@ def _conciliacion_context(request):
     if not creditor:
         return None
     rows, extras = compare_charges(request.user, creditor, draft)
-    return {"borrador": draft, "acreedor": creditor, "filas": rows, "extras": extras}
+    totals = reconciliation_totals(request.user, creditor, draft, rows)
+    matched_ids = {row["match"].pk for row in rows if row["match"]}
+    protected_ids = set(AjusteSaldo.objects.filter(
+        movimiento_id__in=[item.pk for item in totals["movimientos_detalle"]]
+    ).values_list("movimiento_id", flat=True))
+    removable = [item for item in totals["movimientos_detalle"]
+                 if item.pk not in matched_ids and item.pk not in protected_ids]
+    payment_month = totals["mes_pago"]
+    next_month = payment_month.replace(year=payment_month.year + (payment_month.month == 12),
+                                       month=payment_month.month % 12 + 1)
+    for item in removable:
+        due_day = item.fecha_pago.day if item.fecha_pago else (parse_date(draft.get("fecha_pago") or "") or payment_month).day
+        item.nueva_fecha_pago = next_month.replace(day=min(due_day, calendar.monthrange(next_month.year, next_month.month)[1]))
+    quota_date = parse_date(draft.get("fecha_pago") or "") or payment_month.replace(
+        day=calendar.monthrange(payment_month.year, payment_month.month)[1])
+    projection_data = {
+        "registrado": str(totals["registrado"]),
+        "objetivo": str(totals["cargos_estado"]) if totals["cargos_estado"] is not None else None,
+        "filas": [{"monto": row["monto"], "existente": str(row["match"].monto) if row["match"] else None,
+                   "incluido": row["incluido_total"], "sumable": row["sumable"]}
+                  for row in rows],
+        "sobrantes": [{"id": item.pk, "monto": str(item.monto)} for item in removable],
+        "modo": draft.get("modo", "pdf"),
+    }
+    return {"borrador": draft, "acreedor": creditor, "filas": rows, "extras": extras,
+            "totales": totals, "proyeccion_datos": projection_data, "sobrantes": removable,
+            "fecha_cuota": quota_date}
 
 
 @login_required
@@ -5520,13 +5561,41 @@ def conciliacion_tarjeta_confirmar(request):
     for row in rows:
         action = request.POST.get(f"accion_{row['index']}", "omitir")
         allowed = {"omitir", "crear"}
+        if row["payment"]:
+            allowed.add("cuota")
         if row["match"]:
-            allowed.update({"existe", "ajustar"})
+            allowed.add("ajustar")
+            allowed.add("existe" if row["match"].acreedor_credito_id == context["acreedor"].pk else "vincular")
         if action not in allowed:
             return HttpResponseBadRequest("Acción de conciliación no válida.")
         actions.append(action)
+        row["seleccion"] = action
+    extra_actions = {}
+    for expense in context["sobrantes"]:
+        action = request.POST.get(f"sobrante_{expense.pk}", "conservar")
+        if action not in {"conservar", "eliminar", "desplazar"}:
+            return HttpResponseBadRequest("Acción de gasto sobrante no válida.")
+        extra_actions[expense.pk] = action
+        expense.seleccion = action
+    removed_ids = {pk for pk, action in extra_actions.items() if action in {"eliminar", "desplazar"}}
+    create_quota = context["borrador"].get("modo") == "total" and request.POST.get("crear_cuota") == "1"
+    totals = reconciliation_totals(request.user, context["acreedor"], context["borrador"], rows, actions,
+                                   delete_ids=removed_ids, create_quota=create_quota)
+    if context["borrador"].get("modo", "pdf") == "pdf" and not rows:
+        context["error_conciliacion"] = "El PDF no contiene un detalle de cargos legible. Sube el estado completo para conciliarlo."
+    elif totals["cargos_estado"] is None:
+        context["error_conciliacion"] = "Falta el total de cargos/débitos facturados. Sube la página del resumen para poder verificar que el acreedor cuadre."
+    elif totals["diferencia_resumen"] not in (None, Decimal("0.00")):
+        context["error_conciliacion"] = "Las cifras del resumen del estado no cuadran entre sí. Revisa la foto del resumen y vuelve a subir el documento."
+    elif totals["diferencia_detalle"] not in (None, Decimal("0.00")):
+        context["error_conciliacion"] = "La suma de los cargos extraídos no coincide con los cargos facturados del estado. Sube todas las páginas o fotos antes de confirmar."
+    elif totals["diferencia_proyectada"] not in (None, Decimal("0.00")):
+        context["error_conciliacion"] = "Las acciones seleccionadas todavía no cuadran con el total de cargos del estado. Revisa los importes y las cuotas del acreedor."
+    if context.get("error_conciliacion"):
+        context["totales"] = totals
+        return render(request, "core/conciliacion_tarjeta_revisar.html", context, status=400)
     category = _import_category(request.user) if "crear" in actions else None
-    created = adjusted = 0
+    created = adjusted = deleted = moved = 0
     for row, action in zip(rows, actions):
         if action == "crear":
             MovimientoFinanciero.objects.create(
@@ -5545,15 +5614,56 @@ def conciliacion_tarjeta_confirmar(request):
                 tipo=MovimientoFinanciero.Tipo.GASTO,
             )
             movement.monto = Decimal(row["monto"])
+            if movement.acreedor_credito_id is None:
+                movement.acreedor_credito = context["acreedor"]
             if row.get("fecha_pago"):
                 movement.fecha_pago = parse_date(row["fecha_pago"])
             movement.nota = (movement.nota + "\n" if movement.nota else "") + (
                 f"Monto ajustado según estado de tarjeta {context['borrador']['mes']}; acreedor: {context['acreedor'].nombre}."
             )
-            movement.save(update_fields=["monto", "fecha_pago", "nota"])
+            movement.save(update_fields=["monto", "fecha_pago", "acreedor_credito", "nota"])
             adjusted += 1
+        elif action == "vincular" and row["match"]:
+            movement = MovimientoFinanciero.objects.select_for_update().get(
+                pk=row["match"].pk, usuario=request.user, acreedor_credito__isnull=True,
+                tipo=MovimientoFinanciero.Tipo.GASTO,
+            )
+            movement.acreedor_credito = context["acreedor"]
+            if row.get("fecha_pago"):
+                movement.fecha_pago = parse_date(row["fecha_pago"])
+            movement.save(update_fields=["acreedor_credito", "fecha_pago"])
+    for expense in context["sobrantes"]:
+        action = extra_actions[expense.pk]
+        if action == "conservar":
+            continue
+        movement = MovimientoFinanciero.objects.select_for_update().get(
+            pk=expense.pk, usuario=request.user, acreedor_credito=context["acreedor"],
+        )
+        if action == "eliminar":
+            registrar_eliminacion(request, movement)
+            movement.estado = MovimientoFinanciero.Estado.ELIMINADO
+            movement.save(update_fields=["estado"])
+            deleted += 1
+        else:
+            movement.fecha_pago = expense.nueva_fecha_pago
+            movement.save(update_fields=["fecha_pago"])
+            moved += 1
+    quota_amount = totals["cuota_ajuste"]
+    if create_quota and quota_amount > 0:
+        due = context["fecha_cuota"]
+        debt = Deuda.objects.create(
+            usuario=request.user, acreedor=context["acreedor"].nombre,
+            acreedor_entidad=context["acreedor"], concepto=f"Cuota de ajuste estado {context['borrador']['mes']}",
+            monto_inicial=quota_amount, saldo_actual=quota_amount, numero_cuotas=1,
+            fecha_inicio=due, fecha_primera_cuota=due, fecha_vencimiento=due,
+            nota="Diferencia del total bancario revisada y aprobada en la conciliación.",
+        )
+        PagoDeuda.objects.create(deuda=debt, monto=quota_amount, fecha=due,
+                                 cuota_numero=1, estado=PagoDeuda.Estado.PENDIENTE)
     request.session.pop("borrador_conciliacion_tarjeta", None)
-    messages.success(request, f"Conciliación completada: {created} gastos creados y {adjusted} ajustados.")
+    messages.success(request, f"Conciliación completada: {created} gastos creados, {adjusted} ajustados, "
+                     f"{deleted} eliminados, {moved} desplazados y "
+                     f"{'1 cuota de ajuste creada' if quota_amount > 0 else 'sin cuota de ajuste'}.")
     return redirect("actividad_financiera")
 
 

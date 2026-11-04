@@ -1,13 +1,31 @@
 {% extends "base.html" %}
 {% block page_title %}Conciliar estado de tarjeta{% endblock %}
-{% block page_subtitle %}Compara los cargos de un PDF o varias fotos con tus gastos registrados{% endblock %}
+{% block page_subtitle %}Usa el PDF completo del banco o concilia únicamente un total{% endblock %}
 {% block content %}
 <section class="panel form-panel">
-  <div class="safe-notice"><span class="material-symbols-outlined">verified_user</span><div><strong>Revisión antes de guardar</strong><p>Selecciona el acreedor y el mes de emisión del estado. Podrás revisar cada cargo antes de crear o ajustar gastos.</p></div></div>
+  <div class="safe-notice"><span class="material-symbols-outlined">verified_user</span><div><strong>El PDF del banco tiene prioridad</strong><p>Con el PDF se revisan cargos, totales y registros sobrantes. Si solo tienes el total, sube una foto o escribe el monto para ver cuánto sobra o falta.</p></div></div>
   <p class="muted">Si el acreedor aún no aparece, <a href="{% url 'deuda_list' %}">créalo en Deudas</a> y vuelve a esta pantalla.</p>
   <form class="form-grid" method="post" enctype="multipart/form-data">{% csrf_token %}
     {% include "core/includes/unfold_form_fields.html" %}
     <div class="form-actions"><a class="btn btn-outline-secondary" href="{% url 'actividad_financiera' %}">Cancelar</a><button class="btn btn-primary" type="submit">Analizar estado</button></div>
   </form>
 </section>
+<script>
+(() => {
+  const mode = document.getElementById('id_tipo_entrada');
+  const file = document.getElementById('id_archivo');
+  const amount = document.getElementById('id_monto_total');
+  const month = document.getElementById('id_mes');
+  if (!mode || !file || !amount || !month) return;
+  function update() {
+    const manual = mode.value === 'total_monto';
+    file.closest('.unfold-field, .mb-3, .field-wrapper')?.toggleAttribute('hidden', manual);
+    amount.closest('.unfold-field, .mb-3, .field-wrapper')?.toggleAttribute('hidden', !manual);
+    month.closest('.unfold-field, .mb-3, .field-wrapper')?.toggleAttribute('hidden', mode.value === 'pdf');
+    file.accept = mode.value === 'pdf' ? '.pdf,application/pdf' : '.jpg,.jpeg,.png,.webp,image/*';
+  }
+  mode.addEventListener('change', update);
+  update();
+})();
+</script>
 {% endblock %}
