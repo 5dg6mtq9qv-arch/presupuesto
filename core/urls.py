@@ -15,6 +15,7 @@ urlpatterns = [
     path("bienvenida/completar/", views.onboarding_bienvenida_completar, name="onboarding_bienvenida_completar"),
     path("contacto/", views.contacto, name="contacto"),
     path("analisis/", views.analisis_financiero, name="analisis_financiero"),
+    path("analisis/gastos/", views.analisis_gastos, name="analisis_gastos"),
     path("asistente/", views.asistente_financiero, name="asistente_financiero"),
     path("asistente/preguntar/", views.asistente_financiero_preguntar, name="asistente_financiero_preguntar"),
     path("asistente/borrador/<str:accion>/", views.asistente_borrador_movimiento_accion, name="asistente_borrador_movimiento_accion"),

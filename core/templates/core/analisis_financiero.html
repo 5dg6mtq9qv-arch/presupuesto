@@ -5,6 +5,10 @@
 
 {% block content %}
 {{ chart_data|json_script:"analysis-data" }}
+<nav class="tabs mb-3" aria-label="Tipo de análisis">
+  <a class="tab active" href="{% url 'analisis_financiero' %}" aria-current="page">Análisis financiero</a>
+  <a class="tab" href="{% url 'analisis_gastos' %}">Análisis de gastos</a>
+</nav>
 
 <section class="panel">
   <form class="analysis-filter-form" id="analysis-filter-form" method="get">

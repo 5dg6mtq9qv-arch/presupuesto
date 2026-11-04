@@ -1,0 +1,53 @@
+.spending-heading { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin: 0 0 18px; }
+.spending-heading-title { display: flex; align-items: center; gap: 12px; }
+.spending-heading-title > .material-symbols-outlined { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 14px; background: #dff8f2; color: #008b76; font-size: 28px; }
+.spending-heading-title strong, .spending-heading-title small { display: block; }
+.spending-heading-title strong { font-size: 19px; }
+.spending-heading-title small { color: var(--muted); }
+.spending-view-tabs, .spending-mode-switch { display: flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--surface); }
+.spending-view-tabs button, .spending-mode-switch button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 38px; padding: 7px 13px; border: 0; border-right: 1px solid var(--line); background: transparent; color: var(--text); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.spending-view-tabs button:last-child, .spending-mode-switch button:last-child { border-right: 0; }
+.spending-view-tabs button[aria-selected="true"], .spending-mode-switch button.is-active { background: var(--primary); color: #fff; }
+.spending-view-tabs .material-symbols-outlined { font-size: 19px; }
+.spending-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
+.spending-stat { display: flex; align-items: flex-start; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); min-width: 0; }
+.spending-stat > .material-symbols-outlined { display: grid; place-items: center; flex: 0 0 44px; height: 44px; border-radius: 50%; background: #e8e4ff; color: #6855c4; }
+.spending-stat:nth-child(2) > .material-symbols-outlined { background: #dff2f2; color: #0a9a8c; }
+.spending-stat:nth-child(3) > .material-symbols-outlined { background: #dcfbeb; color: #0a9b62; }
+.spending-stat:nth-child(4) > .material-symbols-outlined { background: #ede8ff; color: #7250d5; }
+.spending-stat small, .spending-stat strong, .spending-stat span:not(.material-symbols-outlined) { display: block; }
+.spending-stat small { color: var(--muted); font-size: 11px; font-weight: 700; }
+.spending-stat strong { margin: 2px 0; font-size: 23px; white-space: nowrap; }
+.spending-stat div > span { color: var(--muted); font-size: 11px; }
+.spending-stat.is-higher strong { color: #d14343; }
+.spending-stat.is-lower strong { color: #079861; }
+.spending-filters { display: grid; grid-template-columns: 1fr 1.5fr 1.15fr 1fr; align-items: end; gap: 14px; margin-bottom: 18px; }
+.spending-filters label, .spending-filter-label { display: block; margin-bottom: 6px; font-size: 12px; font-weight: 750; }
+.spending-month-picker { position: relative; }
+.spending-month-picker summary { display: flex; align-items: center; min-height: 39px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); cursor: pointer; font-size: 12px; }
+.spending-month-options { position: absolute; z-index: 10; top: calc(100% + 4px); left: 0; width: min(310px, 90vw); max-height: 280px; overflow-y: auto; padding: 7px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow-lg); }
+.spending-month-options label { display: flex; align-items: center; gap: 8px; padding: 7px; margin: 0; border-radius: 6px; cursor: pointer; font-weight: 500; }
+.spending-month-options label:hover { background: var(--surface-soft); }
+.spending-month-options input { accent-color: var(--primary); }
+.spending-mode-switch button { flex: 1 1 auto; white-space: nowrap; }
+.spending-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(285px, 1fr); gap: 14px; }
+.spending-main-chart, .spending-secondary-panel { min-width: 0; }
+.spending-panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.spending-panel-heading h2, .spending-secondary-panel h2 { margin-bottom: 3px; font-size: 19px; }
+.spending-cutoff { flex: 0 0 auto; padding: 5px 9px; border-radius: 8px; background: #dff8f2; color: #087e72; font-size: 11px; font-weight: 750; }
+.spending-main-chart .chart-box { height: 380px; }
+.spending-secondary-panel .chart-box { height: 360px; }
+.spending-side { display: grid; gap: 14px; align-content: start; }
+.spending-side-panel h3 { font-size: 15px; margin: 0 0 5px; }
+.spending-side-panel p { font-size: 11px; margin-bottom: 8px; }
+.spending-side-panel .table { font-size: 11px; }
+.spending-color-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+.spending-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 7px; margin-top: 10px; }
+.spending-legend span { padding: 5px 8px; border: 1px solid var(--line); border-radius: 8px; font-size: 11px; }
+.spending-category-row { display: grid; grid-template-columns: minmax(90px, 1fr) minmax(50px, 1.4fr) auto; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 11px; }
+.spending-category-track { height: 8px; overflow: hidden; border-radius: 9px; background: var(--surface-soft); }
+.spending-category-track span { display: block; height: 100%; border-radius: inherit; background: var(--primary); }
+.spending-category-row strong { white-space: nowrap; }
+.spending-method-note { margin: 14px 0 0; font-size: 12px; }
+@media (max-width: 1100px) { .spending-heading { align-items: flex-start; flex-direction: column; } .spending-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } .spending-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } .spending-layout { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .spending-view-tabs { width: 100%; } .spending-view-tabs button { flex: 1; padding: 7px; font-size: 10px; } .spending-view-tabs .material-symbols-outlined { display: none; } .spending-stats, .spending-filters { grid-template-columns: 1fr; } .spending-main-chart .chart-box { height: 300px; } }

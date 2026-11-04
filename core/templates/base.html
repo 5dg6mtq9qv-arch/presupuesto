@@ -574,11 +574,6 @@
     .chart-control:hover { color: var(--primary); }
     .chart-control.is-active { color: var(--primary); background: var(--surface); box-shadow: 0 1px 5px rgba(15, 23, 42, .09); }
     .chart-insights { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 4px 0 14px; }
-    .chart-insights.category-trend-insights { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-    .comparison-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-    .comparison-chart { min-width: 0; border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
-    .comparison-chart h3 { font-size: 15px; font-weight: 750; margin: 0 0 8px; }
-    .comparison-chart .chart-box { height: 260px; }
     .chart-insight { min-width: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); padding: 9px 11px; }
     .chart-insight small, .chart-insight strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .chart-insight small { color: var(--muted); font-size: 10px; font-weight: 750; text-transform: uppercase; }
@@ -1859,8 +1854,6 @@
       .finance-swal .swal2-html-container { margin-right: 18px; margin-left: 18px; }
       .finance-swal .swal2-select.form-select { margin-right: 18px !important; margin-left: 18px !important; }
       .chart-insights { grid-template-columns: 1fr; }
-      .chart-insights.category-trend-insights { grid-template-columns: 1fr; }
-      .comparison-charts { grid-template-columns: 1fr; }
       .payment-overview { grid-template-columns: 1fr 1fr; }
       .budget-period-form { display: grid; grid-template-columns: 1fr 90px auto; }
       .budget-envelope-values { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -1897,6 +1890,7 @@
       .ai-drawer-form { padding: 10px max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); }
     }
   </style>
+  {% block extra_css %}{% endblock %}
 </head>
 <body>
   <div class="app-shell">
@@ -1921,7 +1915,8 @@
         <div class="nav-section">Resumen</div>
         <ul class="nav-list">
           <li><a class="nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" href="{% url 'dashboard' %}"><span class="material-symbols-outlined">dashboard</span> Inicio</a></li>
-          <li><a class="nav-link {% if request.resolver_match.url_name == 'analisis_financiero' %}active{% endif %}" href="{% url 'analisis_financiero' %}"><span class="material-symbols-outlined">monitoring</span> Análisis</a></li>
+          <li><a class="nav-link {% if request.resolver_match.url_name == 'analisis_financiero' %}active{% endif %}" href="{% url 'analisis_financiero' %}"><span class="material-symbols-outlined">monitoring</span> Análisis financiero</a></li>
+          <li><a class="nav-link {% if request.resolver_match.url_name == 'analisis_gastos' %}active{% endif %}" href="{% url 'analisis_gastos' %}"><span class="material-symbols-outlined">query_stats</span> Análisis de gastos</a></li>
           {% if can_use_ai %}<li><a class="nav-link {% if 'asistente_financiero' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'asistente_financiero' %}" data-tour-target="assistant"><span class="material-symbols-outlined">smart_toy</span> Asistente IA</a></li>{% endif %}
         </ul>
         <div class="nav-section">Mi dinero</div>

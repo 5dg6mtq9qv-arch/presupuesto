@@ -98,7 +98,7 @@ class ProductFeaturesTests(TestCase):
         self.assertContains(dashboard, "data-dashboard-report-open", html=False)
         self.assertNotContains(dashboard, "dashboard-report-view")
 
-    def test_dashboard_compara_gastos_mensuales_por_categoria(self):
+    def test_analisis_gastos_compara_gastos_mensuales_por_categoria(self):
         hoy = timezone.localdate()
         ultimo_mes = (hoy.replace(day=1) - timedelta(days=1)).replace(day=1)
         mes_anterior = (ultimo_mes - timedelta(days=1)).replace(day=1)
@@ -119,16 +119,24 @@ class ProductFeaturesTests(TestCase):
                 categoria=categoria, metodo_pago=metodo,
                 concepto="Servicio", monto=monto, fecha=fecha,
             )
+        MovimientoFinanciero.objects.create(
+            usuario=self.user, tipo=MovimientoFinanciero.Tipo.GASTO,
+            estado=MovimientoFinanciero.Estado.PENDIENTE,
+            categoria=categoria, concepto="Aún no confirmado", monto="99.00", fecha=hoy,
+        )
 
-        response = self.client.get(reverse("dashboard"))
-        tendencia = response.context["chart_data"]["tendenciaCategorias"]
-        serie = next(item for item in tendencia["categorias"] if item["nombre"] == "Conectividad")
-        self.assertEqual(serie["valores"][-3:], [20.0, 30.0, 5.0])
-        self.assertIn("en curso", tendencia["labels"][-1])
-        self.assertContains(response, "¿Suben o bajan tus gastos por categoría?")
+        response = self.client.get(reverse("analisis_gastos"))
+        spending = response.context["spending_data"]
+        serie = next(item for item in spending["categories"] if item["name"] == "Conectividad")
+        self.assertEqual([sum(days) for days in serie["daily"][-3:]], [20.0, 30.0, 5.0])
+        self.assertEqual(spending["totalDaily"][-2][0], 30.0)
+        self.assertContains(response, "Comparativo por día")
+        self.assertContains(response, "Resumen mensual")
+        self.assertContains(response, "Por categoría")
+        self.assertNotContains(self.client.get(reverse("dashboard")), "¿Suben o bajan tus gastos por categoría?")
 
-    @patch("core.views.timezone.localdate", return_value=date(2026, 11, 4))
-    def test_dashboard_ofrece_comparacion_hasta_el_mismo_dia(self, _localdate):
+    @patch("core.spending_analysis.timezone.localdate", return_value=date(2026, 11, 4))
+    def test_analisis_gastos_ofrece_comparacion_hasta_el_mismo_dia(self, _localdate):
         categoria = Categoria.objects.create(
             usuario=self.user, nombre="Servicios de prueba", tipo=Categoria.Tipo.FINANZAS,
         )
@@ -142,19 +150,17 @@ class ProductFeaturesTests(TestCase):
                 estado=MovimientoFinanciero.Estado.CONFIRMADO,
                 categoria=categoria, concepto="Servicio", monto=monto, fecha=fecha,
             )
-        response = self.client.get(reverse("dashboard"))
-        tendencia = response.context["chart_data"]["tendenciaCategorias"]
-        serie = next(item for item in tendencia["categorias"] if item["nombre"] == "Servicios de prueba")
-        self.assertEqual(serie["valores"][-2:], [30.0, 5.0])
-        self.assertEqual(serie["mismoCorte"][-2:], [10.0, 5.0])
-        self.assertEqual(serie["diarios"][-2][2], 10.0)
-        self.assertEqual(serie["diarios"][-2][19], 20.0)
-        self.assertEqual(serie["diarios"][-1][2], 5.0)
-        self.assertEqual(tendencia["diasCorte"][-2:], [4, 4])
-        self.assertContains(response, 'id="mes-base-tendencia"', html=False)
-        self.assertContains(response, 'id="mes-comparado-tendencia"', html=False)
-        self.assertContains(response, 'id="tendenciaMesBaseChart"', html=False)
-        self.assertContains(response, 'id="tendenciaMesComparadoChart"', html=False)
+        response = self.client.get(reverse("analisis_gastos"))
+        spending = response.context["spending_data"]
+        serie = next(item for item in spending["categories"] if item["name"] == "Servicios de prueba")
+        self.assertEqual(sum(serie["daily"][-2]), 30.0)
+        self.assertEqual(serie["daily"][-2][2], 10.0)
+        self.assertEqual(serie["daily"][-2][19], 20.0)
+        self.assertEqual(serie["daily"][-1][2], 5.0)
+        self.assertEqual(spending["currentDay"], 4)
+        self.assertContains(response, 'id="spending-daily-chart"', html=False)
+        self.assertContains(response, 'id="spending-monthly-chart"', html=False)
+        self.assertContains(response, 'id="spending-category-chart"', html=False)
 
     def test_pdf_explains_when_deferred_debt_plan_is_manageable(self):
         today = timezone.localdate()

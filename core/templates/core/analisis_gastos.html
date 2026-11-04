@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block page_title %}Análisis de gastos{% endblock %}
+{% block page_subtitle %}Compara tu gasto actual con meses anteriores, por categoría y día del mes{% endblock %}
+
+{% block extra_css %}<link rel="stylesheet" href="{% static 'core/css/analisis_gastos.css' %}">{% endblock %}
+
+{% block content %}
+{{ spending_data|json_script:"spending-analysis-data" }}
+
+<nav class="tabs mb-3" aria-label="Tipo de análisis">
+  <a class="tab" href="{% url 'analisis_financiero' %}">Análisis financiero</a>
+  <a class="tab active" href="{% url 'analisis_gastos' %}" aria-current="page">Análisis de gastos</a>
+</nav>
+
+<section class="spending-heading" aria-label="Vistas del análisis de gastos">
+  <div class="spending-heading-title"><span class="material-symbols-outlined">query_stats</span><div><strong>Explora tus gastos</strong><small>Compras a crédito incluidas; los pagos de cuotas no se suman dos veces.</small></div></div>
+  <div class="spending-view-tabs" role="tablist" aria-label="Vista de gastos">
+    <button type="button" role="tab" aria-selected="true" data-spending-tab="daily"><span class="material-symbols-outlined">show_chart</span> Comparativo por día</button>
+    <button type="button" role="tab" aria-selected="false" data-spending-tab="monthly"><span class="material-symbols-outlined">bar_chart</span> Resumen mensual</button>
+    <button type="button" role="tab" aria-selected="false" data-spending-tab="category"><span class="material-symbols-outlined">pie_chart</span> Por categoría</button>
+  </div>
+</section>
+
+<section class="spending-stats" aria-label="Resumen de gastos">
+  <article class="spending-stat"><span class="material-symbols-outlined">account_balance_wallet</span><div><small data-stat-current-label>Gastado este mes</small><strong data-stat-current>0,00</strong><span>Acumulado confirmado</span></div></article>
+  <article class="spending-stat"><span class="material-symbols-outlined">layers</span><div><small data-stat-average-label>Promedio anterior</small><strong data-stat-average>0,00</strong><span>Mismo corte de los meses elegidos</span></div></article>
+  <article class="spending-stat" data-stat-variation-card><span class="material-symbols-outlined">trending_flat</span><div><small>Variación vs. promedio</small><strong data-stat-variation>Sin datos</strong><span data-stat-variation-detail>Selecciona meses anteriores</span></div></article>
+  <article class="spending-stat"><span class="material-symbols-outlined">insights</span><div><small>Estimación al cierre</small><strong data-stat-projection>0,00</strong><span data-stat-projection-detail>Proyección orientativa</span></div></article>
+</section>
+
+<section class="panel spending-filters" aria-label="Filtros del análisis">
+  <div>
+    <label for="spending-category">Categoría</label>
+    <select id="spending-category" class="form-select" data-native-select>
+      <option value="">Todos los gastos</option>
+      {% for category in spending_data.categories %}<option value="{{ category.name }}">{{ category.name }}</option>{% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="spending-months"><span data-months-count>Meses a comparar</span></label>
+    <details class="spending-month-picker" id="spending-months">
+      <summary data-months-summary>Selecciona hasta 4 meses</summary>
+      <div class="spending-month-options">
+        {% for month in spending_data.months %}
+          <label><input type="checkbox" value="{{ forloop.counter0 }}" data-spending-month{% if forloop.revcounter <= 4 %} checked{% endif %}><span>{{ month.label }}{% if month.current %} · actual{% endif %}</span></label>
+        {% endfor %}
+      </div>
+    </details>
+    <small data-month-warning role="alert" hidden>Selecciona entre 1 y 4 meses.</small>
+  </div>
+  <div>
+    <span class="spending-filter-label">Modo de visualización</span>
+    <div class="spending-mode-switch" role="group" aria-label="Modo de visualización">
+      <button type="button" class="is-active" data-spending-mode="cumulative" aria-pressed="true">Acumulado por día</button>
+      <button type="button" data-spending-mode="daily" aria-pressed="false">Gasto diario</button>
+    </div>
+  </div>
+  <div>
+    <label for="spending-compare">Comparación</label>
+    <select id="spending-compare" class="form-select" data-native-select>
+      <option value="same_day">Mismo corte del mes</option>
+      <option value="full_month">Mes completo registrado</option>
+    </select>
+  </div>
+</section>
+
+<section data-spending-panel="daily" role="tabpanel">
+  <div class="spending-layout">
+    <article class="panel spending-main-chart">
+      <div class="spending-panel-heading"><div><h2>Evolución del gasto por día</h2><p data-daily-description class="muted mb-0">Comparación de los meses elegidos.</p></div><span class="spending-cutoff" data-current-cutoff></span></div>
+      <div class="chart-box"><canvas id="spending-daily-chart" aria-label="Evolución diaria del gasto en los meses seleccionados" role="img"></canvas></div>
+      <div class="spending-legend" data-spending-legend></div>
+    </article>
+    <aside class="spending-side">
+      <article class="panel spending-side-panel"><h3>Comparativa</h3><p class="muted" data-comparison-description></p><div class="table-wrap"><table class="table table-sm align-middle mb-0"><thead><tr><th>Mes</th><th class="text-end">Gasto</th><th class="text-end" data-comparison-relative>Vs. actual</th></tr></thead><tbody data-comparison-rows></tbody></table></div></article>
+      <article class="panel spending-side-panel"><h3>Top de gastos por categoría</h3><p class="muted" data-top-description></p><div data-top-categories></div></article>
+    </aside>
+  </div>
+</section>
+
+<section data-spending-panel="monthly" role="tabpanel" hidden>
+  <article class="panel spending-secondary-panel"><h2>Resumen mensual</h2><p class="muted" data-monthly-description>Compara los importes de los meses seleccionados.</p><div class="chart-box"><canvas id="spending-monthly-chart" aria-label="Resumen de gasto por mes" role="img"></canvas></div></article>
+</section>
+
+<section data-spending-panel="category" role="tabpanel" hidden>
+  <article class="panel spending-secondary-panel"><h2>Gastos por categoría</h2><p class="muted" data-category-description>Categorías del mes actual frente al promedio de los meses anteriores seleccionados.</p><div class="chart-box"><canvas id="spending-category-chart" aria-label="Gasto actual y promedio anterior por categoría" role="img"></canvas></div></article>
+</section>
+
+<p class="muted spending-method-note">La estimación de cierre usa el ritmo de gasto de los meses anteriores seleccionados. Es orientativa y puede variar, especialmente al inicio del mes.</p>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="{% static 'core/js/analisis_gastos.js' %}"></script>
+{% endblock %}

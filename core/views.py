@@ -128,6 +128,7 @@ from .services import (
     sincronizar_deuda_compra_credito,
     sincronizar_movimientos_recurrentes_pendientes,
 )
+from .spending_analysis import build_spending_analysis
 from .bank_import import CSVImportError, confirm_import, create_import_preview
 from .amortization_import import AmortizationImportError, parse_amortization_file as parse_amortization_pdf
 from .receipt_capture import analyze_receipt, receipt_error_for_display
@@ -3082,52 +3083,6 @@ def dashboard(request):
         fecha__gte=meses[0],
         fecha__lt=add_months(inicio_mes, 1),
     )
-    meses_tendencia = meses[-7:]
-    gastos_tendencia = {}
-    gastos_tendencia_mismo_corte = {}
-    gastos_tendencia_diarios = {}
-    colores_tendencia = {}
-    for movimiento in movimientos_historicos.filter(
-        tipo=MovimientoFinanciero.Tipo.GASTO,
-        ajuste_saldo__isnull=True,
-        fecha__lte=hoy,
-        fecha__gte=meses_tendencia[0],
-    ).select_related("categoria__parent"):
-        nombre, color = categoria_grafica(movimiento.categoria)
-        if nombre not in gastos_tendencia:
-            gastos_tendencia[nombre] = [Decimal("0")] * len(meses_tendencia)
-            gastos_tendencia_mismo_corte[nombre] = [Decimal("0")] * len(meses_tendencia)
-            gastos_tendencia_diarios[nombre] = [
-                [Decimal("0")] * calendar.monthrange(mes.year, mes.month)[1]
-                for mes in meses_tendencia
-            ]
-        valores = gastos_tendencia[nombre]
-        valores_mismo_corte = gastos_tendencia_mismo_corte[nombre]
-        valores_diarios = gastos_tendencia_diarios[nombre]
-        indice = (movimiento.fecha.year - meses_tendencia[0].year) * 12 + movimiento.fecha.month - meses_tendencia[0].month
-        valores[indice] += movimiento.monto
-        valores_diarios[indice][movimiento.fecha.day - 1] += movimiento.monto
-        if movimiento.fecha.day <= hoy.day:
-            valores_mismo_corte[indice] += movimiento.monto
-        colores_tendencia[nombre] = color
-    categorias_tendencia = sorted(
-        gastos_tendencia,
-        key=lambda nombre: sum(gastos_tendencia[nombre], Decimal("0")),
-        reverse=True,
-    )
-    totales_tendencia = [
-        float(sum((valores[indice] for valores in gastos_tendencia.values()), Decimal("0")))
-        for indice in range(len(meses_tendencia))
-    ]
-    totales_tendencia_mismo_corte = [
-        float(sum((valores[indice] for valores in gastos_tendencia_mismo_corte.values()), Decimal("0")))
-        for indice in range(len(meses_tendencia))
-    ]
-    totales_tendencia_diarios = [
-        [float(sum((valores[indice][dia] for valores in gastos_tendencia_diarios.values()), Decimal("0")))
-         for dia in range(calendar.monthrange(mes.year, mes.month)[1])]
-        for indice, mes in enumerate(meses_tendencia)
-    ]
     ingresos_historicos = {
         (item["mes"].year, item["mes"].month): item["total"]
         for item in movimientos_historicos.filter(
@@ -3234,22 +3189,6 @@ def dashboard(request):
             "values": [item["total"] for item in gastos_categoria],
             "colors": [item["color"] for item in gastos_categoria],
         },
-        "tendenciaCategorias": {
-            "labels": [mes.strftime("%m/%Y") + (" · en curso" if mes == inicio_mes else "") for mes in meses_tendencia],
-            "total": totales_tendencia,
-            "totalMismoCorte": totales_tendencia_mismo_corte,
-            "totalDiario": totales_tendencia_diarios,
-            "diasCorte": [min(hoy.day, calendar.monthrange(mes.year, mes.month)[1]) for mes in meses_tendencia],
-            "diasMes": [calendar.monthrange(mes.year, mes.month)[1] for mes in meses_tendencia],
-            "diasMesActual": calendar.monthrange(hoy.year, hoy.month)[1],
-            "categorias": [
-                {"nombre": nombre, "color": colores_tendencia[nombre],
-                 "valores": [float(valor) for valor in gastos_tendencia[nombre]],
-                 "mismoCorte": [float(valor) for valor in gastos_tendencia_mismo_corte[nombre]],
-                 "diarios": [[float(valor) for valor in mes] for mes in gastos_tendencia_diarios[nombre]]}
-                for nombre in categorias_tendencia
-            ],
-        },
         "ingresosCategoria": {
             "labels": [item["categoria"] for item in ingresos_categoria],
             "values": [item["total"] for item in ingresos_categoria],
@@ -3354,6 +3293,15 @@ def dashboard(request):
             "onboarding_done": sum(step["done"] for step in onboarding_steps),
             "mostrar_bienvenida": not perfil.bienvenida_vista or request.GET.get("guia") == "1",
         },
+    )
+
+
+@login_required
+def analisis_gastos(request):
+    return render(
+        request,
+        "core/analisis_gastos.html",
+        {"spending_data": build_spending_analysis(request.user)},
     )
 
 
