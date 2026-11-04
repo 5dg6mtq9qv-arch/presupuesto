@@ -1153,21 +1153,26 @@ class PresupuestoMensualForm(UserScopedModelForm):
 class MovimientoRecurrenteForm(UserScopedModelForm):
     class Meta:
         model = MovimientoRecurrente
-        fields = ["tipo", "categoria", "cuenta", "metodo_pago", "concepto", "monto", "dia_mes", "aplicar_automaticamente", "activo", "nota"]
+        fields = ["tipo", "categoria", "cuenta", "metodo_pago", "acreedor_credito", "dia_pago_credito", "concepto", "monto", "dia_mes", "aplicar_automaticamente", "activo", "nota"]
         labels = {
             "categoria": "Categoría",
             "metodo_pago": "Método de pago",
             "dia_mes": "Día del mes",
             "cuenta": "Cuenta prevista",
-            "aplicar_automaticamente": "Aplicar automáticamente al saldo",
+            "aplicar_automaticamente": "Confirmar automáticamente",
+            "acreedor_credito": "Acreedor de la tarjeta",
+            "dia_pago_credito": "Día máximo de pago de la tarjeta",
         }
         help_texts = {
             "cuenta": "Se propondrá al confirmar. Si activas la aplicación automática, esta cuenta se usará directamente.",
-            "aplicar_automaticamente": "Actívalo solo si el cobro o débito ocurre siempre sin intervención.",
+            "aplicar_automaticamente": "Al usar tarjeta se crea la cuota sin afectar la cuenta; para otros métodos se usa la cuenta prevista.",
+            "dia_pago_credito": "Si el día de pago ya pasó al generarse la compra, la cuota vence el mes siguiente.",
         }
         widgets = {
             "monto": forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
             "dia_mes": forms.NumberInput(attrs={"min": "1", "max": "31"}),
+            "dia_pago_credito": forms.NumberInput(attrs={"min": "1", "max": "31"}),
+            "metodo_pago": MetodoPagoSelect(),
         }
 
     def __init__(self, *args, user=None, **kwargs):
@@ -1184,6 +1189,8 @@ class MovimientoRecurrenteForm(UserScopedModelForm):
         self.fields["cuenta"].empty_label = "Selecciona una cuenta"
         self.fields["metodo_pago"].queryset = MetodoPago.objects.filter(usuario=user, activo=True).order_by("nombre")
         self.fields["metodo_pago"].empty_label = "Sin método"
+        self.fields["acreedor_credito"].queryset = Acreedor.objects.filter(usuario=user, activo=True).order_by("nombre")
+        self.fields["acreedor_credito"].empty_label = "Selecciona un acreedor"
         if not self.is_bound and not self.instance.pk:
             self.fields["cuenta"].initial = get_general_account(user)
 
@@ -1195,7 +1202,22 @@ class MovimientoRecurrenteForm(UserScopedModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
-        if cleaned_data.get("aplicar_automaticamente") and not cleaned_data.get("cuenta"):
+        metodo = cleaned_data.get("metodo_pago")
+        es_credito = (
+            cleaned_data.get("tipo") == MovimientoFinanciero.Tipo.GASTO
+            and metodo and metodo.tipo == MetodoPago.Tipo.CREDITO
+        )
+        if es_credito:
+            if not cleaned_data.get("acreedor_credito"):
+                self.add_error("acreedor_credito", "Selecciona el acreedor de la tarjeta.")
+            dia_pago = cleaned_data.get("dia_pago_credito")
+            if dia_pago is None or not 1 <= dia_pago <= 31:
+                self.add_error("dia_pago_credito", "Indica un día entre 1 y 31.")
+            cleaned_data["cuenta"] = None
+        else:
+            cleaned_data["acreedor_credito"] = None
+            cleaned_data["dia_pago_credito"] = None
+        if cleaned_data.get("aplicar_automaticamente") and not es_credito and not cleaned_data.get("cuenta"):
             self.add_error("cuenta", "Selecciona la cuenta que se afectará automáticamente.")
         return cleaned_data
 
@@ -1203,7 +1225,9 @@ class MovimientoRecurrenteForm(UserScopedModelForm):
         instance = super().save(commit=False)
         if instance.categoria_id and not instance.categoria.parent_id:
             instance.categoria = get_general_subcategory(instance.categoria)
-        if not instance.cuenta_id:
+        if instance.acreedor_credito_id:
+            instance.cuenta = None
+        elif not instance.cuenta_id:
             instance.cuenta = get_general_account(self.user)
         if commit:
             instance.save()
@@ -1732,6 +1756,16 @@ class ConfirmarMovimientoForm(BootstrapFormMixin, forms.Form):
 
     def __init__(self, *args, user=None, movimiento=None, saldos=None, **kwargs):
         super().__init__(*args, **kwargs)
+        if (
+            movimiento
+            and movimiento.tipo == MovimientoFinanciero.Tipo.GASTO
+            and movimiento.metodo_pago_id
+            and movimiento.metodo_pago.tipo == MetodoPago.Tipo.CREDITO
+            and movimiento.acreedor_credito_id
+            and movimiento.fecha_pago
+        ):
+            self.fields.pop("cuenta")
+            return
         saldos = saldos or {}
         es_ingreso = movimiento and movimiento.tipo == MovimientoFinanciero.Tipo.INGRESO
         self.fields["cuenta"].label = "Cuenta de destino" if es_ingreso else "Cuenta de origen"

@@ -8,21 +8,25 @@
 <section class="panel form-panel">
   <div class="panel-heading">
     <div>
-      <h2>{% if movimiento.tipo == "ingreso" %}Dinero recibido{% else %}Pago realizado{% endif %}</h2>
-      <p class="muted mb-0">Monto <strong>{{ movimiento.monto }}</strong>. El saldo cambiará solo después de confirmar la cuenta.</p>
+      <h2>{% if es_credito %}Compra a crédito{% elif movimiento.tipo == "ingreso" %}Dinero recibido{% else %}Pago realizado{% endif %}</h2>
+      {% if es_credito %}
+        <p class="muted mb-0">Monto <strong>{{ movimiento.monto }}</strong> · {{ movimiento.acreedor_credito }} · vence {{ movimiento.fecha_pago|date:"d/m/Y" }}. Se creará una cuota pendiente sin descontar dinero de la cuenta.</p>
+      {% else %}
+        <p class="muted mb-0">Monto <strong>{{ movimiento.monto }}</strong>. El saldo cambiará solo después de confirmar la cuenta.</p>
+      {% endif %}
     </div>
   </div>
   <form class="form-grid" method="post">
     {% csrf_token %}
     {% include "core/includes/unfold_form_fields.html" %}
-    <div class="unfold-field">
+    {% if not es_credito %}<div class="unfold-field">
       <span class="form-label">Saldo actual</span>
       <div id="saldo-cuenta" class="form-control bg-light">Selecciona una cuenta</div>
       <div id="saldo-resultante" class="form-text"></div>
-    </div>
+    </div>{% endif %}
     <div class="form-actions actions">
       <button class="btn btn-primary" type="submit">
-        <span class="material-symbols-outlined">check</span><span>{% if movimiento.tipo == "ingreso" %}Confirmar recepción{% else %}Confirmar pago{% endif %}</span>
+        <span class="material-symbols-outlined">check</span><span>{% if es_credito %}Confirmar compra a crédito{% elif movimiento.tipo == "ingreso" %}Confirmar recepción{% else %}Confirmar pago{% endif %}</span>
       </button>
       <a class="btn btn-outline-secondary" href="{% url 'movimiento_list' %}?tipo={{ movimiento.tipo }}">Cancelar</a>
     </div>
@@ -31,6 +35,7 @@
 {% endblock %}
 
 {% block scripts %}
+{% if not es_credito %}
 <script>
   (() => {
     const saldos = JSON.parse(document.getElementById("saldos-cuenta-data").textContent);
@@ -58,4 +63,5 @@
     window.setTimeout(actualizar, 0);
   })();
 </script>
+{% endif %}
 {% endblock %}

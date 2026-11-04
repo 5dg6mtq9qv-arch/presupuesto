@@ -216,6 +216,27 @@
 
 </div>
 
+<section class="panel chart-panel mb-4" aria-labelledby="category-trend-title">
+  <div class="panel-heading">
+    <div>
+      <h2 id="category-trend-title">¿Suben o bajan tus gastos por categoría?</h2>
+      <p class="muted mb-0">Compara los últimos seis meses cerrados. El mes actual se muestra aparte como avance.</p>
+    </div>
+    <div class="chart-toolbar">
+      <label for="categoria-tendencia" class="form-label mb-0">Categoría</label>
+      <select id="categoria-tendencia" class="form-select" aria-label="Elegir categoría para comparar gastos">
+        <option value="">Todos los gastos</option>
+      </select>
+    </div>
+  </div>
+  <div class="chart-insights">
+    <div class="chart-insight"><small>Último mes cerrado</small><strong data-trend-last>0,00</strong></div>
+    <div class="chart-insight"><small>Cambio frente al anterior</small><strong data-trend-change>Sin datos</strong></div>
+    <div class="chart-insight"><small>Este mes hasta hoy</small><strong data-trend-current>0,00</strong></div>
+  </div>
+  <div class="chart-box"><canvas id="tendenciaCategoriasChart" aria-label="Evolución mensual de gastos por categoría" role="img"></canvas></div>
+</section>
+
 <div class="dashboard-grid">
   <section class="panel chart-panel">
     <div class="panel-heading">
@@ -827,6 +848,53 @@
       activateControl("[data-expense-mode]", button);
       renderExpenses();
     }));
+
+    const tendencia = data.tendenciaCategorias;
+    const categoriaTendencia = document.getElementById("categoria-tendencia");
+    tendencia.categorias.forEach((categoria, index) => {
+      const option = document.createElement("option");
+      option.value = String(index);
+      option.textContent = categoria.nombre;
+      categoriaTendencia.append(option);
+    });
+    const tendenciaChart = new Chart(document.getElementById("tendenciaCategoriasChart"), {
+      type: "line",
+      data: {
+        labels: tendencia.labels,
+        datasets: [{
+          label: "Todos los gastos", data: tendencia.total,
+          borderColor: "#25a194", backgroundColor: "rgba(37,161,148,.14)",
+          pointRadius: 4, pointHoverRadius: 6, tension: .3, fill: true,
+          segment: { borderDash: context => context.p1DataIndex === tendencia.labels.length - 1 ? [5, 5] : [] },
+        }],
+      },
+      options: standardOptions(),
+    });
+    const renderTendencia = () => {
+      const categoria = tendencia.categorias[Number(categoriaTendencia.value)];
+      const valores = categoriaTendencia.value === "" ? tendencia.total : categoria.valores;
+      const dataset = tendenciaChart.data.datasets[0];
+      dataset.label = categoria?.nombre || "Todos los gastos";
+      dataset.data = valores;
+      dataset.borderColor = categoria?.color || "#25a194";
+      tendenciaChart.update();
+      const ultimo = Number(valores.at(-2) || 0);
+      const anterior = Number(valores.at(-3) || 0);
+      const cambio = document.querySelector("[data-trend-change]");
+      setText("[data-trend-last]", money.format(ultimo));
+      setText("[data-trend-current]", money.format(Number(valores.at(-1) || 0)));
+      cambio.classList.remove("text-danger", "text-success");
+      if (!anterior && !ultimo) cambio.textContent = "Sin gasto en ambos meses";
+      else if (!anterior) { cambio.textContent = "Nuevo gasto"; cambio.classList.add("text-danger"); }
+      else {
+        const variacion = (ultimo - anterior) / anterior * 100;
+        cambio.textContent = `${variacion > 0 ? "+" : ""}${variacion.toFixed(1)}%`;
+        if (variacion > 0) cambio.classList.add("text-danger");
+        if (variacion < 0) cambio.classList.add("text-success");
+      }
+    };
+    categoriaTendencia.addEventListener("change", renderTendencia);
+    renderTendencia();
 
     const budgetSource = data.presupuesto.labels.map((label, index) => {
       const budget = Number(data.presupuesto.presupuesto[index] || 0);

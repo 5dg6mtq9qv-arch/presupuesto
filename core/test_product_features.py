@@ -97,6 +97,35 @@ class ProductFeaturesTests(TestCase):
         self.assertContains(dashboard, "data-dashboard-report-open", html=False)
         self.assertNotContains(dashboard, "dashboard-report-view")
 
+    def test_dashboard_compara_gastos_mensuales_por_categoria(self):
+        hoy = timezone.localdate()
+        ultimo_mes = (hoy.replace(day=1) - timedelta(days=1)).replace(day=1)
+        mes_anterior = (ultimo_mes - timedelta(days=1)).replace(day=1)
+        categoria = Categoria.objects.create(
+            usuario=self.user, nombre="Conectividad", tipo=Categoria.Tipo.FINANZAS,
+        )
+        credito = MetodoPago.objects.create(
+            usuario=self.user, nombre="Tarjeta prueba", tipo=MetodoPago.Tipo.CREDITO,
+        )
+        for fecha, monto, metodo in (
+            (mes_anterior, "20.00", None),
+            (ultimo_mes, "30.00", credito),
+            (hoy, "5.00", None),
+        ):
+            MovimientoFinanciero.objects.create(
+                usuario=self.user, tipo=MovimientoFinanciero.Tipo.GASTO,
+                estado=MovimientoFinanciero.Estado.CONFIRMADO,
+                categoria=categoria, metodo_pago=metodo,
+                concepto="Servicio", monto=monto, fecha=fecha,
+            )
+
+        response = self.client.get(reverse("dashboard"))
+        tendencia = response.context["chart_data"]["tendenciaCategorias"]
+        serie = next(item for item in tendencia["categorias"] if item["nombre"] == "Conectividad")
+        self.assertEqual(serie["valores"][-3:], [20.0, 30.0, 5.0])
+        self.assertIn("en curso", tendencia["labels"][-1])
+        self.assertContains(response, "¿Suben o bajan tus gastos por categoría?")
+
     def test_pdf_explains_when_deferred_debt_plan_is_manageable(self):
         today = timezone.localdate()
         account = self.user.cuentafinanciera_set.filter(activa=True).first()

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block page_title %}{{ title }}{% endblock %}
 {% block page_subtitle %}Actualiza la información financiera{% endblock %}
@@ -55,4 +56,5 @@
     refreshSubcategories();
   })();
 </script>
+<script src="{% static 'core/js/recurrente_credito.js' %}"></script>
 {% endblock %}

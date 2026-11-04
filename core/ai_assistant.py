@@ -167,6 +167,58 @@ def _account_result(account, *, include_breakdown=False):
     return result
 
 
+def _spending_budget_alerts(user, today):
+    """Evidence for category spending warnings in the current month."""
+    current_start = _month_start(today)
+    previous_start = _month_start(_shift_month(current_start, -1))
+    previous_cutoff = previous_start.replace(
+        day=min(today.day, monthrange(previous_start.year, previous_start.month)[1])
+    )
+    expenses = MovimientoFinanciero.objects.filter(
+        usuario=user,
+        tipo=MovimientoFinanciero.Tipo.GASTO,
+        estado=MovimientoFinanciero.Estado.CONFIRMADO,
+        ajuste_saldo__isnull=True,
+        fecha__range=(previous_start, today),
+    )
+    alerts = []
+    for budget in PresupuestoMensual.objects.filter(
+        usuario=user, anio=today.year, mes=today.month,
+    ).select_related("categoria"):
+        category_filter = (
+            Q(categoria=budget.categoria) | Q(categoria__parent=budget.categoria)
+            if budget.categoria.parent_id is None else Q(categoria=budget.categoria)
+        )
+        category_expenses = expenses.filter(category_filter)
+        actual = category_expenses.filter(fecha__gte=current_start).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+        if budget.monto <= 0 or actual <= 0:
+            continue
+        ratio = actual / budget.monto
+        projected = actual * Decimal(monthrange(today.year, today.month)[1]) / Decimal(today.day)
+        if ratio >= 1:
+            status = "superado"
+        elif ratio >= Decimal("0.80"):
+            status = "cerca_del_limite"
+        elif today.day >= 7 and projected > budget.monto:
+            status = "proyeccion_de_exceso"
+        else:
+            continue
+        previous = category_expenses.filter(fecha__lte=previous_cutoff).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+        alerts.append({
+            "categoria": budget.categoria.nombre,
+            "estado": status,
+            "presupuesto": _money(budget.monto),
+            "gastado_hasta_hoy": _money(actual),
+            "porcentaje_utilizado": f"{ratio * 100:.1f}",
+            "mes_anterior_mismo_corte": _money(previous),
+            "proyeccion_lineal_al_fin_de_mes": _money(projected),
+            "criterio_proyeccion": "Estimación lineal según el ritmo observado; no es un cargo confirmado.",
+        })
+    priority = {"superado": 0, "cerca_del_limite": 1, "proyeccion_de_exceso": 2}
+    alerts.sort(key=lambda item: (priority[item["estado"]], -Decimal(item["porcentaje_utilizado"])))
+    return alerts[:5]
+
+
 def analyze_spending(user, arguments=None, *, today=None):
     """Calculate reproducible comparisons, outliers and spending projections."""
     arguments = arguments or {}
@@ -480,6 +532,7 @@ def build_financial_context(user, today=None):
         anio=today.year,
         mes=today.month,
     ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    spending_alerts = _spending_budget_alerts(user, today)
     operating_cash_outflow = direct_cash_expenses + debt_payments
     registered_balance_outflow = operating_cash_outflow + balance_adjustments
     active_accounts = list(CuentaFinanciera.objects.filter(usuario=user, activa=True).order_by("nombre"))
@@ -668,6 +721,7 @@ def build_financial_context(user, today=None):
             "alcance": "Solo incluye gastos recurrentes activos aún no confirmados para ese periodo.",
         },
         "presupuestos_del_mes": _money(budget_total),
+        "alertas_gastos_por_categoria": spending_alerts,
         "principales_categorias_de_gasto": categories,
         "gastos_por_etiqueta": {
             "detalle": expense_tags,
@@ -2385,6 +2439,7 @@ def ask_financial_assistant(user, question, history=None):
         "Para cifras y registros usa exclusivamente CONTEXTO_FINANCIERO y los resultados de herramientas. "
         "Distingue siempre datos registrados de estimaciones. Si haces una estimación, llámala estimación, muestra los supuestos y no la presentes como un vencimiento real. "
         "Usa perfil_comportamiento_financiero para comparar la situación actual con los hábitos del usuario y personalizar sugerencias. "
+        "Si pregunta por su situación actual, revisa alertas_gastos_por_categoria y menciona las categorías cerca del límite, superadas o con proyección de exceso, con sus cifras registradas. Distingue la proyección lineal de un gasto confirmado; si no hay alertas, no las inventes. "
         "Usa objetivos_financieros para alinear el consejo con las metas y memoria_recomendaciones para dar seguimiento, aprender de lo aceptado o descartado y no repetir consejos sin motivo. "
         "Trata sus tendencias como patrones orientativos, no como certezas; si su calidad es baja, aclara que existe poco historial. "
         "Para saldos de cuentas, registros recientes, periodos distintos al resumen actual, listados o fechas solicitadas, debes usar la herramienta adecuada. "

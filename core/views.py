@@ -126,6 +126,7 @@ from .services import (
     saldo_actual_cuenta,
     sincronizar_cuotas_pendientes_deuda,
     sincronizar_deuda_compra_credito,
+    sincronizar_movimientos_recurrentes_pendientes,
 )
 from .bank_import import CSVImportError, confirm_import, create_import_preview
 from .amortization_import import AmortizationImportError, parse_amortization_file as parse_amortization_pdf
@@ -1961,7 +1962,7 @@ def recurrente_list(request):
         estado=MovimientoFinanciero.Estado.PENDIENTE,
     ).order_by("-fecha", "-pk")
     recurrentes = MovimientoRecurrente.objects.filter(usuario=request.user).select_related(
-        "categoria__parent", "cuenta", "metodo_pago"
+        "categoria__parent", "cuenta", "metodo_pago", "acreedor_credito"
     ).annotate(pendiente_id=Subquery(pendiente.values("pk")[:1]))
     q = request.GET.get("q", "").strip()
     if q:
@@ -1975,6 +1976,7 @@ def recurrente_list(request):
 
 
 @login_required
+@transaction.atomic
 def finance_object_update(request, kind, pk):
     config = {
         "cuenta": (CuentaFinanciera, CuentaFinancieraForm, "cuenta", "cuenta_list"),
@@ -1991,6 +1993,8 @@ def finance_object_update(request, kind, pk):
         form = form_class(request.POST, instance=instance, user=request.user)
         if form.is_valid():
             form.save()
+            if kind == "recurrente":
+                sincronizar_movimientos_recurrentes_pendientes(instance)
             registrar_auditoria(request, RegistroAuditoria.Accion.ACTUALIZAR, instance)
             messages.success(request, f"{label.capitalize()} actualizado.")
             return redirect(back_url)
@@ -3078,6 +3082,29 @@ def dashboard(request):
         fecha__gte=meses[0],
         fecha__lt=add_months(inicio_mes, 1),
     )
+    meses_tendencia = meses[-7:]
+    gastos_tendencia = {}
+    colores_tendencia = {}
+    for movimiento in movimientos_historicos.filter(
+        tipo=MovimientoFinanciero.Tipo.GASTO,
+        ajuste_saldo__isnull=True,
+        fecha__lte=hoy,
+        fecha__gte=meses_tendencia[0],
+    ).select_related("categoria__parent"):
+        nombre, color = categoria_grafica(movimiento.categoria)
+        valores = gastos_tendencia.setdefault(nombre, [Decimal("0")] * len(meses_tendencia))
+        indice = (movimiento.fecha.year - meses_tendencia[0].year) * 12 + movimiento.fecha.month - meses_tendencia[0].month
+        valores[indice] += movimiento.monto
+        colores_tendencia[nombre] = color
+    categorias_tendencia = sorted(
+        gastos_tendencia,
+        key=lambda nombre: sum(gastos_tendencia[nombre], Decimal("0")),
+        reverse=True,
+    )
+    totales_tendencia = [
+        float(sum((valores[indice] for valores in gastos_tendencia.values()), Decimal("0")))
+        for indice in range(len(meses_tendencia))
+    ]
     ingresos_historicos = {
         (item["mes"].year, item["mes"].month): item["total"]
         for item in movimientos_historicos.filter(
@@ -3183,6 +3210,15 @@ def dashboard(request):
             "labels": [item["categoria"] for item in gastos_categoria],
             "values": [item["total"] for item in gastos_categoria],
             "colors": [item["color"] for item in gastos_categoria],
+        },
+        "tendenciaCategorias": {
+            "labels": [mes.strftime("%m/%Y") + (" · en curso" if mes == inicio_mes else "") for mes in meses_tendencia],
+            "total": totales_tendencia,
+            "categorias": [
+                {"nombre": nombre, "color": colores_tendencia[nombre],
+                 "valores": [float(valor) for valor in gastos_tendencia[nombre]]}
+                for nombre in categorias_tendencia
+            ],
         },
         "ingresosCategoria": {
             "labels": [item["categoria"] for item in ingresos_categoria],
@@ -4626,6 +4662,13 @@ def movimiento_confirmar(request, pk):
 
     resumen_cuentas = saldos_por_cuenta(request.user)
     saldos_por_id = {item["id"]: item["saldo"] for item in resumen_cuentas}
+    es_credito = (
+        movimiento.tipo == MovimientoFinanciero.Tipo.GASTO
+        and movimiento.metodo_pago_id
+        and movimiento.metodo_pago.tipo == MetodoPago.Tipo.CREDITO
+        and movimiento.acreedor_credito_id
+        and movimiento.fecha_pago
+    )
     form = ConfirmarMovimientoForm(
         request.POST if request.method == "POST" else None,
         user=request.user,
@@ -4640,10 +4683,11 @@ def movimiento_confirmar(request, pk):
                 "form": form,
                 "movimiento": movimiento,
                 "saldos_cuenta": {str(pk): float(saldo) for pk, saldo in saldos_por_id.items()},
+                "es_credito": es_credito,
             },
         )
 
-    movimiento.cuenta = form.cleaned_data["cuenta"]
+    movimiento.cuenta = None if es_credito else form.cleaned_data["cuenta"]
     movimiento.estado = MovimientoFinanciero.Estado.CONFIRMADO
     movimiento.save(update_fields=["cuenta", "estado"])
     sincronizar_deuda_compra_credito(movimiento)
@@ -4651,10 +4695,13 @@ def movimiento_confirmar(request, pk):
         request,
         RegistroAuditoria.Accion.CONFIRMAR,
         movimiento,
-        cambios={"cuenta": movimiento.cuenta.nombre, "monto": str(movimiento.monto)},
+        cambios={"cuenta": movimiento.cuenta.nombre if movimiento.cuenta else None, "monto": str(movimiento.monto)},
     )
-    accion = "Ingreso recibido" if movimiento.tipo == MovimientoFinanciero.Tipo.INGRESO else "Gasto pagado"
-    messages.success(request, f"{accion}; el saldo de {movimiento.cuenta.nombre} fue actualizado.")
+    if es_credito:
+        messages.success(request, "Compra a crédito confirmada; se creó su cuota pendiente sin afectar el saldo de la cuenta.")
+    else:
+        accion = "Ingreso recibido" if movimiento.tipo == MovimientoFinanciero.Tipo.INGRESO else "Gasto pagado"
+        messages.success(request, f"{accion}; el saldo de {movimiento.cuenta.nombre} fue actualizado.")
     return redirect(f"{reverse('movimiento_list')}?tipo={movimiento.tipo}")
 
 

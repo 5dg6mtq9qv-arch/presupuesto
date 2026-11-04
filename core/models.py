@@ -997,6 +997,11 @@ class MovimientoRecurrente(models.Model):
     categoria = models.ForeignKey(Categoria, on_delete=models.SET_NULL, null=True, blank=True)
     cuenta = models.ForeignKey(CuentaFinanciera, on_delete=models.SET_NULL, null=True, blank=True)
     metodo_pago = models.ForeignKey(MetodoPago, on_delete=models.SET_NULL, null=True, blank=True)
+    acreedor_credito = models.ForeignKey(
+        "Acreedor", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="recurrentes_credito",
+    )
+    dia_pago_credito = models.PositiveSmallIntegerField(null=True, blank=True)
     concepto = models.CharField(max_length=160)
     monto = models.DecimalField(max_digits=12, decimal_places=2)
     frecuencia = models.CharField(max_length=20, choices=Frecuencia.choices, default=Frecuencia.MENSUAL)

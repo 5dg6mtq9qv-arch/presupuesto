@@ -705,6 +705,7 @@ def generar_movimientos_recurrentes(hasta_fecha=None, usuario=None):
         "categoria",
         "cuenta",
         "metodo_pago",
+        "acreedor_credito",
     )
     if usuario is not None:
         recurrentes = recurrentes.filter(usuario=usuario)
@@ -722,12 +723,16 @@ def generar_movimientos_recurrentes(hasta_fecha=None, usuario=None):
             ).exists():
                 omitidos += 1
                 continue
+            es_credito, fecha_pago = datos_credito_recurrente(recurrente, fecha)
             movimiento = MovimientoFinanciero(
                 usuario=recurrente.usuario,
                 tipo=recurrente.tipo,
                 categoria=recurrente.categoria,
-                cuenta=recurrente.cuenta,
+                cuenta=None if es_credito else recurrente.cuenta,
                 metodo_pago=recurrente.metodo_pago,
+                acreedor_credito=recurrente.acreedor_credito if es_credito else None,
+                fecha_pago=fecha_pago,
+                numero_cuotas_credito=1,
                 recurrente=recurrente,
                 concepto=recurrente.concepto,
                 monto=recurrente.monto,
@@ -735,19 +740,86 @@ def generar_movimientos_recurrentes(hasta_fecha=None, usuario=None):
                 nota=recurrente.nota,
                 estado=(
                     MovimientoFinanciero.Estado.CONFIRMADO
-                    if recurrente.aplicar_automaticamente and recurrente.cuenta_id
+                    if recurrente.aplicar_automaticamente and (recurrente.cuenta_id or es_credito)
                     else MovimientoFinanciero.Estado.PENDIENTE
                 ),
             )
             try:
                 with transaction.atomic():
                     movimiento.save()
+                    if es_credito and movimiento.estado == MovimientoFinanciero.Estado.CONFIRMADO:
+                        sincronizar_deuda_compra_credito(movimiento)
             except IntegrityError:
                 omitidos += 1
                 continue
             creados.append(movimiento)
 
     return creados, omitidos
+
+
+def datos_credito_recurrente(recurrente, fecha):
+    es_credito = bool(
+        recurrente.tipo == MovimientoFinanciero.Tipo.GASTO
+        and recurrente.metodo_pago_id
+        and recurrente.metodo_pago.tipo == MetodoPago.Tipo.CREDITO
+        and recurrente.acreedor_credito_id
+        and recurrente.dia_pago_credito
+    )
+    if not es_credito:
+        return False, None
+    fecha_pago = fecha_recurrente_para_mes(
+        fecha.year, fecha.month, recurrente.dia_pago_credito,
+    )
+    if fecha_pago < fecha:
+        anio_pago, mes_pago = siguiente_mes(fecha.year, fecha.month)
+        fecha_pago = fecha_recurrente_para_mes(
+            anio_pago, mes_pago, recurrente.dia_pago_credito,
+        )
+    return True, fecha_pago
+
+
+@transaction.atomic
+def sincronizar_movimientos_recurrentes_pendientes(recurrente):
+    """Refresh generated movements that have not consumed money or debt payments."""
+    actualizados = 0
+    movimientos = MovimientoFinanciero.objects.select_for_update().filter(
+        recurrente=recurrente,
+        usuario=recurrente.usuario,
+    )
+    for movimiento in movimientos:
+        era_credito_confirmado = (
+            movimiento.estado == MovimientoFinanciero.Estado.CONFIRMADO
+            and movimiento.metodo_pago_id
+            and movimiento.metodo_pago.tipo == MetodoPago.Tipo.CREDITO
+        )
+        if movimiento.estado != MovimientoFinanciero.Estado.PENDIENTE and not era_credito_confirmado:
+            continue
+        if era_credito_confirmado and PagoDeuda.objects.filter(
+            deuda__movimiento_origen=movimiento,
+            estado=PagoDeuda.Estado.CONFIRMADO,
+        ).exists():
+            continue
+        fecha = fecha_recurrente_para_mes(
+            movimiento.fecha.year, movimiento.fecha.month, recurrente.dia_mes,
+        )
+        es_credito, fecha_pago = datos_credito_recurrente(recurrente, fecha)
+        movimiento.tipo = recurrente.tipo
+        movimiento.categoria = recurrente.categoria
+        movimiento.cuenta = None if es_credito else recurrente.cuenta
+        movimiento.metodo_pago = recurrente.metodo_pago
+        movimiento.acreedor_credito = recurrente.acreedor_credito if es_credito else None
+        movimiento.fecha_pago = fecha_pago
+        movimiento.numero_cuotas_credito = 1
+        movimiento.concepto = recurrente.concepto
+        movimiento.monto = recurrente.monto
+        movimiento.fecha = fecha
+        movimiento.nota = recurrente.nota
+        if era_credito_confirmado and not es_credito:
+            movimiento.estado = MovimientoFinanciero.Estado.PENDIENTE
+        movimiento.save()
+        sincronizar_deuda_compra_credito(movimiento)
+        actualizados += 1
+    return actualizados
 
 
 def iter_cuotas_deuda_vencidas(deuda, hasta_fecha):

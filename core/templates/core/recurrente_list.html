@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block page_title %}Recurrentes{% endblock %}
 {% block page_subtitle %}Programa ingresos y gastos mensuales y decide cómo se confirman{% endblock %}
@@ -30,7 +31,7 @@
       <div class="form-grid" data-recurring-target="2"></div>
     </section>
     <section class="expense-step-panel" data-recurring-panel="3" hidden>
-      <div class="expense-step-copy"><span class="material-symbols-outlined">rule</span><div><h2>¿Cómo debe aplicarse?</h2><p>Elige la cuenta y si deseas confirmación manual o aplicación automática.</p></div></div>
+      <div class="expense-step-copy"><span class="material-symbols-outlined">rule</span><div><h2>¿Cómo debe aplicarse?</h2><p>Elige el método de pago y decide si confirmas cada movimiento o se registra automáticamente.</p></div></div>
       <div class="expense-summary" aria-live="polite">
         <span><small>Concepto</small><strong data-recurring-summary-concept>Sin definir</strong></span>
         <span><small>Monto mensual</small><strong data-recurring-summary-amount>0.00</strong></span>
@@ -48,7 +49,7 @@
 </section>
 
 <section class="panel">
-  <p class="muted mb-2">Al llegar el día programado, el sistema crea un movimiento en Ingresos o Gastos. Con confirmación manual queda pendiente hasta que confirmas la recepción o el pago y eliges la cuenta; entonces cambia el saldo. Con aplicación automática y una cuenta seleccionada, se confirma al generarse.</p>
+  <p class="muted mb-2">Al llegar el día programado se crea un movimiento. Si el gasto es con tarjeta de crédito, al confirmarlo se crea una cuota para el acreedor y la cuenta solo cambia cuando pagas esa cuota.</p>
   <a href="{% url 'movimiento_list' %}?tipo=gasto&amp;estado=pendiente">Ver gastos pendientes</a>
 </section>
 
@@ -67,7 +68,7 @@
         {% for recurrente in recurrentes %}
           <tr>
             <td><span class="badge rounded-pill {% if recurrente.tipo == 'ingreso' %}text-bg-success{% else %}text-bg-warning{% endif %}">{{ recurrente.get_tipo_display }}</span></td>
-            <td><strong>{{ recurrente.concepto }}</strong></td>
+            <td><strong>{{ recurrente.concepto }}</strong>{% if recurrente.acreedor_credito %}<div class="small text-muted">{{ recurrente.acreedor_credito }} · una cuota, día {{ recurrente.dia_pago_credito }}</div>{% endif %}</td>
             <td>{% if recurrente.categoria %}{% if recurrente.categoria.parent %}{{ recurrente.categoria.parent.nombre }} > {% endif %}{{ recurrente.categoria.nombre }}{% else %}<span class="muted">Sin categoría</span>{% endif %}</td>
             <td class="amount">{{ recurrente.monto }}</td>
             <td>{{ recurrente.dia_mes }}</td>
@@ -104,7 +105,7 @@
     const fieldSteps = {
       tipo: 1, categoria: 1, concepto: 1,
       monto: 2, dia_mes: 2,
-      cuenta: 3, metodo_pago: 3, aplicar_automaticamente: 3, activo: 3, nota: 3,
+      cuenta: 3, metodo_pago: 3, acreedor_credito: 3, dia_pago_credito: 3, aplicar_automaticamente: 3, activo: 3, nota: 3,
     };
     const panels = [...form.querySelectorAll("[data-recurring-panel]")];
     const tabs = [...form.querySelectorAll("[data-recurring-go]")];
@@ -130,7 +131,10 @@
       if (step === 1 && !input("concepto")?.value.trim()) return ["concepto", "Escribe el concepto recurrente."];
       if (step === 2 && Number(input("monto")?.value) <= 0) return ["monto", "Indica un monto mayor que cero."];
       if (step === 2 && (Number(input("dia_mes")?.value) < 1 || Number(input("dia_mes")?.value) > 31)) return ["dia_mes", "El día debe estar entre 1 y 31."];
-      if (step === 3 && input("aplicar_automaticamente")?.checked && !input("cuenta")?.value) return ["cuenta", "Selecciona la cuenta que se afectará automáticamente."];
+      const esCredito = input("tipo")?.value === "gasto" && input("metodo_pago")?.selectedOptions[0]?.dataset.tipo === "credito";
+      if (step === 3 && esCredito && !input("acreedor_credito")?.value) return ["acreedor_credito", "Selecciona el acreedor de la tarjeta."];
+      if (step === 3 && esCredito && (Number(input("dia_pago_credito")?.value) < 1 || Number(input("dia_pago_credito")?.value) > 31)) return ["dia_pago_credito", "Indica el día máximo de pago de la tarjeta."];
+      if (step === 3 && !esCredito && input("aplicar_automaticamente")?.checked && !input("cuenta")?.value) return ["cuenta", "Selecciona la cuenta que se afectará automáticamente."];
       return null;
     };
     const validateStep = step => {
@@ -180,4 +184,5 @@
     showStep(errorPanel ? Number(errorPanel.dataset.recurringPanel) : 1);
   })();
 </script>
+<script src="{% static 'core/js/recurrente_credito.js' %}"></script>
 {% endblock %}

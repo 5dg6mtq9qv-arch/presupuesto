@@ -20,6 +20,7 @@ from .forms import (
     ConfiguracionIAForm,
     ConfiguracionTelegramForm,
     MovimientoFinancieroForm,
+    MovimientoRecurrenteForm,
 )
 from .financial_profile import calculate_financial_behavior_profile, get_financial_behavior_profile
 from .ai_assistant import (
@@ -60,6 +61,7 @@ from .models import (
     MovimientoFinanciero,
     MovimientoRecurrente,
     PagoDeuda,
+    PresupuestoMensual,
     PerfilComportamientoFinanciero,
     PerfilUsuario,
     SolicitudRegistro,
@@ -1418,6 +1420,28 @@ class FinancialAssistantTests(TestCase):
         self.assertEqual(context["principales_categorias_de_gasto"][0]["categoria"], "Alimentación")
         self.assertNotIn("Dato privado", serialized)
         self.assertNotIn("9999", serialized)
+
+    def test_contexto_alerta_categoria_cerca_de_superar_presupuesto(self):
+        date = datetime(2026, 9, 20).date()
+        PresupuestoMensual.objects.create(
+            usuario=self.user, categoria=self.category,
+            anio=2026, mes=9, monto="100.00",
+        )
+        MovimientoFinanciero.objects.create(
+            usuario=self.user, tipo=MovimientoFinanciero.Tipo.GASTO,
+            categoria=self.category, concepto="Compras", monto="85.00", fecha=date,
+        )
+        MovimientoFinanciero.objects.create(
+            usuario=self.user, tipo=MovimientoFinanciero.Tipo.GASTO,
+            categoria=self.category, concepto="Mes anterior", monto="50.00",
+            fecha=datetime(2026, 8, 20).date(),
+        )
+        context = build_financial_context(self.user, today=date)
+        alerta = context["alertas_gastos_por_categoria"][0]
+        self.assertEqual(alerta["categoria"], "Supermercado")
+        self.assertEqual(alerta["estado"], "cerca_del_limite")
+        self.assertEqual(alerta["gastado_hasta_hoy"], "85.00")
+        self.assertEqual(alerta["mes_anterior_mismo_corte"], "50.00")
 
     def test_perfil_comportamiento_resume_habitos_sin_conceptos_privados(self):
         for month in range(1, 8):
@@ -3203,6 +3227,137 @@ class MovimientoRecurrenteServiceTests(TestCase):
         type(instance).objects.filter(pk=instance.pk).update(creado=creado)
         instance.refresh_from_db()
         return instance
+
+    def test_formulario_recurrente_credito_pide_acreedor_y_dia_sin_cuenta(self):
+        credito = MetodoPago.objects.create(usuario=self.user, nombre="Tarjeta", tipo=MetodoPago.Tipo.CREDITO)
+        acreedor = Acreedor.objects.create(usuario=self.user, nombre="Visa")
+        datos = {
+            "tipo": "gasto", "metodo_pago": credito.pk,
+            "concepto": "Internet", "monto": "16.39", "dia_mes": "4",
+            "aplicar_automaticamente": "on", "activo": "on",
+        }
+        formulario = MovimientoRecurrenteForm(datos, user=self.user)
+        self.assertFalse(formulario.is_valid())
+        self.assertIn("acreedor_credito", formulario.errors)
+        self.assertIn("dia_pago_credito", formulario.errors)
+        datos.update({"acreedor_credito": acreedor.pk, "dia_pago_credito": "18"})
+        formulario = MovimientoRecurrenteForm(datos, user=self.user)
+        self.assertTrue(formulario.is_valid(), formulario.errors)
+        self.assertIsNone(formulario.save(commit=False).cuenta)
+        self.client.force_login(self.user)
+        listado = self.client.get(reverse("recurrente_list"))
+        self.assertContains(listado, 'data-tipo="credito"', html=False)
+        self.assertContains(listado, "recurrente_credito.js")
+
+    def test_tarjeta_recurrente_automatica_crea_una_cuota_por_mes(self):
+        credito = MetodoPago.objects.create(usuario=self.user, nombre="Tarjeta", tipo=MetodoPago.Tipo.CREDITO)
+        acreedor = Acreedor.objects.create(usuario=self.user, nombre="Visa")
+        recurrente = MovimientoRecurrente.objects.create(
+            usuario=self.user, tipo=MovimientoFinanciero.Tipo.GASTO,
+            metodo_pago=credito, acreedor_credito=acreedor, dia_pago_credito=18,
+            concepto="Internet", monto="16.39", dia_mes=4,
+            aplicar_automaticamente=True,
+        )
+        self.set_creado(recurrente, 2026, 7, 1)
+        creados, _ = generar_movimientos_recurrentes(
+            hasta_fecha=datetime(2026, 8, 4).date(), usuario=self.user,
+        )
+        self.assertEqual(len(creados), 2)
+        self.assertEqual(Deuda.objects.filter(movimiento_origen__recurrente=recurrente).count(), 2)
+        self.assertEqual(
+            list(PagoDeuda.objects.filter(deuda__movimiento_origen__recurrente=recurrente)
+                 .order_by("fecha").values_list("fecha", "monto")),
+            [
+                (datetime(2026, 7, 18).date(), Decimal("16.39")),
+                (datetime(2026, 8, 18).date(), Decimal("16.39")),
+            ],
+        )
+        self.assertTrue(all(m.cuenta_id is None for m in creados))
+
+    def test_tarjeta_recurrente_manual_confirma_sin_cuenta(self):
+        credito = MetodoPago.objects.create(usuario=self.user, nombre="Tarjeta", tipo=MetodoPago.Tipo.CREDITO)
+        acreedor = Acreedor.objects.create(usuario=self.user, nombre="Visa")
+        recurrente = MovimientoRecurrente.objects.create(
+            usuario=self.user, tipo=MovimientoFinanciero.Tipo.GASTO,
+            metodo_pago=credito, acreedor_credito=acreedor, dia_pago_credito=2,
+            concepto="Internet", monto="16.39", dia_mes=4,
+        )
+        self.set_creado(recurrente, 2026, 7, 1)
+        movimiento = generar_movimientos_recurrentes(
+            hasta_fecha=datetime(2026, 7, 4).date(), usuario=self.user,
+        )[0][0]
+        self.assertEqual(movimiento.fecha_pago, datetime(2026, 8, 2).date())
+        self.assertFalse(Deuda.objects.filter(movimiento_origen=movimiento).exists())
+        self.client.force_login(self.user)
+        response = self.client.post(reverse("movimiento_confirmar", args=[movimiento.pk]))
+        self.assertRedirects(response, f"{reverse('movimiento_list')}?tipo=gasto")
+        deuda = Deuda.objects.get(movimiento_origen=movimiento)
+        self.assertEqual(deuda.pagos.get().fecha, datetime(2026, 8, 2).date())
+
+    def test_editar_recurrente_actualiza_gasto_generado_pendiente(self):
+        credito = MetodoPago.objects.create(usuario=self.user, nombre="Tarjeta", tipo=MetodoPago.Tipo.CREDITO)
+        acreedor = Acreedor.objects.create(usuario=self.user, nombre="Visa")
+        recurrente = MovimientoRecurrente.objects.create(
+            usuario=self.user, tipo=MovimientoFinanciero.Tipo.GASTO,
+            metodo_pago=credito, acreedor_credito=acreedor, dia_pago_credito=18,
+            concepto="Internet", monto="16.39", dia_mes=4,
+        )
+        self.set_creado(recurrente, 2026, 7, 1)
+        movimiento = generar_movimientos_recurrentes(
+            hasta_fecha=datetime(2026, 7, 4).date(), usuario=self.user,
+        )[0][0]
+        self.client.force_login(self.user)
+        response = self.client.post(reverse("finance_object_update", args=["recurrente", recurrente.pk]), {
+            "tipo": "gasto", "metodo_pago": credito.pk, "acreedor_credito": acreedor.pk,
+            "dia_pago_credito": "25", "concepto": "Internet actualizado", "monto": "19.00",
+            "dia_mes": "6", "activo": "on",
+        })
+        self.assertRedirects(response, reverse("recurrente_list"))
+        movimiento.refresh_from_db()
+        self.assertEqual(movimiento.estado, MovimientoFinanciero.Estado.PENDIENTE)
+        self.assertEqual(movimiento.concepto, "Internet actualizado")
+        self.assertEqual(movimiento.monto, Decimal("19.00"))
+        self.assertEqual(movimiento.fecha, datetime(2026, 7, 6).date())
+        self.assertEqual(movimiento.fecha_pago, datetime(2026, 7, 25).date())
+
+    def test_editar_recurrente_actualiza_compra_y_cuota_sin_pagar(self):
+        credito = MetodoPago.objects.create(usuario=self.user, nombre="Tarjeta", tipo=MetodoPago.Tipo.CREDITO)
+        acreedor = Acreedor.objects.create(usuario=self.user, nombre="Visa")
+        recurrente = MovimientoRecurrente.objects.create(
+            usuario=self.user, tipo=MovimientoFinanciero.Tipo.GASTO,
+            metodo_pago=credito, acreedor_credito=acreedor, dia_pago_credito=18,
+            concepto="Internet", monto="16.39", dia_mes=4,
+            aplicar_automaticamente=True,
+        )
+        self.set_creado(recurrente, 2026, 7, 1)
+        movimiento = generar_movimientos_recurrentes(
+            hasta_fecha=datetime(2026, 7, 4).date(), usuario=self.user,
+        )[0][0]
+        deuda = Deuda.objects.get(movimiento_origen=movimiento)
+        self.client.force_login(self.user)
+        response = self.client.post(reverse("finance_object_update", args=["recurrente", recurrente.pk]), {
+            "tipo": "gasto", "metodo_pago": credito.pk, "acreedor_credito": acreedor.pk,
+            "dia_pago_credito": "20", "concepto": "Internet nuevo", "monto": "20.00",
+            "dia_mes": "4", "aplicar_automaticamente": "on", "activo": "on",
+        })
+        self.assertRedirects(response, reverse("recurrente_list"))
+        movimiento.refresh_from_db()
+        deuda.refresh_from_db()
+        self.assertEqual(movimiento.monto, Decimal("20.00"))
+        self.assertEqual(movimiento.fecha_pago, datetime(2026, 7, 20).date())
+        self.assertEqual(deuda.saldo_actual, Decimal("20.00"))
+        self.assertEqual(deuda.pagos.get().fecha, datetime(2026, 7, 20).date())
+
+        deuda.pagos.update(estado=PagoDeuda.Estado.CONFIRMADO)
+        self.client.post(reverse("finance_object_update", args=["recurrente", recurrente.pk]), {
+            "tipo": "gasto", "metodo_pago": credito.pk, "acreedor_credito": acreedor.pk,
+            "dia_pago_credito": "25", "concepto": "Internet posterior", "monto": "30.00",
+            "dia_mes": "4", "aplicar_automaticamente": "on", "activo": "on",
+        })
+        movimiento.refresh_from_db()
+        deuda.refresh_from_db()
+        self.assertEqual(movimiento.monto, Decimal("20.00"))
+        self.assertEqual(deuda.monto_inicial, Decimal("20.00"))
 
     def test_no_genera_fechas_anteriores_a_la_creacion(self):
         recurrente = MovimientoRecurrente.objects.create(
