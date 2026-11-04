@@ -1712,6 +1712,18 @@ class ConfirmarPagoDeudaForm(BootstrapFormMixin, forms.Form):
         self.apply_bootstrap_classes()
 
 
+class PagoAgrupadoDeudaForm(ConfirmarPagoDeudaForm):
+    monto = forms.DecimalField(
+        label="Monto a pagar",
+        max_digits=12,
+        decimal_places=2,
+        min_value=Decimal("0.01"),
+        required=False,
+        widget=forms.NumberInput(attrs={"min": "0.01", "step": "0.01"}),
+        help_text="Déjalo vacío para pagar todas las cuotas seleccionadas.",
+    )
+
+
 class ConfirmarMovimientoForm(BootstrapFormMixin, forms.Form):
     cuenta = forms.ModelChoiceField(
         label="Cuenta",

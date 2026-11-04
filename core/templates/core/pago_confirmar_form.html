@@ -9,7 +9,7 @@
   <div class="panel-heading">
     <div>
       <h2>Cuota {{ pago.cuota_numero|default:"manual" }}</h2>
-      <p class="muted mb-0">Vence {{ pago.fecha|date:"d/m/Y" }} · monto <strong>{{ pago.monto }}</strong></p>
+      <p class="muted mb-0">Vence {{ pago.fecha|date:"d/m/Y" }} · pendiente <strong>{{ pago.monto }}</strong>. Puedes abonar una parte.</p>
     </div>
   </div>
   <form class="form-grid" method="post">
@@ -38,6 +38,7 @@
     const saldo = document.getElementById("saldo-cuenta");
     const resultante = document.getElementById("saldo-resultante");
     const monto = Number("{{ pago.monto|stringformat:'f' }}".replace(",", "."));
+    const montoIngresado = document.getElementById("id_monto");
     const formato = new Intl.NumberFormat("es-EC", {minimumFractionDigits: 2, maximumFractionDigits: 2});
     const actualizar = () => {
       if (!cuenta.value || saldos[cuenta.value] === undefined) {
@@ -46,13 +47,15 @@
         return;
       }
       const disponible = Number(saldos[cuenta.value]);
-      const despues = disponible - monto;
+      const pago = montoIngresado.value ? Number(montoIngresado.value.replace(",", ".")) : monto;
+      const despues = disponible - pago;
       saldo.textContent = formato.format(disponible);
       resultante.textContent = `Después del pago quedarían ${formato.format(despues)}.`;
       resultante.classList.toggle("text-danger", despues < 0);
     };
     cuenta.addEventListener("change", actualizar);
     cuenta.addEventListener("input", actualizar);
+    montoIngresado.addEventListener("input", actualizar);
     if (window.jQuery) window.jQuery(cuenta).on("change", actualizar);
     document.addEventListener("change", event => {
       if (event.target === cuenta) actualizar();

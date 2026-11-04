@@ -66,6 +66,23 @@
         {% endfor %}
       </select>
     </div>
+    {% if active_tipo == 'gasto' %}
+    <div>
+      <label for="acreedor">Acreedor del crédito</label>
+      <select class="form-select" id="acreedor" name="acreedor">
+        <option value="">Todos</option>
+        {% for acreedor in acreedores %}<option value="{{ acreedor.pk }}"{% if filters.acreedor == acreedor.pk|stringformat:"s" %} selected{% endif %}>{{ acreedor.nombre }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="orden">Ordenar</label>
+      <select class="form-select" id="orden" name="orden">
+        <option value="">Orden habitual</option>
+        <option value="acreedor"{% if filters.orden == 'acreedor' %} selected{% endif %}>Acreedor A–Z</option>
+        <option value="acreedor_desc"{% if filters.orden == 'acreedor_desc' %} selected{% endif %}>Acreedor Z–A</option>
+      </select>
+    </div>
+    {% endif %}
     <div>
       <label for="etiqueta">Etiqueta</label>
       <select class="form-select" id="etiqueta" name="etiqueta">

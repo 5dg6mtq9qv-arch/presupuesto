@@ -25,11 +25,11 @@
   <section class="panel monthly-payment-panel" aria-labelledby="monthly-payment-title">
     <div>
       <span class="eyebrow">Cuotas de {{ inicio_mes|date:"F Y" }}</span>
-      <h2 id="monthly-payment-title">Paga todas las cuotas del mes juntas</h2>
+      <h2 id="monthly-payment-title">Paga o abona a las cuotas del mes</h2>
       <p class="muted mb-0">{{ cuotas_mes|length }} cuota{{ cuotas_mes|length|pluralize:"s" }} pendiente{{ cuotas_mes|length|pluralize:"s" }} · total <strong class="amount">{{ total_cuotas_mes }}</strong></p>
     </div>
     <a class="btn btn-primary" href="{% url 'pagos_mes_confirmar' %}">
-      <span class="material-symbols-outlined">payments</span><span>Pagar todo el mes</span>
+      <span class="material-symbols-outlined">payments</span><span>Pagar o abonar</span>
     </a>
   </section>
 {% endif %}
@@ -40,7 +40,7 @@
       <h2 id="debt-filter-title">Buscar y filtrar</h2>
       <p class="muted mb-0">Filtra por la fecha de generación de la deuda o por la fecha de pago de sus cuotas.</p>
     </div>
-    {% if filters.q or filters.categoria or filters.estado or filters.pago_desde or filters.pago_hasta or filters.generacion_desde or filters.generacion_hasta %}
+    {% if filters.q or filters.categoria or filters.acreedor or filters.orden or filters.estado or filters.pago_desde or filters.pago_hasta or filters.generacion_desde or filters.generacion_hasta %}
       <a class="btn btn-sm btn-light" href="{% url 'deuda_list' %}">
         <span class="material-symbols-outlined">filter_alt_off</span><span>Limpiar filtros</span>
       </a>
@@ -53,6 +53,23 @@
         <span class="material-symbols-outlined">search</span>
         <input class="form-control" id="q" name="q" value="{{ filters.q }}" placeholder="Ej.: Pichincha o plan de internet">
       </div>
+    </div>
+    <div>
+      <label for="acreedor">Acreedor</label>
+      <select class="form-select" id="acreedor" name="acreedor">
+        <option value="">Todos los acreedores</option>
+        {% for acreedor in acreedores %}
+          <option value="{{ acreedor.pk }}"{% if filters.acreedor == acreedor.pk|stringformat:"s" %} selected{% endif %}>{{ acreedor.nombre }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="orden">Ordenar</label>
+      <select class="form-select" id="orden" name="orden">
+        <option value="">Orden habitual</option>
+        <option value="acreedor"{% if filters.orden == "acreedor" %} selected{% endif %}>Acreedor A–Z</option>
+        <option value="acreedor_desc"{% if filters.orden == "acreedor_desc" %} selected{% endif %}>Acreedor Z–A</option>
+      </select>
     </div>
     <div>
       <label for="categoria">Categoría</label>

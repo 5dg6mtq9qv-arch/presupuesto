@@ -2875,8 +2875,8 @@ class PagoAgrupadoMesTests(TestCase):
 
         response = self.client.get(reverse("deuda_list"))
 
-        self.assertContains(response, "Paga todas las cuotas del mes juntas")
-        self.assertContains(response, "Pagar todo el mes")
+        self.assertContains(response, "Paga o abona a las cuotas del mes")
+        self.assertContains(response, "Pagar o abonar")
         self.assertEqual(response.context["total_cuotas_mes"], Decimal("125.00"))
 
     @patch("core.views.timezone.localdate")
@@ -2964,6 +2964,55 @@ class PagoAgrupadoMesTests(TestCase):
         self.assertEqual(cuota.estado, PagoDeuda.Estado.PENDIENTE)
         self.assertEqual(deuda.saldo_actual, Decimal("80.00"))
 
+    @patch("core.views.timezone.localdate")
+    def test_monto_reparte_cuotas_completas_y_abono_parcial(self, localdate):
+        localdate.return_value = self.hoy
+        deuda_a, cuota_a = self.crear_cuota("Primera", "80.00", datetime(2026, 10, 5).date())
+        deuda_b, cuota_b = self.crear_cuota("Segunda", "45.00", datetime(2026, 10, 20).date())
+
+        response = self.client.post(reverse("pagos_mes_confirmar"), {
+            "cuenta": self.cuenta.pk, "pagos": [cuota_a.pk, cuota_b.pk], "monto": "100.00",
+        })
+
+        self.assertRedirects(response, reverse("deuda_list"))
+        deuda_a.refresh_from_db()
+        deuda_b.refresh_from_db()
+        cuota_a.refresh_from_db()
+        cuota_b.refresh_from_db()
+        self.assertEqual(deuda_a.saldo_actual, Decimal("0.00"))
+        self.assertEqual(deuda_b.saldo_actual, Decimal("25.00"))
+        self.assertEqual(cuota_a.estado, PagoDeuda.Estado.CONFIRMADO)
+        self.assertEqual(cuota_b.estado, PagoDeuda.Estado.PENDIENTE)
+        self.assertEqual(cuota_b.monto, Decimal("25.00"))
+        self.assertTrue(PagoDeuda.objects.filter(deuda=deuda_b, cuota_numero__isnull=True,
+                                                 estado=PagoDeuda.Estado.CONFIRMADO, monto="20.00").exists())
+        self.assertEqual(saldo_actual_cuenta(self.cuenta), Decimal("400.00"))
+
+    @patch("core.views.timezone.localdate")
+    def test_monto_superior_al_seleccionado_no_registra_pagos(self, localdate):
+        localdate.return_value = self.hoy
+        deuda, cuota = self.crear_cuota("Primera", "80.00", datetime(2026, 10, 5).date())
+        response = self.client.post(reverse("pagos_mes_confirmar"), {
+            "cuenta": self.cuenta.pk, "pagos": [cuota.pk], "monto": "100.00",
+        })
+        self.assertContains(response, "no puede superar el total")
+        deuda.refresh_from_db()
+        self.assertEqual(deuda.saldo_actual, Decimal("80.00"))
+
+    def test_abono_individual_conserva_el_pendiente_de_la_cuota(self):
+        deuda, cuota = self.crear_cuota("Tarjeta", "80.00", datetime(2026, 10, 5).date())
+        response = self.client.post(reverse("pago_confirmar", args=[cuota.pk]), {
+            "cuenta": self.cuenta.pk, "monto": "30.00",
+        })
+        self.assertRedirects(response, reverse("deuda_list"))
+        deuda.refresh_from_db()
+        cuota.refresh_from_db()
+        self.assertEqual(deuda.saldo_actual, Decimal("50.00"))
+        self.assertEqual(cuota.estado, PagoDeuda.Estado.PENDIENTE)
+        self.assertEqual(cuota.monto, Decimal("50.00"))
+        self.assertTrue(PagoDeuda.objects.filter(deuda=deuda, monto="30.00",
+                                                 estado=PagoDeuda.Estado.CONFIRMADO).exists())
+
 
 class DeudaListFilterTests(TestCase):
     def setUp(self):
@@ -3007,6 +3056,13 @@ class DeudaListFilterTests(TestCase):
         self.assertContains(response, "Deuda posterior")
         self.assertContains(response, "Fecha de pago desde")
         self.assertContains(response, "Fecha de generación desde")
+
+    def test_filtra_y_ordena_por_acreedor(self):
+        banco = Acreedor.objects.create(usuario=self.user, nombre="Banco")
+        response = self.client.get(reverse("deuda_list"), {"acreedor": banco.pk, "orden": "acreedor"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context["deudas"]), 3)
+        self.assertContains(response, 'name="acreedor"', html=False)
 
     def test_filtra_fecha_de_pago_con_limites_inclusivos(self):
         response = self.client.get(
@@ -3055,6 +3111,22 @@ class MovimientoFechaFiltroTests(TestCase):
                     monto="10.00",
                     fecha=datetime(2026, 10, dia).date(),
                 )
+
+    def test_gastos_filtran_por_acreedor_de_credito(self):
+        acreedor = Acreedor.objects.create(usuario=self.user, nombre="Tarjeta de prueba")
+        MovimientoFinanciero.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+            concepto="Compra financiada",
+            monto="25.00",
+            fecha=datetime(2026, 10, 18).date(),
+            acreedor_credito=acreedor,
+        )
+        response = self.client.get(reverse("movimiento_list"), {
+            "tipo": "gasto", "acreedor": acreedor.pk, "orden": "acreedor",
+        })
+        self.assertContains(response, "Compra financiada")
+        self.assertNotContains(response, "gasto Anterior")
 
     def test_filtra_ambos_tipos_por_rango_inclusivo_y_conserva_fechas(self):
         for tipo in ("ingreso", "gasto"):
