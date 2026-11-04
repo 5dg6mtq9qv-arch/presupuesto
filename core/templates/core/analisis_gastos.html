@@ -44,7 +44,7 @@
       <summary data-months-summary>Selecciona hasta 4 meses</summary>
       <div class="spending-month-options">
         {% for month in spending_data.months %}
-          <label><input type="checkbox" value="{{ forloop.counter0 }}" data-spending-month{% if forloop.revcounter <= 4 %} checked{% endif %}><span>{{ month.label }}{% if month.current %} · actual{% endif %}</span></label>
+          <label><input class="form-check-input" type="checkbox" value="{{ forloop.counter0 }}" data-spending-month{% if forloop.revcounter <= 4 %} checked{% endif %}><span>{{ month.label }}{% if month.current %} · actual{% endif %}</span></label>
         {% endfor %}
       </div>
     </details>
