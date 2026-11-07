@@ -23,17 +23,23 @@
   <a class="btn btn-primary org-new-task" href="{% url 'organizacion:tarea_create' %}"><span class="material-symbols-outlined" aria-hidden="true">add</span> Nueva tarea</a>
 </div>
 <section class="org-stats">
-  <div class="org-stat"><span class="org-stat-icon org-stat-icon-blue material-symbols-outlined" aria-hidden="true">view_kanban</span><small>Total visible</small><strong>{{ total_tasks }}</strong><div class="org-state-bars">{% for column in columns %}<span title="{{ column.label }}: {{ column.count }}" style="width:{{ column.percent }}%;background:{% cycle '#64748b' '#2563eb' '#f59e0b' '#8b5cf6' '#14a89a' %}"></span>{% endfor %}</div></div>
+  <div class="org-stat"><span class="org-stat-icon org-stat-icon-blue material-symbols-outlined" aria-hidden="true">view_kanban</span><small>Total filtrado</small><strong>{{ total_tasks }}</strong><div class="org-state-bars">{% for column in columns %}<span title="{{ column.label }}: {{ column.count }}" style="width:{{ column.percent }}%;background:{% cycle '#64748b' '#2563eb' '#f59e0b' '#8b5cf6' '#14a89a' %}"></span>{% endfor %}</div></div>
   <div class="org-stat"><span class="org-stat-icon org-stat-icon-green material-symbols-outlined" aria-hidden="true">check_circle</span><small>Finalizadas</small><strong data-completed-count>{{ completed_tasks }}</strong><div class="small text-success">Trabajo completado</div></div>
   <div class="org-stat org-stat-progress"><div class="org-progress-wrap"><div class="org-donut" style="--p:{{ progress_percent }}" data-value="{{ progress_percent }}%"></div><div><small>Avance general</small><strong>{{ progress_percent }}%</strong></div></div></div>
   <div class="org-stat org-stat-distribution"><small>Distribución por estado</small><div class="org-chart-legend">{% for column in columns %}<div class="org-chart-row"><span>{{ column.label }}</span><span class="org-chart-track org-chart-{{ column.key }}"><i style="width:{{ column.percent }}%"></i></span><b>{{ column.count }}</b></div>{% endfor %}</div></div>
 </section>
+<section class="org-finance-summary" aria-label="Movimientos confirmados de tareas visibles">
+  <div><small>Ingresos relacionados</small><strong>${{ actual_income|floatformat:2 }}</strong>{% if has_estimates %}<small>Estimado: ${{ estimated_income|floatformat:2 }}</small>{% endif %}</div>
+  <div><small>Gastos relacionados</small><strong>${{ actual_expense|floatformat:2 }}</strong>{% if has_estimates %}<small>Estimado: ${{ estimated_expense|floatformat:2 }}</small>{% endif %}</div>
+  <div><small>Balance relacionado</small><strong>${{ actual_balance|floatformat:2 }}</strong>{% if has_estimates %}<small>Estimado: ${{ estimated_balance|floatformat:2 }}</small>{% endif %}</div>
+</section>
+<div class="org-completed-history"><span>{% if completed_has_more %}Se muestran las {{ completed_shown }} finalizadas más recientes de {{ completed_tasks }}.{% else %}Consulta las tareas finalizadas.{% endif %}</span><a class="btn btn-outline-primary btn-sm" href="{{ archive_url }}">Ver todas las finalizadas</a></div>
 <div class="org-kanban" data-kanban>
 {% for column in columns %}<section class="org-kanban-column" data-state="{{ column.key }}"><header class="org-column-head"><div><span class="org-column-icon material-symbols-outlined" aria-hidden="true">{% if column.key == 'bandeja' %}inbox{% elif column.key == 'en_progreso' %}pending_actions{% elif column.key == 'en_espera' %}hourglass_empty{% else %}task_alt{% endif %}</span><strong>{{ column.label }}</strong></div><span class="org-column-count" data-count>{{ column.count }}</span></header><div class="org-column-body">{% for task in column.tasks %}<div class="org-card-wrap" draggable="{% if task.subtareas.all %}false{% else %}true{% endif %}" data-kind="task" data-task-id="{{ task.pk }}" data-state="{{ task.estado }}" data-url="{% url 'organizacion:tarea_estado' task.pk %}">{% include "organizacion/_task_card.html" %}{% if task.subtareas.all %}{% endif %}</div>{% empty %}<div class="org-empty"><span class="material-symbols-outlined" aria-hidden="true">{% if column.key == 'bandeja' %}inbox{% elif column.key == 'en_progreso' %}play_circle{% elif column.key == 'en_espera' %}pause_circle{% else %}task_alt{% endif %}</span><strong>Sin tareas</strong><small>Arrastra una tarjeta aquí para cambiar su estado.</small></div>{% endfor %}</div></section>{% endfor %}
 </div>
 <section class="org-mobile-view" data-mobile-tasks aria-label="Tareas por estado">
   <div class="org-mobile-overview">
-    <div><small>Tareas visibles</small><strong>{{ total_tasks }}</strong></div>
+    <div><small>Tareas filtradas</small><strong>{{ total_tasks }}</strong></div>
     <div class="org-mobile-completed"><small>Finalizadas</small><strong>{{ completed_tasks }}</strong></div>
     <div class="org-mobile-progress" aria-label="Avance {{ progress_percent }}%"><span style="width:{{ progress_percent }}%"></span></div>
   </div>
@@ -47,6 +53,8 @@
         <div class="org-mobile-task-head"><span class="org-mobile-state-badge">{{ column.label }}</span><a href="{% url 'organizacion:tarea_detail' task.pk %}" aria-label="Abrir {{ task.titulo }}"><span class="material-symbols-outlined">chevron_right</span></a></div>
         <a class="org-mobile-task-title" href="{% url 'organizacion:tarea_detail' task.pk %}">{{ task.titulo }}</a>
         <div class="org-mobile-task-meta">Prioridad {{ task.get_prioridad_display|lower }}{% if task.fecha_limite %} · Vence {{ task.fecha_limite|date:"d/m H:i" }}{% endif %}</div>
+        {% if task.tiene_estimado %}<div class="org-task-estimate"><span>Balance estimado</span><strong>${{ task.balance_estimado|floatformat:2 }}</strong></div>{% endif %}
+        <div class="org-task-actual">{% if task.ingresos_reales or task.gastos_reales %}<span>Confirmado por etiquetas</span><strong>Ingresos ${{ task.ingresos_reales|floatformat:2 }} · Gastos ${{ task.gastos_reales|floatformat:2 }}</strong>{% else %}<span>Sin movimientos confirmados relacionados</span>{% endif %}</div>
         {% if task.inicio_planificado or task.fin_planificado %}<div class="org-mobile-task-dates">{% if task.inicio_planificado %}<span>Inicio {{ task.inicio_planificado|date:"d/m H:i" }}</span>{% endif %}{% if task.fin_planificado %}<span>Fin {{ task.fin_planificado|date:"d/m H:i" }}</span>{% endif %}</div>{% endif %}
         {% if task.subtareas.all %}
           <div class="org-mobile-auto">Estado automático según sus subtareas · {{ task.progreso }}% completado</div>

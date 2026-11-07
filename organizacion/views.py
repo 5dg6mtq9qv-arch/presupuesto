@@ -3,6 +3,7 @@ import json
 import secrets
 import time
 from datetime import date, datetime, timedelta, timezone as datetime_timezone
+from decimal import Decimal
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -10,7 +11,8 @@ from urllib.request import Request, urlopen
 from django.conf import settings
 from django.contrib import messages
 from django.db import transaction
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, F, Q, Subquery, Sum
+from django.core.paginator import Paginator
 from django.http import HttpResponse, JsonResponse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.shortcuts import get_object_or_404, redirect, render
@@ -25,6 +27,19 @@ from .models import Area, Proyecto, Recurrencia, Subtarea, Tarea
 from .services import generar_tareas_recurrentes, sincronizar_etiqueta_tarea, sincronizar_tarea_desde_subtareas
 from .services import sincronizar_etiqueta_proyecto
 from core.models import Etiqueta, MovimientoFinanciero
+
+
+def _totales_movimientos_tareas(usuario, tasks):
+    """Suma cada movimiento confirmado una sola vez para las tareas filtradas."""
+    tag_ids = Tarea.etiquetas.through.objects.filter(tarea_id__in=Subquery(tasks.values("pk"))).values("etiqueta_id")
+    movement_ids = MovimientoFinanciero.etiquetas.through.objects.filter(etiqueta_id__in=Subquery(tag_ids)).values("movimientofinanciero_id")
+    totals = MovimientoFinanciero.objects.filter(
+        usuario=usuario,
+        estado=MovimientoFinanciero.Estado.CONFIRMADO,
+        pk__in=Subquery(movement_ids),
+    ).values("tipo").annotate(total=Sum("monto"))
+    by_type = {row["tipo"]: row["total"] for row in totals}
+    return by_type.get(MovimientoFinanciero.Tipo.INGRESO, Decimal("0")), by_type.get(MovimientoFinanciero.Tipo.GASTO, Decimal("0"))
 
 
 def _enrich_project_finances(projects):
@@ -66,18 +81,7 @@ def _redirect_after_state_change(request, fallback, state=None, **kwargs):
 
 @organization_required
 def hoy(request):
-    today = timezone.localdate()
-    generar_tareas_recurrentes(request.user, today + timedelta(days=14))
-    active = Tarea.objects.filter(usuario=request.user).exclude(estado__in=[Tarea.Estado.COMPLETADA, Tarea.Estado.CANCELADA]).prefetch_related("subtareas", "etiquetas")
-    return render(request, "organizacion/hoy.html", {
-        "today": today,
-        "today_tasks": active.filter(fecha_planificada=today),
-        "overdue": active.filter(fecha_limite__lt=timezone.now()),
-        "inbox": active.filter(estado=Tarea.Estado.BANDEJA),
-        "upcoming": active.filter(fecha_planificada__gt=today, fecha_planificada__lte=today + timedelta(days=7)),
-        "task_tags": Etiqueta.objects.filter(usuario=request.user, tareas_organizacion__isnull=False).annotate(task_count=Count("tareas_organizacion", distinct=True)).distinct().order_by("nombre"),
-        "quick_form": CapturaRapidaForm(),
-    })
+    return redirect("organizacion:tarea_list")
 
 
 @organization_required
@@ -88,7 +92,7 @@ def captura_rapida(request):
         task = Tarea.objects.create(usuario=request.user, titulo=form.cleaned_data["titulo"], estado=Tarea.Estado.BANDEJA)
         sincronizar_etiqueta_tarea(task)
         messages.success(request, "Guardada en la bandeja.")
-    return redirect("organizacion:hoy")
+    return redirect("organizacion:tarea_list")
 
 
 @organization_required
@@ -185,7 +189,8 @@ def tarea_programar(request, pk):
 
 @organization_required
 def tarea_list(request):
-    tasks = Tarea.objects.filter(usuario=request.user).prefetch_related("subtareas", "etiquetas")
+    generar_tareas_recurrentes(request.user, timezone.localdate() + timedelta(days=14))
+    tasks = Tarea.objects.filter(usuario=request.user)
     q = request.GET.get("q", "").strip()
     if q:
         tasks = tasks.filter(Q(titulo__icontains=q) | Q(descripcion__icontains=q))
@@ -193,19 +198,77 @@ def tarea_list(request):
     if tag.isdigit():
         tasks = tasks.filter(etiquetas__id=tag)
     states = [Tarea.Estado.BANDEJA, Tarea.Estado.EN_PROGRESO, Tarea.Estado.EN_ESPERA, Tarea.Estado.COMPLETADA]
-    counts = {key: tasks.filter(estado=key).count() for key in states}
+    counts = {key: 0 for key in states}
+    for row in tasks.filter(estado__in=states).values("estado").annotate(count=Count("pk")):
+        counts[row["estado"]] = row["count"]
     total = sum(counts.values())
     done = counts[Tarea.Estado.COMPLETADA]
-    columns = [{"key": key, "label": Tarea.Estado(key).label, "tasks": tasks.filter(estado=key), "count": counts[key], "percent": round(counts[key] * 100 / total) if total else 0} for key in states]
+    matched = tasks.filter(estado__in=states)
+    estimates = matched.aggregate(ingresos=Sum("ingreso_estimado"), gastos=Sum("gasto_estimado"))
+    estimated_income = estimates["ingresos"] or Decimal("0")
+    estimated_expense = estimates["gastos"] or Decimal("0")
+    has_estimates = matched.filter(Q(ingreso_estimado__isnull=False) | Q(gasto_estimado__isnull=False)).exists()
+    actual_income, actual_expense = _totales_movimientos_tareas(request.user, matched)
+    active_tasks = list(tasks.filter(estado__in=states[:-1]).prefetch_related("subtareas", "etiquetas"))
+    completed_tasks_shown = list(tasks.filter(estado=Tarea.Estado.COMPLETADA).order_by(F("completada_en").desc(nulls_last=True), F("pk").desc())[:20].prefetch_related("subtareas", "etiquetas"))
+    visible_tasks = active_tasks + completed_tasks_shown
+    tag_tasks = {}
+    for task in visible_tasks:
+        task.ingresos_reales = Decimal("0")
+        task.gastos_reales = Decimal("0")
+        for tag in task.etiquetas.all():
+            tag_tasks.setdefault(tag.pk, set()).add(task)
+    if tag_tasks:
+        movements = MovimientoFinanciero.objects.filter(
+            usuario=request.user,
+            estado=MovimientoFinanciero.Estado.CONFIRMADO,
+            etiquetas__pk__in=tag_tasks,
+        ).distinct().prefetch_related("etiquetas")
+        for movement in movements:
+            related_tasks = set()
+            for tag in movement.etiquetas.all():
+                related_tasks.update(tag_tasks.get(tag.pk, ()))
+            field = "ingresos_reales" if movement.tipo == MovimientoFinanciero.Tipo.INGRESO else "gastos_reales"
+            for task in related_tasks:
+                setattr(task, field, getattr(task, field) + movement.monto)
+    columns = [{"key": key, "label": Tarea.Estado(key).label, "tasks": [task for task in visible_tasks if task.estado == key], "count": counts[key], "percent": round(counts[key] * 100 / total) if total else 0} for key in states]
     active_tab = request.GET.get("tab", "all")
     if active_tab not in states:
         active_tab = "all"
     filters = {key: value for key, value in (("q", q), ("etiqueta", tag)) if value}
     base_url = reverse("organizacion:tarea_list")
     all_filter_url = f"{base_url}?{urlencode({**filters, 'tab': 'all'})}"
+    archive_url = f"{reverse('organizacion:tareas_finalizadas')}?{urlencode(filters)}" if filters else reverse("organizacion:tareas_finalizadas")
     for column in columns:
         column["filter_url"] = f"{base_url}?{urlencode({**filters, 'tab': column['key']})}"
-    return render(request, "organizacion/tareas.html", {"columns": columns, "q": q, "tags": Etiqueta.objects.filter(usuario=request.user, tareas_organizacion__isnull=False).distinct().order_by("nombre"), "tag_filter": tag, "total_tasks": total, "completed_tasks": done, "progress_percent": round(done * 100 / total) if total else 0, "kanban_mode": True, "active_tab": active_tab, "all_filter_url": all_filter_url, "mobile_visible_count": total if active_tab == "all" else counts[active_tab]})
+    return render(request, "organizacion/tareas.html", {"columns": columns, "q": q, "tags": Etiqueta.objects.filter(usuario=request.user, tareas_organizacion__isnull=False).distinct().order_by("nombre"), "tag_filter": tag, "total_tasks": total, "completed_tasks": done, "completed_shown": len(completed_tasks_shown), "completed_has_more": done > len(completed_tasks_shown), "archive_url": archive_url, "progress_percent": round(done * 100 / total) if total else 0, "actual_income": actual_income, "actual_expense": actual_expense, "actual_balance": actual_income - actual_expense, "estimated_income": estimated_income, "estimated_expense": estimated_expense, "estimated_balance": estimated_income - estimated_expense, "has_estimates": has_estimates, "kanban_mode": True, "active_tab": active_tab, "all_filter_url": all_filter_url, "mobile_visible_count": len(visible_tasks) if active_tab == "all" else len(next(column["tasks"] for column in columns if column["key"] == active_tab))})
+
+
+@organization_required
+def tareas_finalizadas(request):
+    tasks = Tarea.objects.filter(usuario=request.user, estado=Tarea.Estado.COMPLETADA)
+    q = request.GET.get("q", "").strip()
+    if q:
+        tasks = tasks.filter(Q(titulo__icontains=q) | Q(descripcion__icontains=q))
+    tag = request.GET.get("etiqueta", "")
+    if tag.isdigit():
+        tasks = tasks.filter(etiquetas__id=tag)
+    from_date = parse_date(request.GET.get("desde", ""))
+    to_date = parse_date(request.GET.get("hasta", ""))
+    if from_date:
+        tasks = tasks.filter(completada_en__date__gte=from_date)
+    if to_date:
+        tasks = tasks.filter(completada_en__date__lte=to_date)
+    tasks = tasks.order_by(F("completada_en").desc(nulls_last=True), F("pk").desc()).prefetch_related("etiquetas")
+    page = Paginator(tasks, 20).get_page(request.GET.get("page"))
+    filters = {key: value for key, value in (("q", q), ("etiqueta", tag), ("desde", from_date.isoformat() if from_date else ""), ("hasta", to_date.isoformat() if to_date else "")) if value}
+    page_base_url = f"{reverse('organizacion:tareas_finalizadas')}?{urlencode(filters)}" if filters else reverse("organizacion:tareas_finalizadas")
+    return render(request, "organizacion/tareas_finalizadas.html", {
+        "page": page, "q": q, "tag_filter": tag,
+        "tags": Etiqueta.objects.filter(usuario=request.user, tareas_organizacion__estado=Tarea.Estado.COMPLETADA).distinct().order_by("nombre"),
+        "from_date": from_date, "to_date": to_date,
+        "page_prefix": page_base_url + ("&" if filters else "?"),
+    })
 
 
 @organization_required

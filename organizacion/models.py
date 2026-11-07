@@ -1,6 +1,8 @@
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator
 from django.db import models
+from decimal import Decimal
 
 
 class Area(models.Model):
@@ -124,6 +126,8 @@ class Tarea(models.Model):
     inicio_real = models.DateTimeField(null=True, blank=True)
     completada_en = models.DateTimeField(null=True, blank=True)
     duracion_estimada_minutos = models.PositiveIntegerField(null=True, blank=True)
+    ingreso_estimado = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(Decimal("0"))])
+    gasto_estimado = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(Decimal("0"))])
     posicion = models.PositiveIntegerField(default=0)
     movimiento_financiero = models.ForeignKey("core.MovimientoFinanciero", on_delete=models.SET_NULL, null=True, blank=True, related_name="tareas_organizacion")
     pago_deuda = models.ForeignKey("core.PagoDeuda", on_delete=models.SET_NULL, null=True, blank=True, related_name="tareas_organizacion")
@@ -165,6 +169,14 @@ class Tarea(models.Model):
                 self.Estado.CANCELADA: 0,
             }.get(self.estado, 0)
         return round(sum(item.estado == Subtarea.Estado.COMPLETADA for item in items) * 100 / len(items))
+
+    @property
+    def balance_estimado(self):
+        return (self.ingreso_estimado or 0) - (self.gasto_estimado or 0)
+
+    @property
+    def tiene_estimado(self):
+        return self.ingreso_estimado is not None or self.gasto_estimado is not None
 
     def __str__(self):
         return self.titulo

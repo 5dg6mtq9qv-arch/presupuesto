@@ -8,6 +8,7 @@ urlpatterns = [
     path("semana/", views.semana, name="semana"),
     path("calendario/", views.calendario, name="calendario"),
     path("tareas/", views.tarea_list, name="tarea_list"),
+    path("tareas/finalizadas/", views.tareas_finalizadas, name="tareas_finalizadas"),
     path("tareas/nueva/", views.tarea_create, name="tarea_create"),
     path("tareas/<int:pk>/", views.tarea_detail, name="tarea_detail"),
     path("tareas/<int:pk>/calendario.ics", views.tarea_calendario, name="tarea_calendario"),

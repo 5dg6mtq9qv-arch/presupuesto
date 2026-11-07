@@ -38,10 +38,13 @@ class ProyectoForm(UserForm):
 
 
 class TareaForm(UserForm):
+    ingreso_estimado = forms.DecimalField(label="Ingreso estimado ($)", max_digits=12, decimal_places=2, min_value=0, required=False)
+    gasto_estimado = forms.DecimalField(label="Gasto estimado ($)", max_digits=12, decimal_places=2, min_value=0, required=False)
+
     class Meta:
         model = Tarea
-        fields = ["titulo", "descripcion", "inicio_planificado", "fin_planificado"]
-        labels = {"inicio_planificado": "Fecha de inicio", "fin_planificado": "Fecha de fin"}
+        fields = ["titulo", "descripcion", "inicio_planificado", "fin_planificado", "ingreso_estimado", "gasto_estimado"]
+        labels = {"inicio_planificado": "Fecha de inicio", "fin_planificado": "Fecha de fin", "ingreso_estimado": "Ingreso estimado ($)", "gasto_estimado": "Gasto estimado ($)"}
         widgets = {
             "descripcion": forms.Textarea(attrs={"rows": 3}),
             "inicio_planificado": forms.DateTimeInput(format="%Y-%m-%dT%H:%M", attrs={"type": "datetime-local", "step": "60", "data-task-start": "true"}),
@@ -52,6 +55,10 @@ class TareaForm(UserForm):
         super().__init__(*args, user=user, **kwargs)
         for name in ("inicio_planificado", "fin_planificado"):
             self.fields[name].input_formats = ["%Y-%m-%dT%H:%M"]
+        for name in ("ingreso_estimado", "gasto_estimado"):
+            self.fields[name].widget.attrs.update({"min": "0", "step": "0.01", "placeholder": "0.00"})
+        self.fields["ingreso_estimado"].help_text = "Opcional. Monto que esperas cobrar por este trabajo."
+        self.fields["gasto_estimado"].help_text = "Opcional. Costo previsto para este trabajo."
         if not self.is_bound and not self.instance.pk:
             start = timezone.localtime().replace(second=0, microsecond=0)
             self.initial.setdefault("inicio_planificado", start.strftime("%Y-%m-%dT%H:%M"))

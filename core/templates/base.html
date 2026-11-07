@@ -1957,7 +1957,6 @@
         {% if can_access_organization %}
           <div class="nav-section">Organización</div>
           <ul class="nav-list">
-            <li><a class="nav-link {% if request.resolver_match.namespace == 'organizacion' and request.resolver_match.url_name == 'hoy' %}active{% endif %}" href="{% url 'organizacion:hoy' %}"><span class="material-symbols-outlined">today</span> Mi día</a></li>
             <li><a class="nav-link {% if request.resolver_match.namespace == 'organizacion' and 'tarea' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'organizacion:tarea_list' %}"><span class="material-symbols-outlined">task_alt</span> Tareas</a></li>
             <li><a class="nav-link {% if request.resolver_match.namespace == 'organizacion' and request.resolver_match.url_name == 'calendario' %}active{% endif %}" href="{% url 'organizacion:calendario' %}"><span class="material-symbols-outlined">calendar_month</span> Calendario</a></li>
             <li><a class="nav-link {% if request.resolver_match.namespace == 'organizacion' and 'recurrencia' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'organizacion:recurrencia_list' %}"><span class="material-symbols-outlined">event_repeat</span> Recurrentes</a></li>

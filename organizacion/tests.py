@@ -1,5 +1,6 @@
 import io
 import json
+from decimal import Decimal
 from datetime import datetime, time, timedelta, timezone as datetime_timezone
 from urllib.parse import parse_qs, urlparse
 from unittest.mock import patch
@@ -10,8 +11,9 @@ from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from core.models import Etiqueta, MovimientoFinanciero, Notificacion
+from core.models import Categoria, Etiqueta, MovimientoFinanciero, Notificacion, PresupuestoMensual
 from core.forms import MovimientoFinancieroForm
+from core.views import resumen_presupuesto
 from .forms import TareaForm
 from .models import Area, Proyecto, Recurrencia, Subtarea, Tarea
 from .services import generar_notificaciones_organizacion, generar_tareas_recurrentes, sincronizar_etiqueta_proyecto, sincronizar_etiqueta_tarea
@@ -63,7 +65,7 @@ class OrganizationTests(TestCase):
 
     def test_quick_capture_creates_private_inbox_task(self):
         response = self.client.post(reverse("organizacion:captura_rapida"), {"titulo": "Leer capítulo"})
-        self.assertRedirects(response, reverse("organizacion:hoy"))
+        self.assertRedirects(response, reverse("organizacion:tarea_list"))
         task = Tarea.objects.get()
         self.assertEqual(task.usuario, self.user)
         self.assertEqual(task.estado, Tarea.Estado.BANDEJA)
@@ -100,12 +102,118 @@ class OrganizationTests(TestCase):
 
     def test_task_form_is_minimal_and_creates_named_tag(self):
         form = TareaForm(user=self.user)
-        self.assertEqual(list(form.fields), ["titulo", "descripcion", "inicio_planificado", "fin_planificado"])
+        self.assertEqual(list(form.fields), ["titulo", "descripcion", "inicio_planificado", "fin_planificado", "ingreso_estimado", "gasto_estimado"])
         response = self.client.post(reverse("organizacion:tarea_create"), {"titulo": "Electrónica", "descripcion": "Práctica"})
         self.assertEqual(response.status_code, 302)
         task = Tarea.objects.get()
         self.assertEqual(task.etiqueta_automatica.nombre, "Electrónica")
         self.assertEqual(list(task.etiquetas.values_list("nombre", flat=True)), ["Electrónica"])
+
+    def test_task_estimates_appear_on_board_and_detail(self):
+        response = self.client.post(reverse("organizacion:tarea_create"), {
+            "titulo": "Diseño", "ingreso_estimado": "150.00", "gasto_estimado": "25.50",
+        })
+        self.assertEqual(response.status_code, 302)
+        task = Tarea.objects.get(usuario=self.user)
+        self.assertEqual(task.balance_estimado, Decimal("124.50"))
+        board = self.client.get(reverse("organizacion:tarea_list"))
+        self.assertEqual(board.context["estimated_balance"], Decimal("124.50"))
+        self.assertContains(board, "Balance estimado")
+        self.assertContains(board, "124,50")
+        detail = self.client.get(reverse("organizacion:tarea_detail", args=[task.pk]))
+        self.assertContains(detail, "Estimado")
+        self.assertContains(detail, "Real")
+
+    def test_board_estimates_respect_filters_and_user(self):
+        own = Tarea.objects.create(usuario=self.user, titulo="Trabajo", ingreso_estimado="80.00", gasto_estimado="20.00")
+        tag = sincronizar_etiqueta_tarea(own)
+        Tarea.objects.create(usuario=self.user, titulo="Otro", gasto_estimado="10.00")
+        Tarea.objects.create(usuario=self.other, titulo="Ajeno", ingreso_estimado="1000.00")
+        response = self.client.get(reverse("organizacion:tarea_list"), {"etiqueta": tag.pk})
+        self.assertEqual(response.context["estimated_income"], Decimal("80.00"))
+        self.assertEqual(response.context["estimated_expense"], Decimal("20.00"))
+        self.assertEqual(response.context["estimated_balance"], Decimal("60.00"))
+
+    def test_board_reports_only_confirmed_related_movements(self):
+        task = Tarea.objects.create(usuario=self.user, titulo="Trabajo")
+        tag = sincronizar_etiqueta_tarea(task)
+        income = MovimientoFinanciero.objects.create(usuario=self.user, tipo="ingreso", estado="confirmado", monto="90.00", fecha=timezone.localdate(), concepto="Cobro")
+        pending = MovimientoFinanciero.objects.create(usuario=self.user, tipo="ingreso", estado="pendiente", monto="40.00", fecha=timezone.localdate(), concepto="Pendiente")
+        income.etiquetas.add(tag)
+        pending.etiquetas.add(tag)
+        response = self.client.get(reverse("organizacion:tarea_list"))
+        self.assertContains(response, "Confirmado por etiquetas")
+        self.assertContains(response, "Gastos relacionados")
+        self.assertEqual(response.context["actual_income"], Decimal("90.00"))
+        self.assertEqual(response.context["actual_expense"], Decimal("0"))
+        self.assertEqual(response.context["columns"][0]["tasks"][0].ingresos_reales, Decimal("90.00"))
+        self.assertEqual(response.context["columns"][0]["tasks"][0].gastos_reales, Decimal("0"))
+
+    def test_board_counts_shared_movement_once_in_summary(self):
+        first = Tarea.objects.create(usuario=self.user, titulo="Trabajo A")
+        second = Tarea.objects.create(usuario=self.user, titulo="Trabajo B")
+        first_tag = sincronizar_etiqueta_tarea(first)
+        second_tag = sincronizar_etiqueta_tarea(second)
+        expense = MovimientoFinanciero.objects.create(usuario=self.user, tipo="gasto", estado="confirmado", monto="12.50", fecha=timezone.localdate(), concepto="Compartido")
+        expense.etiquetas.add(first_tag, second_tag)
+        response = self.client.get(reverse("organizacion:tarea_list"))
+        self.assertEqual(response.context["actual_expense"], Decimal("12.50"))
+        self.assertEqual([task.gastos_reales for task in response.context["columns"][0]["tasks"]], [Decimal("12.50"), Decimal("12.50")])
+
+    def test_completed_board_is_limited_but_summary_includes_history(self):
+        completed_at = timezone.now()
+        old = Tarea.objects.create(usuario=self.user, titulo="Trabajo antiguo", estado=Tarea.Estado.COMPLETADA, completada_en=completed_at - timedelta(days=30), gasto_estimado="30.00")
+        tag = sincronizar_etiqueta_tarea(old)
+        expense = MovimientoFinanciero.objects.create(usuario=self.user, tipo="gasto", estado="confirmado", monto="12.50", fecha=timezone.localdate(), concepto="Material antiguo")
+        expense.etiquetas.add(tag)
+        Tarea.objects.bulk_create([
+            Tarea(usuario=self.user, titulo=f"Terminado {index}", estado=Tarea.Estado.COMPLETADA, completada_en=completed_at - timedelta(days=25-index))
+            for index in range(25)
+        ])
+        board = self.client.get(reverse("organizacion:tarea_list"))
+        self.assertEqual(board.context["completed_tasks"], 26)
+        self.assertEqual(len(board.context["columns"][-1]["tasks"]), 20)
+        self.assertNotIn(old.pk, [task.pk for task in board.context["columns"][-1]["tasks"]])
+        self.assertEqual(board.context["estimated_expense"], Decimal("30.00"))
+        self.assertEqual(board.context["actual_expense"], Decimal("12.50"))
+        self.assertContains(board, "Ver todas las finalizadas")
+        archive = self.client.get(reverse("organizacion:tareas_finalizadas"), {"page": 2})
+        self.assertEqual(archive.context["page"].paginator.count, 26)
+        self.assertEqual(len(archive.context["page"]), 6)
+        self.assertContains(archive, "Trabajo antiguo")
+        filtered = self.client.get(reverse("organizacion:tareas_finalizadas"), {"q": "antiguo", "etiqueta": tag.pk})
+        self.assertEqual(filtered.context["page"].paginator.count, 1)
+        recent = self.client.get(reverse("organizacion:tareas_finalizadas"), {"desde": timezone.localtime(completed_at - timedelta(days=5)).date().isoformat()})
+        self.assertEqual(recent.context["page"].paginator.count, 5)
+
+    def test_completed_archive_requires_organization_permission(self):
+        self.client.force_login(self.other)
+        self.assertEqual(self.client.get(reverse("organizacion:tareas_finalizadas")).status_code, 403)
+
+    def test_task_estimate_does_not_change_budget_or_financial_only_access(self):
+        today = timezone.localdate()
+        category = Categoria.objects.create(usuario=self.user, nombre="Materiales", tipo=Categoria.Tipo.FINANZAS)
+        PresupuestoMensual.objects.create(usuario=self.user, categoria=category, anio=today.year, mes=today.month, monto="200.00")
+        expense = MovimientoFinanciero.objects.create(usuario=self.user, tipo="gasto", estado="confirmado", categoria=category, monto="25.00", fecha=today, concepto="Material")
+        before = resumen_presupuesto(self.user, today)
+        task = Tarea.objects.create(usuario=self.user, titulo="Trabajo", ingreso_estimado="500.00", gasto_estimado="75.00")
+        tag = sincronizar_etiqueta_tarea(task)
+        expense.etiquetas.add(tag)
+        after = resumen_presupuesto(self.user, today)
+        self.assertEqual(after["total_presupuesto"], before["total_presupuesto"])
+        self.assertEqual(after["total_usado"], before["total_usado"])
+        self.assertEqual(after["total_gastos"], before["total_gastos"])
+        self.client.force_login(self.other)
+        self.assertEqual(self.client.get(reverse("organizacion:tarea_list")).status_code, 403)
+        self.assertEqual(self.client.get(reverse("presupuesto_list")).status_code, 200)
+
+    def test_estimates_cannot_be_negative(self):
+        form = TareaForm({"titulo": "Trabajo", "gasto_estimado": "-1.00"}, user=self.user)
+        self.assertFalse(form.is_valid())
+        self.assertIn("gasto_estimado", form.errors)
+
+    def test_organization_home_redirects_to_tasks(self):
+        self.assertRedirects(self.client.get(reverse("organizacion:hoy")), reverse("organizacion:tarea_list"))
 
     def test_new_task_prefills_start_and_end(self):
         today = timezone.localdate()

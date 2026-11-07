@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block page_title %}Tareas finalizadas{% endblock %}
+{% block page_subtitle %}Consulta el historial sin cargar todas las tarjetas en el tablero{% endblock %}
+{% block content %}
+<style>
+  .org-history{display:grid;gap:15px}.org-history-toolbar,.org-history-item,.org-history-pages{padding:16px 18px;border:1px solid #e2e8f0;border-radius:14px;background:#fff}.org-history-back{display:inline-flex;align-items:center;gap:5px;font-weight:700}.org-history-filters{display:flex;align-items:end;flex-wrap:wrap;gap:10px;margin-top:14px}.org-history-filters label{display:grid;gap:4px;color:#64748b;font-size:12px;font-weight:700}.org-history-filters input,.org-history-filters select{min-height:40px}.org-history-filters .org-history-search{flex:1;min-width:190px}.org-history-list{display:grid;gap:9px}.org-history-item{display:flex;justify-content:space-between;align-items:center;gap:12px}.org-history-item strong{display:block}.org-history-item small{display:block;margin-top:4px;color:#64748b}.org-history-item a{font-weight:700}.org-history-pages{display:flex;align-items:center;justify-content:space-between;gap:12px;color:#64748b;font-size:13px}@media(max-width:600px){.org-history-item{align-items:flex-start;flex-direction:column}.org-history-pages{flex-wrap:wrap}}
+</style>
+<div class="org-history">
+  <section class="org-history-toolbar">
+    <a class="org-history-back" href="{% url 'organizacion:tarea_list' %}"><span class="material-symbols-outlined" aria-hidden="true">arrow_back</span> Volver al tablero</a>
+    <form class="org-history-filters" method="get">
+      <label class="org-history-search">Buscar tarea<input class="form-control" name="q" value="{{ q }}" placeholder="Nombre o descripción"></label>
+      <label>Etiqueta<select class="form-select" name="etiqueta"><option value="">Todas</option>{% for tag in tags %}<option value="{{ tag.pk }}"{% if tag_filter == tag.pk|stringformat:'s' %} selected{% endif %}>{{ tag.nombre }}</option>{% endfor %}</select></label>
+      <label>Finalizada desde<input class="form-control" type="date" name="desde" value="{{ from_date|date:'Y-m-d' }}"></label>
+      <label>Hasta<input class="form-control" type="date" name="hasta" value="{{ to_date|date:'Y-m-d' }}"></label>
+      <button class="btn btn-primary" type="submit">Filtrar</button>
+      {% if q or tag_filter or from_date or to_date %}<a class="btn btn-outline-secondary" href="{% url 'organizacion:tareas_finalizadas' %}">Limpiar</a>{% endif %}
+    </form>
+  </section>
+  <div><strong>{{ page.paginator.count }} tareas finalizadas</strong> · Página {{ page.number }} de {{ page.paginator.num_pages }}</div>
+  <div class="org-history-list">
+    {% for task in page %}<article class="org-history-item"><div><strong>{{ task.titulo }}</strong><small>{% if task.completada_en %}Finalizada {{ task.completada_en|date:"d/m/Y H:i" }}{% else %}Sin fecha de finalización{% endif %}{% for tag in task.etiquetas.all %} · {{ tag.nombre }}{% endfor %}</small></div><a href="{% url 'organizacion:tarea_detail' task.pk %}">Abrir tarea</a></article>{% empty %}<div class="org-history-item">No hay tareas finalizadas con estos filtros.</div>{% endfor %}
+  </div>
+  {% if page.paginator.num_pages > 1 %}<nav class="org-history-pages" aria-label="Páginas de tareas finalizadas"><span>{% if page.has_previous %}<a href="{{ page_prefix }}page={{ page.previous_page_number }}">← Anterior</a>{% endif %}</span><span>Página {{ page.number }} de {{ page.paginator.num_pages }}</span><span>{% if page.has_next %}<a href="{{ page_prefix }}page={{ page.next_page_number }}">Siguiente →</a>{% endif %}</span></nav>{% endif %}
+</div>
+{% endblock %}

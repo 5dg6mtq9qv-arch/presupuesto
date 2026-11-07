@@ -40,8 +40,11 @@
   </div>
 
   <section class="task-panel task-finance" aria-labelledby="task-finance-title">
-    <div class="task-finance-intro"><span class="task-icon task-icon-mint material-symbols-outlined" aria-hidden="true">payments</span><div><h3 id="task-finance-title">Finanzas</h3><small>Movimientos confirmados con etiquetas de esta tarea</small></div></div>
-    <div class="task-finance-amounts"><div><small>Ingresos</small><strong class="text-success">${{ ingresos|floatformat:2 }}</strong></div><div><small>Gastos</small><strong class="text-danger">${{ gastos|floatformat:2 }}</strong></div><div><small>Balance</small><strong>${{ balance|floatformat:2 }}</strong></div></div>
+    <div class="task-finance-intro"><span class="task-icon task-icon-mint material-symbols-outlined" aria-hidden="true">payments</span><div><h3 id="task-finance-title">Finanzas</h3><small>Los importes reales incluyen movimientos confirmados con etiquetas de esta tarea</small></div></div>
+    <div class="task-finance-groups">
+      <div><h4>Estimado</h4><div class="task-finance-amounts"><div><small>Ingresos</small><strong>{% if task.ingreso_estimado is not None %}${{ task.ingreso_estimado|floatformat:2 }}{% else %}—{% endif %}</strong></div><div><small>Gastos</small><strong>{% if task.gasto_estimado is not None %}${{ task.gasto_estimado|floatformat:2 }}{% else %}—{% endif %}</strong></div><div><small>Balance</small><strong>{% if task.tiene_estimado %}${{ task.balance_estimado|floatformat:2 }}{% else %}—{% endif %}</strong></div></div></div>
+      <div><h4>Real</h4><div class="task-finance-amounts"><div><small>Ingresos</small><strong class="text-success">${{ ingresos|floatformat:2 }}</strong></div><div><small>Gastos</small><strong class="text-danger">${{ gastos|floatformat:2 }}</strong></div><div><small>Balance</small><strong>${{ balance|floatformat:2 }}</strong></div></div></div>
+    </div>
     {% if task.etiqueta_automatica_id %}<div class="task-finance-actions"><a class="btn btn-sm btn-outline-success" href="{% url 'movimiento_ingreso_create' %}?etiqueta={{ task.etiqueta_automatica_id }}">＋ Ingreso</a><a class="btn btn-sm btn-outline-danger" href="{% url 'movimiento_gasto_create' %}?etiqueta={{ task.etiqueta_automatica_id }}">＋ Gasto</a></div>{% endif %}
   </section>
 
