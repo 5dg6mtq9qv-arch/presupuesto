@@ -49,7 +49,7 @@
   </section>
 
   <section class="task-subtasks" aria-labelledby="task-subtasks-title">
-    <div class="task-section-heading"><div><h3 id="task-subtasks-title">Subtareas</h3><p>Mueve las tarjetas entre columnas para actualizar su estado.</p></div><div class="task-section-actions"><span class="task-subtask-total">{{ subtask_total }} en total</span><button class="btn btn-primary" type="button" data-add-subtask><span class="material-symbols-outlined" aria-hidden="true">add</span> Agregar subtarea</button></div></div>
+    <div class="task-section-heading"><div><h3 id="task-subtasks-title">Subtareas</h3><p class="task-desktop-instruction">Mueve las tarjetas entre columnas para actualizar su estado.</p><p class="task-mobile-instruction">Usa los botones de cada subtarea para cambiar su estado.</p></div><div class="task-section-actions"><span class="task-subtask-total">{{ subtask_total }} en total</span><button class="btn btn-primary" type="button" data-add-subtask><span class="material-symbols-outlined" aria-hidden="true">add</span> Agregar subtarea</button></div></div>
     <div class="subtask-board" data-subtask-board>
       {% for column in subtask_columns %}<section class="subtask-column subtask-column-{{ column.key }}" data-state="{{ column.key }}">
         <header class="subtask-head"><div><span class="material-symbols-outlined subtask-column-icon" aria-hidden="true">{% if column.key == 'bandeja' %}inbox{% elif column.key == 'en_progreso' %}pending_actions{% elif column.key == 'en_espera' %}hourglass_empty{% else %}task_alt{% endif %}</span><strong>{{ column.label }}</strong></div><span class="subtask-count" data-count>{{ column.items|length }}</span></header>
