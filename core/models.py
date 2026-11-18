@@ -1089,7 +1089,7 @@ class Deuda(models.Model):
 
     class Meta:
         db_table = '"deudas"."deuda"'
-        ordering = ["estado", "fecha_vencimiento", "acreedor"]
+        ordering = ["estado", "-creado"]
 
     def __str__(self):
         return f"{self.acreedor}: {self.concepto}"

@@ -3111,6 +3111,19 @@ class DeudaListFilterTests(TestCase):
         self.assertEqual(len(response.context["deudas"]), 3)
         self.assertContains(response, 'name="acreedor"', html=False)
 
+    def test_orden_por_defecto_muestra_ultimas_agregadas_primero(self):
+        response = self.client.get(reverse("deuda_list"))
+        self.assertEqual(response.status_code, 200)
+        conceptos = [d.concepto for d in response.context["deudas"]]
+        self.assertEqual(conceptos, ["Deuda posterior", "Deuda dentro del rango", "Deuda anterior"])
+
+    def test_orden_por_fecha_inicio(self):
+        response = self.client.get(reverse("deuda_list"), {"orden": "fecha_inicio"})
+        self.assertEqual(response.status_code, 200)
+        conceptos = [d.concepto for d in response.context["deudas"]]
+        # "Deuda posterior" (2026-10-20), "Deuda anterior" (2026-09-15), "Deuda dentro del rango" (2026-01-01)
+        self.assertEqual(conceptos, ["Deuda posterior", "Deuda anterior", "Deuda dentro del rango"])
+
     def test_filtra_fecha_de_pago_con_limites_inclusivos(self):
         response = self.client.get(
             reverse("deuda_list"),

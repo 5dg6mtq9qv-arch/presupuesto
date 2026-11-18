@@ -66,7 +66,9 @@
     <div>
       <label for="orden">Ordenar</label>
       <select class="form-select" id="orden" name="orden">
-        <option value="">Orden habitual</option>
+        <option value="">Últimas agregadas</option>
+        <option value="fecha_inicio"{% if filters.orden == "fecha_inicio" %} selected{% endif %}>Fecha de inicio (más recientes)</option>
+        <option value="vencimiento"{% if filters.orden == "vencimiento" %} selected{% endif %}>Próximas a liquidar</option>
         <option value="acreedor"{% if filters.orden == "acreedor" %} selected{% endif %}>Acreedor A–Z</option>
         <option value="acreedor_desc"{% if filters.orden == "acreedor_desc" %} selected{% endif %}>Acreedor Z–A</option>
       </select>

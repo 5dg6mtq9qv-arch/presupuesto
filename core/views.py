@@ -4781,6 +4781,12 @@ def deuda_list(request):
         deudas = deudas.order_by("acreedor", "fecha_vencimiento", "pk")
     elif orden == "acreedor_desc":
         deudas = deudas.order_by("-acreedor", "fecha_vencimiento", "pk")
+    elif orden == "fecha_inicio":
+        deudas = deudas.order_by("estado", "-fecha_inicio", "-creado", "-pk")
+    elif orden == "vencimiento":
+        deudas = deudas.order_by("estado", "fecha_vencimiento", "acreedor", "pk")
+    else:
+        deudas = deudas.order_by("estado", "-creado", "-pk")
     resumen_filtrado = Deuda.objects.filter(
         usuario=request.user,
         pk__in=deudas.order_by().values("pk"),
