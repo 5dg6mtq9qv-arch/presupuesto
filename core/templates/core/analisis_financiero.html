@@ -98,27 +98,27 @@
       {% endif %}
     </p>
     <div class="tabs" role="group" aria-label="Modo de lectura">
-      <a class="tab {% if vista == 'caja' %}active{% endif %}" href="?anio={{ anio_seleccionado }}{% if mes_seleccionado %}&amp;mes={{ mes_seleccionado }}{% endif %}{% if dia_seleccionado %}&amp;dia={{ dia_seleccionado }}{% endif %}{% if categoria_id %}&amp;categoria={{ categoria_id }}{% endif %}{% if subcategoria_id %}&amp;subcategoria={{ subcategoria_id }}{% endif %}{% for eid in etiqueta_ids %}&amp;etiquetas={{ eid }}{% endfor %}&amp;vista=caja">Flujo de caja</a>
-      <a class="tab {% if vista == 'consumo' %}active{% endif %}" href="?anio={{ anio_seleccionado }}{% if mes_seleccionado %}&amp;mes={{ mes_seleccionado }}{% endif %}{% if dia_seleccionado %}&amp;dia={{ dia_seleccionado }}{% endif %}{% if categoria_id %}&amp;categoria={{ categoria_id }}{% endif %}{% if subcategoria_id %}&amp;subcategoria={{ subcategoria_id }}{% endif %}{% for eid in etiqueta_ids %}&amp;etiquetas={{ eid }}{% endfor %}&amp;vista=consumo">Consumo</a>
+      <a class="tab {% if vista == 'caja' %}active{% endif %}" href="?anio={{ anio_seleccionado }}{% if mes_seleccionado %}&amp;mes={{ mes_seleccionado }}{% endif %}{% if dia_seleccionado %}&amp;dia={{ dia_seleccionado }}{% endif %}{% if categoria_id %}&amp;categoria={{ categoria_id }}{% endif %}{% if subcategoria_id %}&amp;subcategoria={{ subcategoria_id }}{% endif %}{% for eid in etiqueta_ids %}&amp;etiquetas={{ eid }}{% endfor %}&amp;vista=caja">Dinero real (caja)</a>
+      <a class="tab {% if vista == 'consumo' %}active{% endif %}" href="?anio={{ anio_seleccionado }}{% if mes_seleccionado %}&amp;mes={{ mes_seleccionado }}{% endif %}{% if dia_seleccionado %}&amp;dia={{ dia_seleccionado }}{% endif %}{% if categoria_id %}&amp;categoria={{ categoria_id }}{% endif %}{% if subcategoria_id %}&amp;subcategoria={{ subcategoria_id }}{% endif %}{% for eid in etiqueta_ids %}&amp;etiquetas={{ eid }}{% endfor %}&amp;vista=consumo">Compras (incl. tarjeta)</a>
     </div>
   </div>
 </div>
 
 <div class="grid">
   <section class="panel metric green">
-    <div class="metric-label">Ingresos confirmados</div>
+    <div class="metric-label">Lo que entró</div>
     <div class="metric-value">{{ ingresos }}</div>
   </section>
   <section class="panel metric orange">
-    <div class="metric-label">{% if vista == "caja" %}Salidas por gastos{% else %}Compras realizadas{% endif %}</div>
+    <div class="metric-label">{% if vista == "caja" %}Lo que gastaste (pagado){% else %}Lo que compraste (incl. tarjeta){% endif %}</div>
     <div class="metric-value">{{ gastos }}</div>
   </section>
   <section class="panel metric blue">
-    <div class="metric-label">Gasto / ingreso</div>
+    <div class="metric-label">Cuánto de tu ingreso gastaste</div>
     <div class="metric-value">{{ uso_ingresos }}%</div>
   </section>
   <section class="panel metric gray">
-    <div class="metric-label">Pagos de deuda {% if vista == "consumo" %}(informativos){% endif %}</div>
+    <div class="metric-label">Pagado a deudas {% if vista == "consumo" %}(informativo){% endif %}</div>
     <div class="metric-value">{{ pagos_total }}</div>
   </section>
 </div>
@@ -298,8 +298,26 @@
 <section class="panel chart-panel">
   <div class="panel-heading">
     <div>
-      <h2>Tendencia del periodo</h2>
-      <p class="muted mb-0">Importes confirmados por segmento bajo la lectura de {% if vista == "caja" %}flujo de caja{% else %}consumo{% endif %}.</p>
+      <h2>¿A dónde se fue lo que ganaste?</h2>
+      <p class="muted mb-0" data-split-summary>Distribución entre gastos del periodo, pagos de deuda y lo que te queda.</p>
+    </div>
+  </div>
+  <div class="chart-box chart-box-small">
+    <canvas id="incomeSplitChart"></canvas>
+  </div>
+</section>
+
+<section class="panel chart-panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Entradas y salidas en el tiempo</h2>
+      <p class="muted mb-0" data-trend-summary>Importes confirmados bajo la lectura de {% if vista == "caja" %}dinero real{% else %}compras{% endif %}.</p>
+    </div>
+    <div class="chart-toolbar">
+      <div class="chart-control-group" aria-label="Detalle de tendencia">
+        <button class="chart-control is-active" type="button" data-trend-mode="simple">Simple</button>
+        <button class="chart-control" type="button" data-trend-mode="detail">Con deudas</button>
+      </div>
     </div>
   </div>
   <div class="chart-box">
@@ -311,7 +329,7 @@
   <div class="panel-heading">
     <div>
       <h2>¿Mejoraste frente al periodo anterior?</h2>
-      <p class="muted mb-0">Compara ingresos, gastos, pagos de deuda y resultado usando un rango anterior de la misma duración.</p>
+      <p class="muted mb-0" data-comparison-summary>Compara entradas, gastos, pagos de deuda y lo que te quedó usando un rango anterior equivalente.</p>
     </div>
   </div>
   <div class="chart-box chart-box-balance">
@@ -323,8 +341,14 @@
   <section class="panel chart-panel chart-panel-wide">
     <div class="panel-heading">
       <div>
-        <h2>Escenario registrado · próximos 3 meses</h2>
-        <p class="muted mb-0">Solo incluye recurrentes activos y cuotas pendientes registradas. No predice ingresos ni gastos ocasionales.</p>
+        <h2>Tus próximos 3 meses (según lo ya programado)</h2>
+        <p class="muted mb-0" data-projection-summary>Solo incluye recurrentes activos y cuotas pendientes registradas. No predice gastos ocasionales.</p>
+      </div>
+      <div class="chart-toolbar">
+        <div class="chart-control-group" aria-label="Detalle de proyección">
+          <button class="chart-control is-active" type="button" data-proj-mode="simple">Solo saldo</button>
+          <button class="chart-control" type="button" data-proj-mode="detail">Completo</button>
+        </div>
       </div>
     </div>
     <div class="chart-box">
@@ -442,24 +466,80 @@
       scales: { y: { beginAtZero: true, ticks: { callback: (value) => moneyFormatter.format(value) } } },
     };
 
-    new Chart(document.getElementById("trendChart"), {
+    const sum = values => values.reduce((acc, val) => acc + Number(val || 0), 0);
+    const setSummary = (selector, text) => {
+      const el = document.querySelector(selector);
+      if (el) el.textContent = text;
+    };
+
+    const totalEntro = Number(data.balance.values[0] || 0);
+    const totalGasto = Number(data.balance.values[1] || 0);
+    const totalDeuda = Number(data.balance.values[2] || 0);
+    const totalResto = Number(data.balance.values[3] || 0);
+    const splitLabels = totalResto >= 0
+      ? ["Gastos", "Pagado a deudas", "Lo que te queda"]
+      : ["Gastos", "Pagado a deudas"];
+    const splitValues = totalResto >= 0
+      ? [totalGasto, totalDeuda, totalResto]
+      : [totalGasto, totalDeuda];
+    const splitColors = totalResto >= 0
+      ? ["#fb8500", "#64748b", "#22c55e"]
+      : ["#fb8500", "#64748b"];
+    new Chart(document.getElementById("incomeSplitChart"), {
+      type: "doughnut",
+      data: {
+        labels: splitLabels,
+        datasets: [{ data: splitValues, backgroundColor: splitColors, borderWidth: 0 }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: "64%",
+        plugins: {
+          legend: { position: "bottom" },
+          tooltip: { callbacks: { label: context => `${context.label}: ${moneyFormatter.format(context.parsed || 0)}` } },
+        },
+      },
+    });
+    setSummary(
+      "[data-split-summary]",
+      totalEntro > 0
+        ? (totalResto >= 0
+          ? `De ${moneyFormatter.format(totalEntro)} que entró, gastaste ${moneyFormatter.format(totalGasto)}, pagaste ${moneyFormatter.format(totalDeuda)} a deudas y te quedan ${moneyFormatter.format(totalResto)}.`
+          : `Tus gastos (${moneyFormatter.format(totalGasto)}) y pagos de deuda (${moneyFormatter.format(totalDeuda)}) superaron en ${moneyFormatter.format(Math.abs(totalResto))} lo que entró.`)
+        : "Registra ingresos en este periodo para ver cómo se distribuyó tu dinero."
+    );
+
+    const trendChart = new Chart(document.getElementById("trendChart"), {
       type: "bar",
       data: {
         labels: data.flujo.labels,
         datasets: [
-          { label: "Ingresos", data: data.flujo.ingresos, backgroundColor: "#22c55e", borderRadius: 8 },
-          { label: {% if vista == "caja" %}"Salidas por gastos"{% else %}"Compras realizadas"{% endif %}, data: data.flujo.gastos, backgroundColor: "#fb8500", borderRadius: 8 },
-          { label: "Pagos de deuda", data: data.flujo.deudas, backgroundColor: "#64748b", borderRadius: 8 },
-          { label: {% if vista == "caja" %}"Resultado de caja"{% else %}"Resultado de consumo"{% endif %}, data: data.flujo.margen, type: "line", borderColor: "#5e35b1", backgroundColor: "#5e35b1", tension: .2 },
+          { label: "Lo que entra", data: data.flujo.ingresos, backgroundColor: "#22c55e", borderRadius: 8 },
+          { label: {% if vista == "caja" %}"Lo que gastaste"{% else %}"Compras (incl. tarjeta)"{% endif %}, data: data.flujo.gastos, backgroundColor: "#fb8500", borderRadius: 8 },
+          { label: "Pagado a deudas", data: data.flujo.deudas, backgroundColor: "#64748b", borderRadius: 8, hidden: true },
+          { label: "Lo que te queda", data: data.flujo.margen, type: "line", borderColor: "#5e35b1", backgroundColor: "#5e35b1", tension: .2 },
         ],
       },
       options: moneyOptions,
     });
+    document.querySelectorAll("[data-trend-mode]").forEach(btn => btn.addEventListener("click", () => {
+      const detail = btn.dataset.trendMode === "detail";
+      document.querySelectorAll("[data-trend-mode]").forEach(b => b.classList.toggle("is-active", b === btn));
+      trendChart.data.datasets[2].hidden = !detail;
+      trendChart.update();
+    }));
+    const trendIn = sum(data.flujo.ingresos);
+    const trendOut = sum(data.flujo.gastos);
+    setSummary(
+      "[data-trend-summary]",
+      `Total del periodo: ${moneyFormatter.format(trendIn)} de entradas y ${moneyFormatter.format(trendOut)} en gastos.`
+    );
 
     new Chart(document.getElementById("comparisonChart"), {
       type: "bar",
       data: {
-        labels: data.comparacion.labels,
+        labels: ["Lo que entró", "Lo que gastaste", "Pagado a deudas", "Lo que te quedó"],
         datasets: [
           { label: "Periodo actual", data: data.comparacion.actual, backgroundColor: "#25a194", borderRadius: 8 },
           { label: "Periodo anterior", data: data.comparacion.anterior, backgroundColor: "#cbd5e1", borderRadius: 8 },
@@ -478,6 +558,13 @@
         },
       },
     });
+    const diffRes = Number(data.comparacion.actual[3] || 0) - Number(data.comparacion.anterior[3] || 0);
+    setSummary(
+      "[data-comparison-summary]",
+      diffRes >= 0
+        ? `Tu resultado mejoró en ${moneyFormatter.format(diffRes)} frente al periodo anterior equivalente.`
+        : `Tu resultado bajó en ${moneyFormatter.format(Math.abs(diffRes))} frente al periodo anterior equivalente.`
+    );
 
     new Chart(document.getElementById("categoryChart"), {
       type: "bar",
@@ -488,20 +575,33 @@
       options: { indexAxis: "y", responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: context => moneyFormatter.format(context.parsed.x) } } }, scales: { x: { beginAtZero: true, ticks: { callback: value => moneyFormatter.format(value) } }, y: { ticks: { autoSkip: false } } } },
     });
 
-    new Chart(document.getElementById("projectionChart"), {
+    const projectionChart = new Chart(document.getElementById("projectionChart"), {
       type: "line",
       data: {
         labels: data.proyeccion.labels,
         datasets: [
-          { label: "Ingresos", data: data.proyeccion.ingresos, type: "bar", borderColor: "#22c55e", backgroundColor: "#22c55e", borderRadius: 7 },
-          { label: "Gastos", data: data.proyeccion.gastos, type: "bar", borderColor: "#fb8500", backgroundColor: "#fb8500", borderRadius: 7 },
-          { label: "Cuotas pendientes", data: data.proyeccion.deudas, type: "bar", borderColor: "#64748b", backgroundColor: "#64748b", borderRadius: 7 },
-          { label: "Resultado previsto", data: data.proyeccion.margen, type: "line", borderColor: "#5e35b1", backgroundColor: "#5e35b1", tension: .2, borderWidth: 3 },
-          { label: "Capital proyectado", data: data.proyeccion.saldo, type: "line", borderColor: "#159a8c", backgroundColor: "rgba(21, 154, 140, .12)", borderDash: [5, 4], tension: .25, borderWidth: 2 },
+          { label: "Ingresos programados", data: data.proyeccion.ingresos, type: "bar", borderColor: "#22c55e", backgroundColor: "#22c55e", borderRadius: 7, hidden: true },
+          { label: "Gastos programados", data: data.proyeccion.gastos, type: "bar", borderColor: "#fb8500", backgroundColor: "#fb8500", borderRadius: 7, hidden: true },
+          { label: "Cuotas pendientes", data: data.proyeccion.deudas, type: "bar", borderColor: "#64748b", backgroundColor: "#64748b", borderRadius: 7, hidden: true },
+          { label: "Lo que te quedaría cada mes", data: data.proyeccion.margen, type: "line", borderColor: "#5e35b1", backgroundColor: "#5e35b1", tension: .2, borderWidth: 2, hidden: true },
+          { label: "Capital proyectado en cuentas", data: data.proyeccion.saldo, type: "line", borderColor: "#159a8c", backgroundColor: "rgba(21, 154, 140, .14)", fill: true, tension: .25, borderWidth: 3 },
         ],
       },
       options: moneyOptions,
     });
+    document.querySelectorAll("[data-proj-mode]").forEach(btn => btn.addEventListener("click", () => {
+      const detail = btn.dataset.projMode === "detail";
+      document.querySelectorAll("[data-proj-mode]").forEach(b => b.classList.toggle("is-active", b === btn));
+      [0, 1, 2, 3].forEach(idx => { projectionChart.data.datasets[idx].hidden = !detail; });
+      projectionChart.update();
+    }));
+    const lastSaldo = Number((data.proyeccion.saldo || []).at(-1) || 0);
+    setSummary(
+      "[data-projection-summary]",
+      lastSaldo >= 0
+        ? `Con tus compromisos ya registrados, en 3 meses tendrías un capital estimado de ${moneyFormatter.format(lastSaldo)}.`
+        : `Atención: con tus compromisos ya registrados, en 3 meses tu saldo proyectado caería a ${moneyFormatter.format(lastSaldo)}.`
+    );
   })();
 </script>
 {% endblock %}

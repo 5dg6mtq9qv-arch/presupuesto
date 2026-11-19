@@ -186,7 +186,7 @@
     <div class="panel-heading">
       <div>
         <h2>Flujo de dinero</h2>
-        <p class="muted mb-0">Compara entradas, salidas y margen, o cambia a una lectura de tendencia.</p>
+        <p class="muted mb-0" data-flow-summary>Compara lo que entra, lo que sale y lo que te queda.</p>
       </div>
       <div class="chart-toolbar" aria-label="Controles del flujo de dinero">
         <div class="chart-control-group">
@@ -202,9 +202,9 @@
       </div>
     </div>
     <div class="chart-insights">
-      <div class="chart-insight"><small>Ingresos del periodo</small><strong data-flow-income>0,00</strong></div>
-      <div class="chart-insight"><small>Gastos del periodo</small><strong data-flow-expense>0,00</strong></div>
-      <div class="chart-insight" data-flow-margin-card><small>Margen acumulado</small><strong data-flow-margin>0,00</strong></div>
+      <div class="chart-insight"><small>Lo que entró</small><strong data-flow-income>0,00</strong></div>
+      <div class="chart-insight"><small>Lo que salió</small><strong data-flow-expense>0,00</strong></div>
+      <div class="chart-insight" data-flow-margin-card><small>Lo que te queda</small><strong data-flow-margin>0,00</strong></div>
     </div>
     <div class="chart-box">
       <canvas id="flujoChart"></canvas>
@@ -265,7 +265,7 @@
     <div class="panel-heading">
       <div>
         <h2>¿Alcanzará el dinero los próximos meses?</h2>
-        <p class="muted mb-0">Saldo estimado usando únicamente ingresos recurrentes, gastos recurrentes y cuotas ya registradas.</p>
+        <p class="muted mb-0" data-projection-summary>Saldo estimado usando únicamente ingresos recurrentes, gastos recurrentes y cuotas ya registradas.</p>
       </div>
       <div class="chart-toolbar">
         <div class="chart-control-group" aria-label="Detalle de la proyección">
@@ -765,9 +765,9 @@
       data: {
         labels: data.flujoMensual.labels,
         datasets: [
-          { label: "Ingresos", data: data.flujoMensual.ingresos, backgroundColor: "rgba(69, 179, 105, .82)", borderColor: "#45b369", borderWidth: 2, borderRadius: 7 },
-          { label: "Gastos", data: data.flujoMensual.gastos, backgroundColor: "rgba(244, 148, 30, .82)", borderColor: "#f4941e", borderWidth: 2, borderRadius: 7 },
-          { label: "Margen", data: data.flujoMensual.margen, type: "line", borderColor: "#25a194", backgroundColor: "rgba(37, 161, 148, .12)", pointBackgroundColor: "#25a194", pointRadius: 4, pointHoverRadius: 6, tension: .35, borderWidth: 3 },
+          { label: "Lo que entra", data: data.flujoMensual.ingresos, backgroundColor: "rgba(69, 179, 105, .82)", borderColor: "#45b369", borderWidth: 2, borderRadius: 7 },
+          { label: "Lo que sale", data: data.flujoMensual.gastos, backgroundColor: "rgba(244, 148, 30, .82)", borderColor: "#f4941e", borderWidth: 2, borderRadius: 7 },
+          { label: "Lo que te queda", data: data.flujoMensual.margen, type: "line", borderColor: "#25a194", backgroundColor: "rgba(37, 161, 148, .12)", pointBackgroundColor: "#25a194", pointRadius: 4, pointHoverRadius: 6, tension: .35, borderWidth: 3 },
         ],
       },
       options: standardOptions(),
@@ -791,6 +791,12 @@
       setText("[data-flow-income]", money.format(income));
       setText("[data-flow-expense]", money.format(expense));
       setText("[data-flow-margin]", money.format(margin));
+      setText(
+        "[data-flow-summary]",
+        margin >= 0
+          ? `En este rango entraron ${money.format(income)} y salieron ${money.format(expense)}; te quedan ${money.format(margin)}.`
+          : `En este rango salieron ${money.format(expense)} frente a ${money.format(income)} de entradas (diferencia de ${money.format(Math.abs(margin))}).`
+      );
       const marginCard = document.querySelector("[data-flow-margin-card]");
       marginCard?.classList.toggle("is-positive", margin >= 0);
       marginCard?.classList.toggle("is-warning", margin < 0);
@@ -925,6 +931,12 @@
     setText("[data-projection-final]", money.format(finalBalance));
     setText("[data-projection-low]", money.format(lowestBalance));
     setText("[data-projection-risk]", String(riskMonths));
+    setText(
+      "[data-projection-summary]",
+      riskMonths > 0
+        ? `Atención: con tus pagos programados, hay ${riskMonths} mes(es) con saldo negativo (punto más bajo: ${money.format(lowestBalance)}).`
+        : `Con tus ingresos y pagos programados, cerrarías los próximos 3 meses con un saldo estimado de ${money.format(finalBalance)}.`
+    );
     const riskCard = document.querySelector("[data-projection-risk-card]");
     riskCard?.classList.toggle("is-warning", riskMonths > 0);
     riskCard?.classList.toggle("is-positive", riskMonths === 0);
