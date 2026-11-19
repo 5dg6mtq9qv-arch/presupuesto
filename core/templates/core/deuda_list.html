@@ -180,6 +180,7 @@
           <strong class="amount">{{ deuda.saldo_actual }}</strong>
           <small>De un monto inicial de <strong class="amount">{{ deuda.monto_inicial }}</strong></small>
             <div class="debt-financial-tags">
+              {% if deuda.capital_original is not None %}<span><span class="material-symbols-outlined">account_balance_wallet</span>Recibido {{ deuda.capital_original }}</span>{% endif %}
               {% if deuda.tasa_interes_anual is not None %}<span><span class="material-symbols-outlined">percent</span>{{ deuda.tasa_interes_anual }}% anual</span>{% endif %}
               {% if deuda.pago_minimo is not None %}<span><span class="material-symbols-outlined">payments</span>Cuota {{ deuda.pago_minimo }}</span>{% endif %}
               {% for etiqueta in deuda.etiquetas.all %}<span style="--tag-color: {{ etiqueta.color|default:'#6366f1' }}"><span class="material-symbols-outlined">label</span>{{ etiqueta.nombre }}</span>{% endfor %}

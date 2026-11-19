@@ -111,6 +111,14 @@
             <span class="badge rounded-pill {% if recomendacion.prioridad >= 9 %}text-bg-danger{% elif recomendacion.prioridad >= 7 %}text-bg-warning{% else %}text-bg-primary{% endif %}">{{ recomendacion.confianza }}</span>
           </div>
           <p>{{ recomendacion.resumen }}</p>
+          {% if recomendacion.acciones %}
+            <ul style="margin:6px 0; padding-left:18px; font-size:12px; color:var(--muted);">
+              {% for accion in recomendacion.acciones %}<li>{{ accion }}</li>{% endfor %}
+            </ul>
+          {% endif %}
+          {% if recomendacion.estado != "pendiente" %}
+            <p style="margin:4px 0;"><span class="badge text-bg-light border">{{ recomendacion.get_estado_display }}</span></p>
+          {% endif %}
           {% if recomendacion.pregunta_aclaratoria %}<p><strong>{{ recomendacion.pregunta_aclaratoria }}</strong></p>{% endif %}
           <div class="assistant-rec-actions">
             <form method="post" action="{% url 'recomendacion_financiera_feedback' recomendacion.pk %}">{% csrf_token %}<input type="hidden" name="estado" value="aceptada"><button class="btn btn-sm btn-outline-primary" type="submit">La seguiré</button></form>

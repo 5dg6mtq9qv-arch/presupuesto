@@ -1315,6 +1315,7 @@ class DeudaForm(UserScopedModelForm):
             "categoria",
             "concepto",
             "monto_inicial",
+            "capital_original",
             "saldo_actual",
             "tasa_interes_anual",
             "pago_minimo",
@@ -1337,12 +1338,14 @@ class DeudaForm(UserScopedModelForm):
                 },
             ),
             "monto_inicial": forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
+            "capital_original": forms.NumberInput(attrs={"step": "0.01", "min": "0", "placeholder": "Opcional, ej. 2000.00"}),
             "saldo_actual": forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
             "numero_cuotas": forms.NumberInput(attrs={"min": "1"}),
             "tasa_interes_anual": forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
             "pago_minimo": forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
         }
         labels = {
+            "capital_original": "Monto recibido / capital original (opcional)",
             "tasa_interes_anual": "Interés anual (%)",
             "pago_minimo": "Pago mínimo",
         }
@@ -1368,6 +1371,9 @@ class DeudaForm(UserScopedModelForm):
         )
         self.fields["categoria"].label = "Categoría"
         self.fields["categoria"].empty_label = "Sin categoría"
+        self.fields["capital_original"].help_text = (
+            "Si es un avance o préstamo, escribe cuánto recibiste para calcular el interés real."
+        )
         if self.es_registro_simple:
             self.fields["numero_cuotas"].label = "Cuotas pendientes de pago"
             self.fields["numero_cuotas"].help_text = "Se generará una cuota pendiente por cada mes."
@@ -1405,9 +1411,13 @@ class DeudaForm(UserScopedModelForm):
         fecha_primera_cuota = cleaned_data.get("fecha_primera_cuota")
         numero_cuotas = cleaned_data.get("numero_cuotas")
         monto_inicial = cleaned_data.get("monto_inicial")
+        capital_original = cleaned_data.get("capital_original")
         saldo_actual = cleaned_data.get("saldo_actual")
         tasa_interes = cleaned_data.get("tasa_interes_anual")
         pago_minimo = cleaned_data.get("pago_minimo")
+
+        if capital_original is not None and capital_original <= 0:
+            self.add_error("capital_original", "El monto recibido debe ser mayor que cero.")
 
         if self.es_registro_simple:
             if pago_minimo is not None and pago_minimo <= 0:
@@ -1418,6 +1428,19 @@ class DeudaForm(UserScopedModelForm):
                 cleaned_data["saldo_actual"] = total_pendiente
                 cleaned_data["fecha_inicio"] = timezone.localdate()
                 cleaned_data["tasa_interes_anual"] = None
+                if capital_original is not None and capital_original > 0:
+                    if capital_original > total_pendiente:
+                        self.add_error("capital_original", "El monto recibido no puede superar el total a pagar.")
+                    else:
+                        from .services import calcular_interes_implicito_deuda
+
+                        implicito = calcular_interes_implicito_deuda(
+                            capital_original,
+                            total_pendiente,
+                            numero_cuotas,
+                        )
+                        if implicito is not None:
+                            cleaned_data["tasa_interes_anual"] = implicito["tasa_anual_nominal"]
                 monto_inicial = total_pendiente
                 saldo_actual = total_pendiente
                 fecha_inicio = cleaned_data["fecha_inicio"]
@@ -1434,6 +1457,24 @@ class DeudaForm(UserScopedModelForm):
                 self.add_error("pago_minimo", "El pago mínimo no puede ser negativo.")
             if saldo_actual is not None and pago_minimo is not None and pago_minimo > saldo_actual:
                 self.add_error("pago_minimo", "El pago mínimo no puede superar el saldo actual.")
+            if (
+                capital_original is not None
+                and capital_original > 0
+                and monto_inicial is not None
+                and numero_cuotas
+            ):
+                if capital_original > monto_inicial:
+                    self.add_error("capital_original", "El monto recibido no puede superar el monto inicial total.")
+                elif tasa_interes is None or tasa_interes == 0:
+                    from .services import calcular_interes_implicito_deuda
+
+                    implicito = calcular_interes_implicito_deuda(
+                        capital_original,
+                        monto_inicial,
+                        numero_cuotas,
+                    )
+                    if implicito is not None:
+                        cleaned_data["tasa_interes_anual"] = implicito["tasa_anual_nominal"]
 
         if fecha_inicio and fecha_primera_cuota and fecha_primera_cuota < fecha_inicio:
             self.add_error("fecha_primera_cuota", "La primera cuota no puede ser anterior al inicio de la deuda.")

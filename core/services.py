@@ -1005,3 +1005,61 @@ def cuotas_deudas_programadas(
                 break
 
     return cuotas, total
+
+
+def calcular_interes_implicito_deuda(capital_original, total_a_pagar, numero_cuotas):
+    """Estimate implicit interest and nominal/effective APR from principal and total installments."""
+    try:
+        capital = Decimal(str(capital_original))
+        total = Decimal(str(total_a_pagar))
+        cuotas = int(numero_cuotas or 0)
+    except (ArithmeticError, TypeError, ValueError):
+        return None
+    if capital <= 0 or total <= 0 or cuotas < 1:
+        return None
+
+    dinero = Decimal("0.01")
+    interes_total = max(Decimal("0.00"), (total - capital).quantize(dinero, rounding=ROUND_HALF_UP))
+    porcentaje_sobrecosto = ((interes_total / capital) * Decimal("100")).quantize(dinero, rounding=ROUND_HALF_UP)
+
+    if interes_total == 0:
+        return {
+            "capital_original": capital.quantize(dinero, rounding=ROUND_HALF_UP),
+            "total_a_pagar": total.quantize(dinero, rounding=ROUND_HALF_UP),
+            "interes_total": Decimal("0.00"),
+            "porcentaje_sobrecosto": Decimal("0.00"),
+            "tasa_mensual": Decimal("0.00"),
+            "tasa_anual_nominal": Decimal("0.00"),
+            "tasa_efectiva_anual": Decimal("0.00"),
+        }
+
+    if cuotas == 1:
+        r = float(interes_total / capital)
+    else:
+        cuota_mensual = float(total) / cuotas
+        cap_f = float(capital)
+        low, high = 1e-7, 2.0
+        for _ in range(60):
+            mid = (low + high) / 2.0
+            pv = cuota_mensual * (1.0 - (1.0 + mid) ** (-cuotas)) / mid
+            if pv > cap_f:
+                low = mid
+            else:
+                high = mid
+        r = (low + high) / 2.0
+
+    tasa_mensual = min(Decimal("999.99"), Decimal(str(r * 100)).quantize(dinero, rounding=ROUND_HALF_UP))
+    tasa_anual_nominal = min(Decimal("9999.99"), Decimal(str(r * 12 * 100)).quantize(dinero, rounding=ROUND_HALF_UP))
+    tasa_efectiva_anual = min(
+        Decimal("9999.99"),
+        Decimal(str(((1.0 + r) ** 12 - 1.0) * 100)).quantize(dinero, rounding=ROUND_HALF_UP),
+    )
+    return {
+        "capital_original": capital.quantize(dinero, rounding=ROUND_HALF_UP),
+        "total_a_pagar": total.quantize(dinero, rounding=ROUND_HALF_UP),
+        "interes_total": interes_total,
+        "porcentaje_sobrecosto": porcentaje_sobrecosto,
+        "tasa_mensual": tasa_mensual,
+        "tasa_anual_nominal": tasa_anual_nominal,
+        "tasa_efectiva_anual": tasa_efectiva_anual,
+    }

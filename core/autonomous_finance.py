@@ -178,6 +178,59 @@ def generate_proactive_recommendations(user, *, today=None, context=None):
             monthly = missing / months
             add(f"ritmo_objetivo_{goal.pk}", f"Ritmo para {goal.nombre}", f"Para llegar a la meta en la fecha indicada necesitas aportar aproximadamente {_money(monthly)} al mes.", ["Prueba ese aporte en el simulador antes de adoptarlo."], {"faltante": _money(missing), "meses_estimados": months, "aporte_mensual": _money(monthly)}, 5 + goal.prioridad)
 
+    highest_rate_debt = context.get("deudas_activas", {}).get("deuda_mayor_costo")
+    if highest_rate_debt and _decimal(highest_rate_debt.get("tasa_interes_anual")) > 0:
+        rate = _decimal(highest_rate_debt["tasa_interes_anual"])
+        add(
+            "priorizar_deuda_mayor_tasa",
+            f"Prioriza {highest_rate_debt['concepto']} ({rate:.1f}% anual)",
+            f"Es tu deuda activa con mayor costo financiero ({highest_rate_debt['acreedor']}, saldo {_money(highest_rate_debt['saldo_pendiente'])}).",
+            ["Cubre las cuotas mínimas de todas las deudas y dirige cualquier abono extra a esta obligación."],
+            highest_rate_debt,
+            7,
+        )
+
+    for alert in (context.get("alertas_gastos_por_categoria") or [])[:2]:
+        cat_name = alert.get("categoria", "Categoría")
+        estado = alert.get("estado")
+        if estado == "superado":
+            add(
+                f"presupuesto_superado_{cat_name[:24].lower().replace(' ', '_')}",
+                f"Presupuesto superado en {cat_name}",
+                f"Llevas {_money(alert.get('gastado_hasta_hoy'))} de {_money(alert.get('presupuesto'))} ({alert.get('porcentaje_utilizado')}%).",
+                [f"Pausa gastos no esenciales en {cat_name} o reasigna margen desde otra categoría."],
+                alert,
+                9,
+            )
+        elif estado in {"cerca_del_limite", "proyeccion_de_exceso"}:
+            add(
+                f"presupuesto_riesgo_{cat_name[:24].lower().replace(' ', '_')}",
+                f"Cuida tu presupuesto de {cat_name}",
+                f"Has usado {alert.get('porcentaje_utilizado')}% ({_money(alert.get('gastado_hasta_hoy'))} de {_money(alert.get('presupuesto'))}).",
+                [f"Mantén el gasto por debajo de {_money(alert.get('disponible_diario'))} al día para cerrar dentro del límite."],
+                alert,
+                7,
+            )
+
+    pending_movs = context.get("movimientos_pendientes_por_confirmar") or {}
+    if int(pending_movs.get("cantidad") or 0) > 0:
+        add(
+            "movimientos_pendientes_confirmar",
+            f"Tienes {pending_movs['cantidad']} movimientos por confirmar",
+            "Los movimientos pendientes aún no entran en tus totales ni en el análisis de flujo.",
+            ["Confirma o descarta los pendientes en Movimientos para mantener proyecciones exactas."],
+            pending_movs,
+            6,
+        )
+
+    discarded_recent = set(
+        RecomendacionFinanciera.objects.filter(
+            usuario=user,
+            estado=RecomendacionFinanciera.Estado.DESCARTADA,
+            generado_para_fecha__gte=today - timedelta(days=7),
+        ).values_list("codigo", flat=True)
+    )
+    proposals = [item for item in proposals if item["codigo"] not in discarded_recent]
     if not proposals and movements:
         add("sin_alertas_criticas", "Mantén el seguimiento", "No se detectaron alertas críticas con los datos disponibles de hoy.", ["Revisa semanalmente tus movimientos y objetivos."], {"balance": _money(balance), "movimientos_confirmados": movements}, 3)
 

@@ -32,6 +32,7 @@
           <span><small>Total pendiente calculado</small><strong data-debt-live-total>0.00</strong></span>
           <span><small>Pagos por generar</small><strong data-debt-live-count>1 cuota</strong></span>
           <span><small>Último pago</small><strong data-debt-live-last>Sin fecha</strong></span>
+          <span data-debt-live-interest-wrap hidden><small>Interés implícito estimado</small><strong data-debt-live-interest>—</strong></span>
         </div>
       {% endif %}
     </section>
@@ -126,6 +127,7 @@
       categoria: 1,
       concepto: 1,
       monto_inicial: 2,
+      capital_original: 2,
       saldo_actual: 2,
       tasa_interes_anual: 2,
       numero_cuotas: 2,
@@ -170,6 +172,36 @@
       if (liveTotal) liveTotal.textContent = Number.isFinite(pendingTotal) ? pendingTotal.toFixed(2) : "0.00";
       if (liveCount) liveCount.textContent = `${installments} ${installments === 1 ? "cuota" : "cuotas"}`;
       if (liveLast) liveLast.textContent = dueDate;
+      const interestWrap = form.querySelector("[data-debt-live-interest-wrap]");
+      const liveInterest = form.querySelector("[data-debt-live-interest]");
+      const principal = Number(input("capital_original")?.value || 0);
+      const totalForInterest = simpleDebt ? pendingTotal : Number(input("monto_inicial")?.value || 0);
+      if (interestWrap && liveInterest) {
+        if (principal > 0 && totalForInterest >= principal && installments >= 1) {
+          const interestAmt = totalForInterest - principal;
+          const pct = (interestAmt / principal) * 100;
+          let r = 0;
+          if (interestAmt > 0) {
+            if (installments === 1) {
+              r = interestAmt / principal;
+            } else {
+              const quota = totalForInterest / installments;
+              let lo = 1e-7, hi = 2.0;
+              for (let i = 0; i < 40; i += 1) {
+                const mid = (lo + hi) / 2;
+                const pv = quota * (1 - Math.pow(1 + mid, -installments)) / mid;
+                if (pv > principal) lo = mid; else hi = mid;
+              }
+              r = (lo + hi) / 2;
+            }
+          }
+          const apr = r * 12 * 100;
+          liveInterest.textContent = `$${interestAmt.toFixed(2)} (+${pct.toFixed(1)}% · ~${apr.toFixed(1)}% anual)`;
+          interestWrap.hidden = false;
+        } else {
+          interestWrap.hidden = true;
+        }
+      }
     };
     const missingField = step => {
       if (step === 1) {

@@ -204,11 +204,17 @@ def _spending_budget_alerts(user, today):
         else:
             continue
         previous = category_expenses.filter(fecha__lte=previous_cutoff).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+        days_in_month = monthrange(today.year, today.month)[1]
+        days_remaining = max(1, days_in_month - today.day + 1)
+        remaining = max(Decimal("0"), budget.monto - actual)
+        daily_available = remaining / Decimal(days_remaining)
         alerts.append({
             "categoria": budget.categoria.nombre,
             "estado": status,
             "presupuesto": _money(budget.monto),
             "gastado_hasta_hoy": _money(actual),
+            "restante": _money(remaining),
+            "disponible_diario": _money(daily_available),
             "porcentaje_utilizado": f"{ratio * 100:.1f}",
             "mes_anterior_mismo_corte": _money(previous),
             "proyeccion_lineal_al_fin_de_mes": _money(projected),
@@ -235,12 +241,14 @@ def analyze_spending(user, arguments=None, *, today=None):
         usuario=user,
         tipo=MovimientoFinanciero.Tipo.GASTO,
         estado=MovimientoFinanciero.Estado.CONFIRMADO,
+        ajuste_saldo__isnull=True,
         fecha__range=(history_start, analysis_date),
     )
     incomes = MovimientoFinanciero.objects.filter(
         usuario=user,
         tipo=MovimientoFinanciero.Tipo.INGRESO,
         estado=MovimientoFinanciero.Estado.CONFIRMADO,
+        ajuste_saldo__isnull=True,
         fecha__range=(history_start, analysis_date),
     )
 
@@ -358,12 +366,43 @@ def analyze_spending(user, arguments=None, *, today=None):
 
     days_elapsed = analysis_date.day
     days_in_month = monthrange(analysis_date.year, analysis_date.month)[1]
-    projected_current = current_total / days_elapsed * days_in_month if days_elapsed else current_total
+    current_month_qs = expenses.filter(fecha__range=(current_start, analysis_date))
+    current_recurring = current_month_qs.filter(recurrente__isnull=False).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    current_variable = current_month_qs.filter(recurrente__isnull=True).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    pending_recurring_month = Decimal("0")
+    if analysis_date < _month_end(analysis_date):
+        pending_recurring_month = sum(
+            (
+                item["monto"]
+                for item in movimientos_recurrentes_programados(
+                    user,
+                    analysis_date + timedelta(days=1),
+                    _month_end(analysis_date),
+                    tipo=MovimientoFinanciero.Tipo.GASTO,
+                )
+            ),
+            Decimal("0"),
+        )
+    projected_variable = (current_variable / days_elapsed * days_in_month) if days_elapsed else current_variable
+    projected_current = current_recurring + pending_recurring_month + projected_variable
     completed_months = monthly[:-1]
     forecast_sample = completed_months[-3:]
     next_month_forecast = None
     if len(forecast_sample) >= 2:
         next_month_forecast = sum((Decimal(row["gastos_consumo"]) for row in forecast_sample), Decimal("0")) / len(forecast_sample)
+    next_month_start_date = _month_start(_shift_month(current_start, 1))
+    next_month_recurring = sum(
+        (
+            item["monto"]
+            for item in movimientos_recurrentes_programados(
+                user,
+                next_month_start_date,
+                _month_end(next_month_start_date),
+                tipo=MovimientoFinanciero.Tipo.GASTO,
+            )
+        ),
+        Decimal("0"),
+    )
     completed_movements = sum(row["cantidad_gastos"] for row in completed_months)
     if len(completed_months) >= 5 and completed_movements >= 30:
         confidence = "alta"
@@ -389,8 +428,14 @@ def analyze_spending(user, arguments=None, *, today=None):
         },
         "proyecciones": {
             "gasto_estimado_cierre_mes_actual": _money(projected_current),
+            "desglose_cierre_mes_actual": {
+                "recurrente_ejecutado": _money(current_recurring),
+                "recurrente_pendiente_mes": _money(pending_recurring_month),
+                "variable_proyectado": _money(projected_variable),
+            },
             "gasto_estimado_proximo_mes": _money(next_month_forecast) if next_month_forecast is not None else None,
-            "base_proximo_mes": "Promedio de hasta 3 meses completos recientes.",
+            "gasto_recurrente_programado_proximo_mes": _money(next_month_recurring),
+            "base_proximo_mes": "Promedio de hasta 3 meses completos recientes; el cierre actual separa recurrentes de ritmo variable.",
             "meses_completos_usados": len(forecast_sample) if next_month_forecast is not None else 0,
             "confianza": confidence,
             "nota": "Estimaciones orientativas basadas en el historial; no son importes garantizados.",
@@ -409,7 +454,9 @@ def build_financial_context(user, today=None):
         estado=MovimientoFinanciero.Estado.CONFIRMADO,
         fecha__range=(start, today),
     )
-    incomes = movements.filter(tipo=MovimientoFinanciero.Tipo.INGRESO).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    income_qs = movements.filter(tipo=MovimientoFinanciero.Tipo.INGRESO)
+    incomes = income_qs.filter(ajuste_saldo__isnull=True).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    income_adjustments = income_qs.filter(ajuste_saldo__isnull=False).aggregate(total=Sum("monto"))["total"] or Decimal("0")
     expenses = movements.filter(tipo=MovimientoFinanciero.Tipo.GASTO)
     adjustment_expenses = expenses.filter(ajuste_saldo__isnull=False)
     consumption_expenses = expenses.filter(ajuste_saldo__isnull=True)
@@ -420,6 +467,8 @@ def build_financial_context(user, today=None):
     direct_cash_expenses = consumption_expenses.exclude(
         metodo_pago__tipo=MetodoPago.Tipo.CREDITO,
     ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    recurring_consumption = consumption_expenses.filter(recurrente__isnull=False).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    variable_consumption = max(Decimal("0"), consumption - recurring_consumption)
     balance_adjustments = adjustment_expenses.aggregate(total=Sum("monto"))["total"] or Decimal("0")
     debt_payments = PagoDeuda.objects.filter(
         deuda__usuario=user,
@@ -437,14 +486,51 @@ def build_financial_context(user, today=None):
         )
         .values("category_label")
         .annotate(total=Sum("monto"))
-        .order_by("-total")[:5]
+        .order_by("-total")[:10]
     )
     categories = [
         {
             "categoria": row["category_label"],
             "total": _money(row["total"]),
+            "porcentaje_del_gasto": f"{(row['total'] / consumption * Decimal('100')):.1f}" if consumption else "0.0",
         }
         for row in category_rows
+    ]
+    subcategory_rows = (
+        consumption_expenses.filter(categoria__parent__isnull=False)
+        .values("categoria__parent__nombre", "categoria__nombre")
+        .annotate(total=Sum("monto"))
+        .order_by("-total")[:10]
+    )
+    subcategories = [
+        {
+            "categoria": row["categoria__parent__nombre"],
+            "subcategoria": row["categoria__nombre"],
+            "total": _money(row["total"]),
+            "porcentaje_del_gasto": f"{(row['total'] / consumption * Decimal('100')):.1f}" if consumption else "0.0",
+        }
+        for row in subcategory_rows
+    ]
+    income_category_rows = (
+        income_qs.filter(ajuste_saldo__isnull=True)
+        .annotate(
+            category_label=Coalesce(
+                "categoria__parent__nombre",
+                "categoria__nombre",
+                Value("Sin categoría"),
+            )
+        )
+        .values("category_label")
+        .annotate(total=Sum("monto"))
+        .order_by("-total")[:5]
+    )
+    income_categories = [
+        {
+            "categoria": row["category_label"],
+            "total": _money(row["total"]),
+            "porcentaje_del_ingreso": f"{(row['total'] / incomes * Decimal('100')):.1f}" if incomes else "0.0",
+        }
+        for row in income_category_rows
     ]
     tag_rows = (
         consumption_expenses.filter(etiquetas__isnull=False)
@@ -496,11 +582,52 @@ def build_financial_context(user, today=None):
     scheduled_incomes = [
         item for item in scheduled_movements if item["tipo"] == MovimientoFinanciero.Tipo.INGRESO
     ]
-    scheduled_expenses = [
+    scheduled_expenses_all = [
         item for item in scheduled_movements if item["tipo"] == MovimientoFinanciero.Tipo.GASTO
+    ]
+    scheduled_expenses = [
+        item for item in scheduled_expenses_all
+        if not (item["recurrente"].metodo_pago_id and item["recurrente"].metodo_pago.tipo == MetodoPago.Tipo.CREDITO)
+    ]
+    scheduled_credit_expenses = [
+        item for item in scheduled_expenses_all
+        if item["recurrente"].metodo_pago_id and item["recurrente"].metodo_pago.tipo == MetodoPago.Tipo.CREDITO
     ]
     scheduled_income_total = sum((item["monto"] for item in scheduled_incomes), Decimal("0"))
     scheduled_expense_total = sum((item["monto"] for item in scheduled_expenses), Decimal("0"))
+    scheduled_credit_expense_total = sum((item["monto"] for item in scheduled_credit_expenses), Decimal("0"))
+    current_month_end = _month_end(today)
+    remaining_month_movements = (
+        movimientos_recurrentes_programados(user, today + timedelta(days=1), current_month_end)
+        if today < current_month_end
+        else []
+    )
+    remaining_month_income = sum(
+        (item["monto"] for item in remaining_month_movements if item["tipo"] == MovimientoFinanciero.Tipo.INGRESO),
+        Decimal("0"),
+    )
+    remaining_month_cash_expense = sum(
+        (
+            item["monto"]
+            for item in remaining_month_movements
+            if item["tipo"] == MovimientoFinanciero.Tipo.GASTO
+            and not (item["recurrente"].metodo_pago_id and item["recurrente"].metodo_pago.tipo == MetodoPago.Tipo.CREDITO)
+        ),
+        Decimal("0"),
+    )
+    remaining_month_debt = PagoDeuda.objects.filter(
+        deuda__usuario=user,
+        deuda__estado=Deuda.Estado.ACTIVA,
+        estado=PagoDeuda.Estado.PENDIENTE,
+        fecha__range=(today, current_month_end),
+    ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    pending_movements_qs = MovimientoFinanciero.objects.filter(
+        usuario=user,
+        estado=MovimientoFinanciero.Estado.PENDIENTE,
+    )
+    pending_movements_income = pending_movements_qs.filter(tipo=MovimientoFinanciero.Tipo.INGRESO).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    pending_movements_expense = pending_movements_qs.filter(tipo=MovimientoFinanciero.Tipo.GASTO).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    pending_movements_count = pending_movements_qs.count()
     upcoming_rows = list(
         upcoming.select_related("deuda")
         .order_by("fecha", "deuda__acreedor", "cuota_numero")[:MAX_UPCOMING_PAYMENT_DETAILS]
@@ -527,11 +654,34 @@ def build_financial_context(user, today=None):
         )
         .order_by("fecha_vencimiento", "acreedor")[:MAX_UPCOMING_PAYMENT_DETAILS]
     )
-    budget_total = PresupuestoMensual.objects.filter(
-        usuario=user,
-        anio=today.year,
-        mes=today.month,
-    ).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    month_budgets = list(
+        PresupuestoMensual.objects.filter(
+            usuario=user,
+            anio=today.year,
+            mes=today.month,
+        ).select_related("categoria")
+    )
+    root_budget_ids = {b.categoria_id for b in month_budgets if not b.categoria.parent_id}
+    non_overlapping_budgets = [
+        b for b in month_budgets if not (b.categoria.parent_id and b.categoria.parent_id in root_budget_ids)
+    ]
+    budget_total = sum((b.monto for b in non_overlapping_budgets), Decimal("0"))
+    covered_cat_ids = set()
+    for b in non_overlapping_budgets:
+        covered_cat_ids.add(b.categoria_id)
+        if not b.categoria.parent_id:
+            covered_cat_ids.update(b.categoria.subcategorias.values_list("pk", flat=True))
+    budget_used = consumption_expenses.filter(categoria_id__in=covered_cat_ids).aggregate(total=Sum("monto"))["total"] or Decimal("0")
+    budget_remaining = max(Decimal("0"), budget_total - budget_used)
+    days_remaining_month = max(1, monthrange(today.year, today.month)[1] - today.day + 1)
+    budget_daily_available = budget_remaining / Decimal(days_remaining_month)
+    budget_coverage_pct = (budget_used / consumption * Decimal("100")) if consumption else Decimal("0")
+    highest_rate_debt = (
+        active_debts.filter(tasa_interes_anual__gt=0)
+        .order_by("-tasa_interes_anual", "-saldo_actual")
+        .values("acreedor", "concepto", "tasa_interes_anual", "saldo_actual", "pago_minimo")
+        .first()
+    )
     spending_alerts = _spending_budget_alerts(user, today)
     operating_cash_outflow = direct_cash_expenses + debt_payments
     registered_balance_outflow = operating_cash_outflow + balance_adjustments
@@ -567,9 +717,10 @@ def build_financial_context(user, today=None):
             "consumo_pagado_sin_credito": _money(direct_cash_expenses),
             "compras_nuevas_a_credito": _money(credit_consumption),
             "pagos_de_deuda_realizados": _money(debt_payments),
+            "ajustes_de_saldo_aumento": _money(income_adjustments),
             "ajustes_de_saldo_disminucion": _money(balance_adjustments),
             "salidas_de_caja_operativas": _money(operating_cash_outflow),
-            "variacion_de_saldo_incluyendo_ajustes": _money(incomes - registered_balance_outflow),
+            "variacion_de_saldo_incluyendo_ajustes": _money(incomes + income_adjustments - registered_balance_outflow),
             "criterio": (
                 "Las compras a crédito son consumo, pero no salida de caja inmediata. Los pagos de deuda sí son salida de caja. "
                 "Los ajustes de saldo se muestran aparte porque corrigen el saldo registrado y no prueban consumo del periodo."
@@ -593,6 +744,7 @@ def build_financial_context(user, today=None):
             "brecha_con_saldo_actual": _money(current_balance_gap),
             "ingresos_recurrentes_programados_proximos_30_dias": _money(scheduled_income_total),
             "gastos_recurrentes_programados_proximos_30_dias": _money(scheduled_expense_total),
+            "gastos_recurrentes_credito_proximos_30_dias": _money(scheduled_credit_expense_total),
             "saldo_proyectado_tras_compromisos_registrados": _money(projected_balance_after_commitments),
             "brecha_tras_compromisos_registrados": _money(projected_coverage_gap),
             "cubiertas_tras_compromisos_registrados": projected_balance_after_commitments >= 0,
@@ -610,6 +762,17 @@ def build_financial_context(user, today=None):
             "cantidad_acreedores": len(creditor_rows),
             "registros_generados_por_compras_a_credito": credit_purchase_records,
             "registros_de_deuda_manual": manual_debt_records,
+            "deuda_mayor_costo": (
+                {
+                    "acreedor": highest_rate_debt["acreedor"],
+                    "concepto": highest_rate_debt["concepto"],
+                    "tasa_interes_anual": f"{highest_rate_debt['tasa_interes_anual']:.2f}",
+                    "saldo_pendiente": _money(highest_rate_debt["saldo_actual"]),
+                    "pago_minimo": _money(highest_rate_debt["pago_minimo"]) if highest_rate_debt["pago_minimo"] is not None else None,
+                }
+                if highest_rate_debt
+                else None
+            ),
             "por_acreedor": [
                 {
                     "acreedor": row["acreedor"],
@@ -629,6 +792,14 @@ def build_financial_context(user, today=None):
                     "subcategoria": _category_labels(debt.categoria)[1],
                     "etiquetas": [tag.nombre for tag in debt.etiquetas.all()],
                     "saldo_total_pendiente": _money(debt.saldo_actual),
+                    "capital_original": _money(debt.capital_original) if debt.capital_original is not None else None,
+                    "interes_implicito_total": (
+                        _money(max(Decimal("0"), debt.monto_inicial - debt.capital_original))
+                        if debt.capital_original is not None
+                        else None
+                    ),
+                    "tasa_interes_anual": f"{debt.tasa_interes_anual:.2f}" if debt.tasa_interes_anual is not None else None,
+                    "fecha_vencimiento": debt.fecha_vencimiento.isoformat() if debt.fecha_vencimiento else None,
                     "es_diferida_en_cuotas": debt.numero_cuotas > 1,
                     "numero_cuotas": debt.numero_cuotas,
                     "cuotas_pagadas": debt.cuotas_pagadas_previas + debt.cuotas_confirmadas_count,
@@ -721,8 +892,37 @@ def build_financial_context(user, today=None):
             "alcance": "Solo incluye gastos recurrentes activos aún no confirmados para ese periodo.",
         },
         "presupuestos_del_mes": _money(budget_total),
+        "resumen_presupuestos_del_mes": {
+            "total_presupuesto": _money(budget_total),
+            "total_usado": _money(budget_used),
+            "total_restante": _money(budget_remaining),
+            "disponible_diario_total": _money(budget_daily_available),
+            "dias_restantes_mes": days_remaining_month,
+            "cobertura_del_gasto_porcentual": f"{budget_coverage_pct:.1f}",
+        },
         "alertas_gastos_por_categoria": spending_alerts,
+        "estructura_gasto_del_mes": {
+            "gasto_fijo_recurrente": _money(recurring_consumption),
+            "gasto_variable": _money(variable_consumption),
+            "porcentaje_fijo": f"{(recurring_consumption / consumption * Decimal('100')):.1f}" if consumption else "0.0",
+        },
+        "cierre_estimado_mes_actual": {
+            "hasta": current_month_end.isoformat(),
+            "ingresos_recurrentes_pendientes_mes": _money(remaining_month_income),
+            "gastos_recurrentes_caja_pendientes_mes": _money(remaining_month_cash_expense),
+            "cuotas_deuda_pendientes_mes": _money(remaining_month_debt),
+            "balance_caja_estimado_cierre_mes": _money(
+                (incomes - operating_cash_outflow) + remaining_month_income - remaining_month_cash_expense - remaining_month_debt
+            ),
+        },
+        "movimientos_pendientes_por_confirmar": {
+            "cantidad": pending_movements_count,
+            "ingresos_pendientes": _money(pending_movements_income),
+            "gastos_pendientes": _money(pending_movements_expense),
+        },
+        "ingresos_por_categoria": income_categories,
         "principales_categorias_de_gasto": categories,
+        "principales_subcategorias_de_gasto": subcategories,
         "gastos_por_etiqueta": {
             "detalle": expense_tags,
             "nota": "Cada etiqueta agrupa movimientos confirmados del periodo; un movimiento con varias etiquetas aparece en cada una.",

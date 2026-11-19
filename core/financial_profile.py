@@ -73,6 +73,7 @@ def calculate_financial_behavior_profile(user, *, today=None):
         MovimientoFinanciero.objects.filter(
             usuario=user,
             estado=MovimientoFinanciero.Estado.CONFIRMADO,
+            ajuste_saldo__isnull=True,
             fecha__range=(start, today),
         )
         .annotate(
