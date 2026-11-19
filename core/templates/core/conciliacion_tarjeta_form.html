@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block page_title %}Conciliar estado de tarjeta{% endblock %}
-{% block page_subtitle %}Sube el estado o una foto; el análisis detecta cómo procesarlo{% endblock %}
+{% block page_title %}Revisar gastos de tarjeta o banco{% endblock %}
+{% block page_subtitle %}Sube capturas de tu app bancaria o el estado en PDF; la IA compara línea por línea qué existe y qué falta{% endblock %}
 {% block content %}
 <section class="panel form-panel">
-  <div class="safe-notice"><span class="material-symbols-outlined">verified_user</span><div><strong>Sube el archivo directamente</strong><p>El PDF permite revisar cargos y totales. Una foto permite conciliar el total. También puedes escribir el monto si no tienes un archivo.</p></div></div>
-  <p class="muted">Si el acreedor aún no aparece, <a href="{% url 'deuda_list' %}">créalo en Deudas</a> y vuelve a esta pantalla.</p>
+  <div class="safe-notice"><span class="material-symbols-outlined">verified_user</span><div><strong>Revisión línea por línea con IA</strong><p>Puedes subir <strong>1 o varias capturas de pantalla</strong> de los movimientos de tu tarjeta en el banco, o el <strong>PDF</strong> del estado de cuenta. La IA detectará cada gasto, lo comparará con lo que ya tienes registrado y te permitirá guardar los que faltan.</p></div></div>
+  <p class="muted">Si la tarjeta o acreedor aún no aparece, <a href="{% url 'deuda_list' %}">créalo en Deudas</a> y vuelve a esta pantalla.</p>
   <form class="form-grid" method="post" enctype="multipart/form-data">{% csrf_token %}
     {% include "core/includes/unfold_form_fields.html" %}
     <div class="form-actions"><a class="btn btn-outline-secondary" href="{% url 'actividad_financiera' %}">Cancelar</a><button class="btn btn-primary" type="submit">Analizar estado</button></div>

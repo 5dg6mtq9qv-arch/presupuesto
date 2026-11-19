@@ -1530,18 +1530,22 @@ class ImportacionBancariaForm(forms.ModelForm):
         return uploaded
 
 
+class MultipleFileInput(forms.ClearableFileInput):
+    allow_multiple_selected = True
+
+
 class ConciliacionTarjetaForm(forms.Form):
-    acreedor = forms.ModelChoiceField(queryset=Acreedor.objects.none(), label="Acreedor")
+    acreedor = forms.ModelChoiceField(queryset=Acreedor.objects.none(), label="Tarjeta o acreedor")
     mes = forms.DateField(
         label="Mes del total escrito", required=False,
         input_formats=["%Y-%m"],
         widget=forms.DateInput(attrs={"type": "month", "class": "form-control"}, format="%Y-%m"),
     )
     archivo = forms.FileField(
-        label="Estado en PDF o foto del total",
+        label="Capturas de movimientos o estado PDF",
         required=False,
-        help_text="El análisis identifica si subiste un PDF o una foto JPG/PNG/WebP. Máximo 10 MB.",
-        widget=forms.FileInput(attrs={"accept": ".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*", "class": "form-control"}),
+        help_text="Sube 1 o varias capturas de tu app bancaria (JPG, PNG, WebP) o el estado en PDF. Máximo 10 MB por archivo.",
+        widget=MultipleFileInput(attrs={"accept": ".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*", "class": "form-control"}),
     )
     monto_total = forms.DecimalField(
         label="O escribe el total a conciliar (USD)", required=False, min_value=Decimal("0.01"),
@@ -1561,25 +1565,32 @@ class ConciliacionTarjetaForm(forms.Form):
     def clean(self):
         data = super().clean()
         uploaded, amount = data.get("archivo"), data.get("monto_total")
-        if uploaded and amount is not None:
-            self.add_error("monto_total", "Sube un archivo o escribe un total, no ambos.")
+        files = self.files.getlist("archivo") if self.files else ([uploaded] if uploaded else [])
+        data["archivos"] = files
+        if files and amount is not None:
+            self.add_error("monto_total", "Sube archivos o escribe un total, no ambos.")
         elif amount is not None:
             data["tipo_entrada"] = "total_monto"
             if not data.get("mes"):
                 self.add_error("mes", "Selecciona el mes del total escrito.")
-        elif uploaded:
-            name = uploaded.name.lower()
-            if uploaded.size > 10 * 1024 * 1024:
-                self.add_error("archivo", "El archivo supera 10 MB.")
-            elif name.endswith(".pdf"):
-                data["tipo_entrada"] = "pdf"
-            elif name.endswith((".jpg", ".jpeg", ".png", ".webp")):
-                data["tipo_entrada"] = "total_foto"
-            else:
-                self.add_error("archivo", "Selecciona un PDF o una foto JPG, PNG o WebP.")
+        elif files:
+            if len(files) > 6:
+                self.add_error("archivo", "Puedes subir máximo 6 imágenes a la vez.")
+            has_pdf = any(f.name.lower().endswith(".pdf") for f in files)
+            if has_pdf and len(files) > 1:
+                self.add_error("archivo", "Si subes un PDF, selecciona solo ese archivo.")
+            for f in files:
+                name = f.name.lower()
+                if f.size > 10 * 1024 * 1024:
+                    self.add_error("archivo", "Cada archivo debe pesar como máximo 10 MB.")
+                    break
+                if not (name.endswith(".pdf") or name.endswith((".jpg", ".jpeg", ".png", ".webp"))):
+                    self.add_error("archivo", "Selecciona un PDF o imágenes JPG, PNG o WebP.")
+                    break
+            data["tipo_entrada"] = "pdf" if has_pdf else "imagen"
             data["mes"] = None
         elif not self.errors:
-            self.add_error("archivo", "Sube un PDF o una foto, o escribe el total.")
+            self.add_error("archivo", "Sube capturas o un PDF, o escribe el total.")
         return data
 
 

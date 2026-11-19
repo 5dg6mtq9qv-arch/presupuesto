@@ -5634,11 +5634,16 @@ def conciliacion_tarjeta_nueva(request):
                     "fecha_pago": None, "periodo_detectado": False,
                     "resumen": {"total_pagar": str(form.cleaned_data["monto_total"])},
                 }
+                modo_detectado = "total"
             else:
-                result = extract_statement(request.user, [form.cleaned_data["archivo"]], month,
-                                           summary_only=kind == "total_foto")
-                if kind == "total_foto" and not (result["resumen"].get("total_pagar") or result["resumen"].get("cargos_debitos")):
-                    raise StatementError("No se pudo leer un total en la foto. Prueba otra imagen o escribe el monto.")
+                archivos = form.cleaned_data.get("archivos") or [form.cleaned_data["archivo"]]
+                result = extract_statement(request.user, archivos, month, summary_only=False)
+                if result.get("cargos"):
+                    modo_detectado = "movimientos" if result.get("es_captura_movimientos") else "pdf"
+                elif result["resumen"].get("total_pagar") or result["resumen"].get("cargos_debitos"):
+                    modo_detectado = "total"
+                else:
+                    raise StatementError("No se pudieron leer movimientos ni un total en la imagen. Prueba otra captura más nítida o escribe el monto.")
         except StatementError as exc:
             form.add_error("archivo" if kind != "total_monto" else "monto_total", str(exc))
         except Exception:
@@ -5647,7 +5652,7 @@ def conciliacion_tarjeta_nueva(request):
         else:
             request.session["borrador_conciliacion_tarjeta"] = {
                 **result,
-                "modo": "pdf" if kind == "pdf" else "total",
+                "modo": modo_detectado,
                 "origen_total": kind,
                 "acreedor_id": form.cleaned_data["acreedor"].pk,
                 "mes": result.get("mes") or month.strftime("%Y-%m"),
@@ -5688,9 +5693,24 @@ def _conciliacion_context(request):
         "sobrantes": [{"id": item.pk, "monto": str(item.monto)} for item in removable],
         "modo": draft.get("modo", "pdf"),
     }
+    categorias_finanzas = list(
+        Categoria.objects.filter(
+            usuario=request.user,
+            tipo__in=FINANCIAL_CATEGORY_TYPES,
+        ).select_related("parent").order_by("parent__nombre", "nombre")
+    )
+    default_cat = _import_category(request.user)
+    resumen_conteo = {
+        "existe": sum(1 for r in rows if r["status"] == "existe"),
+        "cuota": sum(1 for r in rows if r["status"] == "cuota"),
+        "nuevo": sum(1 for r in rows if r["status"] == "nuevo"),
+        "revisar": sum(1 for r in rows if r["status"] in {"posible", "diferencia"}),
+    }
     return {"borrador": draft, "acreedor": creditor, "filas": rows, "extras": extras,
             "totales": totals, "proyeccion_datos": projection_data, "sobrantes": removable,
-            "fecha_cuota": quota_date}
+            "fecha_cuota": quota_date, "categorias": categorias_finanzas,
+            "categoria_default_id": default_cat.pk if default_cat else None,
+            "resumen_conteo": resumen_conteo}
 
 
 @login_required
@@ -5734,29 +5754,49 @@ def conciliacion_tarjeta_confirmar(request):
     create_quota = context["borrador"].get("modo") == "total" and request.POST.get("crear_cuota") == "1"
     totals = reconciliation_totals(request.user, context["acreedor"], context["borrador"], rows, actions,
                                    delete_ids=removed_ids, create_quota=create_quota)
-    if context["borrador"].get("modo", "pdf") == "pdf" and not rows:
-        context["error_conciliacion"] = "El PDF no contiene un detalle de cargos legible. Sube el estado completo para conciliarlo."
-    elif totals["cargos_estado"] is None:
-        context["error_conciliacion"] = "Falta el total de cargos/débitos facturados. Sube la página del resumen para poder verificar que el acreedor cuadre."
-    elif totals["diferencia_resumen"] not in (None, Decimal("0.00")):
-        context["error_conciliacion"] = "Las cifras del resumen del estado no cuadran entre sí. Revisa la foto del resumen y vuelve a subir el documento."
-    elif totals["diferencia_detalle"] not in (None, Decimal("0.00")):
-        context["error_conciliacion"] = "La suma de los cargos extraídos no coincide con los cargos facturados del estado. Sube todas las páginas o fotos antes de confirmar."
-    elif totals["diferencia_proyectada"] not in (None, Decimal("0.00")):
-        context["error_conciliacion"] = "Las acciones seleccionadas todavía no cuadran con el total de cargos del estado. Revisa los importes y las cuotas del acreedor."
+    modo = context["borrador"].get("modo", "pdf")
+    if modo != "movimientos":
+        if modo == "pdf" and not rows:
+            context["error_conciliacion"] = "El PDF no contiene un detalle de cargos legible. Sube el estado completo para conciliarlo."
+        elif totals["cargos_estado"] is None:
+            context["error_conciliacion"] = "Falta el total de cargos/débitos facturados. Sube la página del resumen para poder verificar que el acreedor cuadre."
+        elif totals["diferencia_resumen"] not in (None, Decimal("0.00")):
+            context["error_conciliacion"] = "Las cifras del resumen del estado no cuadran entre sí. Revisa la foto del resumen y vuelve a subir el documento."
+        elif totals["diferencia_detalle"] not in (None, Decimal("0.00")):
+            context["error_conciliacion"] = "La suma de los cargos extraídos no coincide con los cargos facturados del estado. Sube todas las páginas o fotos antes de confirmar."
+        elif totals["diferencia_proyectada"] not in (None, Decimal("0.00")):
+            context["error_conciliacion"] = "Las acciones seleccionadas todavía no cuadran con el total de cargos del estado. Revisa los importes y las cuotas del acreedor."
+    elif not rows:
+        context["error_conciliacion"] = "No se detectaron movimientos para revisar."
     if context.get("error_conciliacion"):
         context["totales"] = totals
         return render(request, "core/conciliacion_tarjeta_revisar.html", context, status=400)
     category = _import_category(request.user) if "crear" in actions else None
+    categorias_por_id = {c.pk: c for c in context.get("categorias", [])}
+    metodo_credito = MetodoPago.objects.filter(
+        usuario=request.user, tipo=MetodoPago.Tipo.CREDITO, activo=True
+    ).first()
     created = adjusted = deleted = moved = 0
     for row, action in zip(rows, actions):
         if action == "crear":
+            cat_id_raw = request.POST.get(f"categoria_{row['index']}", "")
+            row_cat = categorias_por_id.get(int(cat_id_raw)) if cat_id_raw.isdigit() else None
+            concepto_final = (request.POST.get(f"concepto_{row['index']}", "") or row["concepto"]).strip()[:160] or row["concepto"]
+            fecha_final = parse_date(request.POST.get(f"fecha_{row['index']}", "").strip()) or parse_date(row["fecha"])
+            monto_raw = request.POST.get(f"monto_{row['index']}", "").strip().replace(",", ".")
+            try:
+                monto_final = Decimal(monto_raw).quantize(Decimal("0.01")) if monto_raw else Decimal(row["monto"])
+                if monto_final <= 0:
+                    monto_final = Decimal(row["monto"])
+            except Exception:
+                monto_final = Decimal(row["monto"])
             MovimientoFinanciero.objects.create(
-                usuario=request.user, categoria=category,
+                usuario=request.user, categoria=row_cat or category,
                 acreedor_credito=context["acreedor"],
+                metodo_pago=metodo_credito,
                 tipo=MovimientoFinanciero.Tipo.GASTO,
                 estado=MovimientoFinanciero.Estado.CONFIRMADO,
-                concepto=row["concepto"], monto=Decimal(row["monto"]), fecha=parse_date(row["fecha"]),
+                concepto=concepto_final, monto=monto_final, fecha=fecha_final,
                 fecha_pago=parse_date(row.get("fecha_pago") or ""),
                 nota=f"Estado de tarjeta {context['borrador']['mes']}; acreedor: {context['acreedor'].nombre}. Revisado por el usuario.",
             )

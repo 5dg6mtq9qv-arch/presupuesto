@@ -186,7 +186,7 @@ class CardStatementTests(TestCase):
             "archivo": SimpleUploadedFile("total.jpg", b"image", content_type="image/jpeg"),
         })
         self.assertRedirects(response, reverse("conciliacion_tarjeta_revisar"))
-        self.assertTrue(extract.call_args.kwargs["summary_only"])
+        self.assertFalse(extract.call_args.kwargs["summary_only"])
         self.assertIsNone(extract.call_args.args[2])
 
     def test_file_and_written_total_cannot_be_submitted_together(self):
@@ -258,3 +258,76 @@ class CardStatementTests(TestCase):
         result = extract_statement(self.user, [SimpleUploadedFile("total.jpg", image.getvalue())], date(2026, 10, 1))
         self.assertEqual(result["cargos"], [])
         self.assertEqual(result["resumen"]["cargos_debitos"], "743.15")
+
+    @patch("core.card_statement._provider_message")
+    @patch("core.card_statement.get_ai_runtime_config")
+    @patch("core.card_statement.user_can_use_ai", return_value=True)
+    def test_extracts_banking_app_screenshots_without_statement_header(self, can_use, config, provider):
+        config.return_value.configured = True
+        provider.return_value = {
+            "content": '{"mes_estado":null,"periodo_desde":null,"periodo_hasta":null,"fecha_pago":null,'
+            '"saldo_anterior":null,"pagos_creditos":null,"cargos_debitos":null,"total_pagar":null,'
+            '"cargos":[{"fecha":"2026-11-03","concepto":"Kywi (Diferido 2/3)","monto":19.85,"es_diferido":true},'
+            '{"fecha":"2026-10-31","concepto":"Apple","monto":6.99,"es_diferido":false},'
+            '{"fecha":"2026-10-31","concepto":"Apple","monto":6.99,"es_diferido":false}]}'
+        }
+        img1 = BytesIO()
+        img2 = BytesIO()
+        Image.new("RGB", (16, 16), "white").save(img1, format="JPEG")
+        Image.new("RGB", (16, 16), "white").save(img2, format="JPEG")
+        result = extract_statement(
+            self.user,
+            [SimpleUploadedFile("cap1.jpg", img1.getvalue()), SimpleUploadedFile("cap2.jpg", img2.getvalue())],
+            None,
+        )
+        self.assertTrue(result["es_captura_movimientos"])
+        self.assertEqual(result["mes"], "2026-11")
+        self.assertEqual(result["desde"], "2026-10-31")
+        self.assertEqual(result["hasta"], "2026-11-03")
+        # Deduplicates identical overlapping items across screenshots
+        self.assertEqual(len(result["cargos"]), 2)
+
+    @patch("core.views.extract_statement")
+    def test_movimientos_photo_mode_confirms_missing_without_pdf_summary(self, extract):
+        extract.return_value = {
+            "mes": "2026-11",
+            "desde": "2026-10-31",
+            "hasta": "2026-11-03",
+            "fecha_pago": None,
+            "periodo_detectado": False,
+            "es_captura_movimientos": True,
+            "cargos": [
+                {"fecha": "2026-11-01", "fecha_pago": "", "concepto": "Google Ads", "monto": "9.57"},
+            ],
+            "resumen": {
+                "saldo_anterior": None,
+                "pagos_creditos": None,
+                "cargos_debitos": None,
+                "total_pagar": None,
+                "consumos_periodo": None,
+            },
+        }
+        upload = self.client.post(
+            reverse("conciliacion_tarjeta_nueva"),
+            {
+                "acreedor": self.creditor.pk,
+                "archivo": SimpleUploadedFile("movimientos.jpg", b"image", content_type="image/jpeg"),
+            },
+        )
+        self.assertRedirects(upload, reverse("conciliacion_tarjeta_revisar"))
+        preview = self.client.get(reverse("conciliacion_tarjeta_revisar"))
+        self.assertContains(preview, "Falta registrar")
+        self.assertContains(preview, "Revisión de capturas bancarias")
+        confirm = self.client.post(
+            reverse("conciliacion_tarjeta_confirmar"),
+            {"accion_0": "crear", "categoria_0": self.category.pk},
+        )
+        self.assertRedirects(confirm, reverse("actividad_financiera"))
+        self.assertTrue(
+            MovimientoFinanciero.objects.filter(
+                usuario=self.user,
+                acreedor_credito=self.creditor,
+                concepto="Google Ads",
+                monto=Decimal("9.57"),
+            ).exists()
+        )

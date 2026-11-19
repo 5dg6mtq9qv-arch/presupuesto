@@ -62,6 +62,21 @@
       </div>
     </div>
 
+    <div style="display:flex; flex-wrap:wrap; gap:.5rem; padding-bottom:.75rem; border-bottom:1px solid var(--line);">
+      <a class="btn btn-sm btn-outline-primary" href="{% url 'conciliacion_tarjeta_nueva' %}" style="border-radius:999px; display:inline-flex; align-items:center; gap:.35rem;">
+        <span class="material-symbols-outlined" style="font-size:1rem;">photo_camera</span>
+        <span>Comparar foto de tarjeta / banco</span>
+      </a>
+      <a class="btn btn-sm btn-outline-secondary" href="{% url 'comprobante_nuevo' %}" style="border-radius:999px; display:inline-flex; align-items:center; gap:.35rem;">
+        <span class="material-symbols-outlined" style="font-size:1rem;">receipt_long</span>
+        <span>Escanear recibo</span>
+      </a>
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-assistant-prompt="Registra un gasto de " style="border-radius:999px; display:inline-flex; align-items:center; gap:.35rem;">
+        <span class="material-symbols-outlined" style="font-size:1rem;">edit_note</span>
+        <span>Registrar por texto</span>
+      </button>
+    </div>
+
     <div class="assistant-messages" id="assistant-messages" aria-live="polite">
       <div class="assistant-message assistant-message-ai">
         {% if ai_configured %}¡Hola! Puedo responder dudas y ayudarte a consultar o registrar ingresos, gastos, presupuestos y deudas paso a paso. ¿Qué necesitas?{% else %}El asistente está instalado, pero falta configurar la clave privada del proveedor en el servidor.{% endif %}
@@ -342,6 +357,12 @@
       button.addEventListener("click", () => {
         question.value = button.dataset.question;
         form.requestSubmit();
+      });
+    });
+    document.querySelectorAll("[data-assistant-prompt]").forEach(button => {
+      button.addEventListener("click", () => {
+        question.value = button.dataset.assistantPrompt;
+        question.focus();
       });
     });
   })();
