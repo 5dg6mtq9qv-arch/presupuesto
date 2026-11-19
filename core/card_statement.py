@@ -227,23 +227,52 @@ def _payment_month(draft):
     return day.replace(day=1)
 
 
+def _normalize_concept(text):
+    cleaned = re.sub(r"\(?\bdiferido\s+\d+\s*/\s*\d+\)?", "", str(text or ""), flags=re.I)
+    cleaned = re.sub(r"[^a-z0-9áéíóúñ]+", " ", cleaned.casefold()).strip()
+    return cleaned
+
+
+def _concept_similarity(a, b):
+    raw_ratio = SequenceMatcher(None, str(a or "").casefold(), str(b or "").casefold()).ratio()
+    na, nb = _normalize_concept(a), _normalize_concept(b)
+    if not na or not nb:
+        return raw_ratio
+    norm_ratio = SequenceMatcher(None, na, nb).ratio()
+    if len(na) >= 3 and len(nb) >= 3 and (na in nb or nb in na):
+        return max(raw_ratio, norm_ratio, 0.85)
+    return max(raw_ratio, norm_ratio)
+
+
 def compare_charges(user, creditor, draft):
     start, end = date.fromisoformat(draft["desde"]), date.fromisoformat(draft["hasta"])
     statement_month = _payment_month(draft)
+    next_month = statement_month.replace(
+        year=statement_month.year + (statement_month.month == 12),
+        month=statement_month.month % 12 + 1,
+    )
     due_month = Q(fecha_pago__year=statement_month.year, fecha_pago__month=statement_month.month)
+    if not draft.get("fecha_pago"):
+        due_month = due_month | Q(fecha_pago__year=next_month.year, fecha_pago__month=next_month.month)
     candidates = list(MovimientoFinanciero.objects.filter(
         usuario=user, tipo=MovimientoFinanciero.Tipo.GASTO,
     ).filter(Q(fecha__range=(start - timedelta(days=7), end + timedelta(days=7))) | due_month
     ).exclude(estado=MovimientoFinanciero.Estado.ELIMINADO).filter(
         Q(acreedor_credito=creditor) | Q(acreedor_credito__isnull=True),
     ).exclude(deuda_generada__isnull=False).order_by("fecha", "pk"))
-    due_payments = list(PagoDeuda.objects.filter(
-        deuda__usuario=user,
-    ).filter(
+
+    payment_window = (
         Q(fecha__year=statement_month.year, fecha__month=statement_month.month)
-        | Q(fecha__range=(start - timedelta(days=15), end + timedelta(days=15)))
-    ).filter(Q(deuda__acreedor_entidad=creditor) | Q(deuda__acreedor__iexact=creditor.nombre))
-        .select_related("deuda").distinct())
+        | Q(fecha__range=(start - timedelta(days=15), end + timedelta(days=55)))
+    )
+    if not draft.get("fecha_pago"):
+        payment_window = payment_window | Q(fecha__year=next_month.year, fecha__month=next_month.month)
+    due_payments = list(
+        PagoDeuda.objects.filter(deuda__usuario=user)
+        .filter(payment_window)
+        .select_related("deuda")
+        .distinct()
+    )
     used = set()
     used_payments = set()
     rows = []
@@ -252,11 +281,20 @@ def compare_charges(user, creditor, draft):
         amount = Decimal(charge["monto"])
         ranked = []
         for movement in candidates:
-            if movement.pk in used or (abs((movement.fecha - day).days) > 7 and
-                                       not (movement.fecha_pago and movement.fecha_pago.year == statement_month.year
-                                                and movement.fecha_pago.month == statement_month.month)):
+            in_due_months = bool(
+                movement.fecha_pago
+                and (
+                    (movement.fecha_pago.year == statement_month.year and movement.fecha_pago.month == statement_month.month)
+                    or (
+                        not draft.get("fecha_pago")
+                        and movement.fecha_pago.year == next_month.year
+                        and movement.fecha_pago.month == next_month.month
+                    )
+                )
+            )
+            if movement.pk in used or (abs((movement.fecha - day).days) > 7 and not in_due_months):
                 continue
-            similarity = SequenceMatcher(None, charge["concepto"].casefold(), movement.concepto.casefold()).ratio()
+            similarity = _concept_similarity(charge["concepto"], movement.concepto)
             exact_amount = movement.monto == amount
             if (exact_amount and similarity >= .35) or (similarity >= .68 and abs((movement.fecha - day).days) <= 3):
                 ranked.append((movement.acreedor_credito_id == creditor.pk, exact_amount, similarity,
@@ -271,11 +309,15 @@ def compare_charges(user, creditor, draft):
             for installment in due_payments:
                 if installment.pk in used_payments or installment.monto != amount:
                     continue
-                similarity = SequenceMatcher(None, charge["concepto"].casefold(), installment.deuda.concepto.casefold()).ratio()
-                if similarity >= .35:
-                    payment_candidates.append((similarity, installment))
-            payment_candidates.sort(key=lambda item: item[0], reverse=True)
-            payment = payment_candidates[0][1] if payment_candidates else None
+                same_creditor = (
+                    installment.deuda.acreedor_entidad_id == creditor.pk
+                    or installment.deuda.acreedor.strip().casefold() == creditor.nombre.strip().casefold()
+                )
+                similarity = _concept_similarity(charge["concepto"], installment.deuda.concepto)
+                if (same_creditor and similarity >= .35) or (not same_creditor and similarity >= .60):
+                    payment_candidates.append((same_creditor, similarity, installment))
+            payment_candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
+            payment = payment_candidates[0][2] if payment_candidates else None
             if payment:
                 used_payments.add(payment.pk)
         rows.append({"index": index, **charge, "match": match, "payment": payment,

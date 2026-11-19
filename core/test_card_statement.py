@@ -331,3 +331,38 @@ class CardStatementTests(TestCase):
                 monto=Decimal("9.57"),
             ).exists()
         )
+
+    def test_matches_next_month_december_installment_from_november_screenshot(self):
+        debt = Deuda.objects.create(
+            usuario=self.user,
+            acreedor=self.creditor.nombre,
+            acreedor_entidad=self.creditor,
+            concepto="Kywi",
+            monto_inicial=Decimal("59.55"),
+            saldo_actual=Decimal("39.70"),
+            numero_cuotas=3,
+            fecha_inicio=date(2026, 10, 3),
+            fecha_primera_cuota=date(2026, 11, 18),
+            fecha_vencimiento=date(2027, 1, 18),
+        )
+        cuota_dic = PagoDeuda.objects.create(
+            deuda=debt,
+            monto=Decimal("19.85"),
+            fecha=date(2026, 12, 18),
+            cuota_numero=2,
+            estado=PagoDeuda.Estado.PENDIENTE,
+        )
+        draft = {
+            "mes": "2026-11",
+            "desde": "2026-10-31",
+            "hasta": "2026-11-03",
+            "fecha_pago": None,
+            "es_captura_movimientos": True,
+            "cargos": [
+                {"fecha": "2026-11-03", "fecha_pago": "", "concepto": "Kywi (Diferido 2/3)", "monto": "19.85"},
+            ],
+            "resumen": {},
+        }
+        rows, _ = compare_charges(self.user, self.creditor, draft)
+        self.assertEqual(rows[0]["status"], "cuota")
+        self.assertEqual(rows[0]["payment"], cuota_dic)
