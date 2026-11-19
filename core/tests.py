@@ -64,6 +64,7 @@ from .models import (
     PresupuestoMensual,
     PerfilComportamientoFinanciero,
     PerfilUsuario,
+    PlantillaMovimiento,
     SolicitudRegistro,
     TransferenciaCuenta,
 )
@@ -4387,3 +4388,93 @@ class MovimientoRecurrenteServiceTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["fecha_inicio"], datetime(2025, 1, 1).date())
         self.assertEqual(response.context["fecha_fin"], datetime(2025, 12, 31).date())
+
+
+class PlantillaMovimientoTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username="atajos", password="test")
+        self.client.force_login(self.user)
+        self.cuenta = CuentaFinanciera.objects.create(usuario=self.user, nombre="Billetera", tipo=CuentaFinanciera.Tipo.EFECTIVO)
+        self.categoria = Categoria.objects.create(usuario=self.user, nombre="Transporte", tipo=Categoria.Tipo.FINANZAS)
+        self.metodo = MetodoPago.objects.create(usuario=self.user, nombre="Efectivo", tipo=MetodoPago.Tipo.EFECTIVO)
+
+    def test_guardar_gasto_como_atajo_y_precargar(self):
+        response = self.client.post(
+            reverse("movimiento_gasto_create"),
+            {
+                "categoria": self.categoria.pk,
+                "cuenta": self.cuenta.pk,
+                "metodo_pago": self.metodo.pk,
+                "concepto": "Pasaje de bus",
+                "monto": "0.35",
+                "fecha": "2026-11-19",
+                "guardar_como_atajo": "on",
+                "nombre_atajo": "Pasaje bus",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        plantilla = PlantillaMovimiento.objects.get(usuario=self.user, nombre="Pasaje bus")
+        self.assertEqual(plantilla.monto, Decimal("0.35"))
+        self.assertEqual(plantilla.categoria, self.categoria)
+
+        preload = self.client.get(reverse("movimiento_gasto_create"), {"plantilla": plantilla.pk})
+        self.assertEqual(preload.status_code, 200)
+        self.assertEqual(preload.context["form"].initial["concepto"], "Pasaje de bus")
+        self.assertEqual(preload.context["form"].initial["monto"], Decimal("0.35"))
+
+        usar = self.client.post(
+            reverse("movimiento_gasto_create"),
+            {
+                "categoria": self.categoria.pk,
+                "cuenta": self.cuenta.pk,
+                "metodo_pago": self.metodo.pk,
+                "concepto": "Pasaje de bus",
+                "monto": "0.35",
+                "fecha": "2026-11-19",
+                "plantilla_usada": str(plantilla.pk),
+            },
+        )
+        self.assertEqual(usar.status_code, 302)
+        plantilla.refresh_from_db()
+        self.assertEqual(plantilla.veces_usado, 1)
+
+    def test_repetir_movimiento_precarga_formulario(self):
+        origen = MovimientoFinanciero.objects.create(
+            usuario=self.user,
+            tipo=MovimientoFinanciero.Tipo.GASTO,
+            categoria=self.categoria,
+            cuenta=self.cuenta,
+            metodo_pago=self.metodo,
+            concepto="Almuerzo ejecutivo",
+            monto=Decimal("4.50"),
+            fecha=datetime(2026, 11, 10).date(),
+            estado=MovimientoFinanciero.Estado.CONFIRMADO,
+        )
+        response = self.client.get(reverse("movimiento_gasto_create"), {"repetir": origen.pk})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["form"].initial["concepto"], "Almuerzo ejecutivo")
+        self.assertEqual(response.context["form"].initial["monto"], Decimal("4.50"))
+        self.assertEqual(response.context["form"].initial["categoria"], self.categoria.pk)
+
+    def test_crud_atajos_frecuentes(self):
+        create_resp = self.client.post(
+            reverse("plantilla_list"),
+            {
+                "nombre": "Café",
+                "tipo": MovimientoFinanciero.Tipo.GASTO,
+                "categoria": self.categoria.pk,
+                "cuenta": self.cuenta.pk,
+                "metodo_pago": self.metodo.pk,
+                "concepto": "Café de la mañana",
+                "monto": "1.50",
+                "activo": "on",
+            },
+        )
+        self.assertEqual(create_resp.status_code, 302)
+        plantilla = PlantillaMovimiento.objects.get(usuario=self.user, nombre="Café")
+        list_resp = self.client.get(reverse("plantilla_list"))
+        self.assertContains(list_resp, "Café")
+
+        del_resp = self.client.post(reverse("finance_object_delete", args=["plantilla", plantilla.pk]))
+        self.assertEqual(del_resp.status_code, 302)
+        self.assertFalse(PlantillaMovimiento.objects.filter(pk=plantilla.pk).exists())

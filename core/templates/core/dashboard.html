@@ -79,6 +79,26 @@
   </button>
 </div>
 
+{% if atajos_gasto %}
+<section class="panel" style="padding: 0.75rem 1rem; margin-bottom: 1rem;">
+  <div style="display:flex; align-items:center; justify-content:space-between; gap:.5rem; flex-wrap:wrap;">
+    <div style="display:flex; align-items:center; gap:.45rem; flex-wrap:wrap;">
+      <span class="muted" style="font-size:0.84rem; font-weight:600; display:inline-flex; align-items:center; gap:.25rem;">
+        <span class="material-symbols-outlined" style="font-size:1rem; color:var(--primary);">bolt</span>
+        Atajos rápidos:
+      </span>
+      {% for atajo in atajos_gasto %}
+        <a class="btn btn-sm btn-outline-secondary" href="{% url 'movimiento_gasto_create' %}?plantilla={{ atajo.pk }}" style="border-radius:999px; display:inline-flex; align-items:center; gap:.3rem;">
+          <span>{{ atajo.nombre }}</span>
+          {% if atajo.monto is not None %}<small class="muted">${{ atajo.monto|floatformat:2 }}</small>{% endif %}
+        </a>
+      {% endfor %}
+    </div>
+    <a class="muted" href="{% url 'plantilla_list' %}" style="font-size:0.82rem; text-decoration:none;">Gestionar</a>
+  </div>
+</section>
+{% endif %}
+
 <div class="grid metric-grid">
   <section class="panel panel-interactive metric green">
     <div class="metric-head"><span class="metric-icon"><span class="material-symbols-outlined">account_balance_wallet</span></span><div class="metric-copy"><div class="metric-label">Disponible hoy</div><div class="metric-value">{{ saldo_disponible }}</div></div></div>

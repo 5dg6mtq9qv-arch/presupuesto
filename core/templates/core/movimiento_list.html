@@ -10,9 +10,14 @@
     <a class="tab {% if active_tipo == 'ingreso' %}active{% endif %}" href="{% url 'movimiento_list' %}?tipo=ingreso">Ingresos</a>
     <a class="tab {% if active_tipo == 'gasto' %}active{% endif %}" href="{% url 'movimiento_list' %}?tipo=gasto">Gastos</a>
   </div>
-  <a class="btn btn-primary btn-icon shadow-sm" href="{% url create_url_name %}" title="{% if active_tipo == 'gasto' %}Nuevo gasto{% else %}Nuevo ingreso{% endif %}" aria-label="{% if active_tipo == 'gasto' %}Nuevo gasto{% else %}Nuevo ingreso{% endif %}">
-    <span class="material-symbols-outlined">add</span>
-  </a>
+  <div style="display:flex; gap:.45rem; align-items:center;">
+    <a class="btn btn-outline-secondary btn-icon shadow-sm" href="{% url 'plantilla_list' %}" title="Atajos frecuentes" aria-label="Atajos frecuentes">
+      <span class="material-symbols-outlined">bolt</span>
+    </a>
+    <a class="btn btn-primary btn-icon shadow-sm" href="{% url create_url_name %}" title="{% if active_tipo == 'gasto' %}Nuevo gasto{% else %}Nuevo ingreso{% endif %}" aria-label="{% if active_tipo == 'gasto' %}Nuevo gasto{% else %}Nuevo ingreso{% endif %}">
+      <span class="material-symbols-outlined">add</span>
+    </a>
+  </div>
 </div>
 
 <section class="panel">
@@ -192,6 +197,9 @@
                 </span>
               {% elif movimiento.estado == "confirmado" and not movimiento.ajuste_saldo %}
                 <span class="action-icons">
+                  <a class="btn btn-sm btn-outline-success btn-icon" href="{% url create_url_name %}?repetir={{ movimiento.pk }}" title="Repetir con fecha de hoy" aria-label="Repetir con fecha de hoy">
+                    <span class="material-symbols-outlined">content_copy</span>
+                  </a>
                   <a class="btn btn-sm btn-outline-primary btn-icon" href="{% url 'movimiento_update' movimiento.pk %}" title="Editar" aria-label="Editar">
                     <span class="material-symbols-outlined">edit</span>
                   </a>

@@ -791,6 +791,9 @@ class MovimientoFinanciero(models.Model):
     class Meta:
         db_table = '"movimientos_financieros"."movimiento_financiero"'
         ordering = ["-fecha", "-creado"]
+        indexes = [
+            models.Index(fields=["usuario", "estado", "tipo", "-fecha"], name="mov_usr_est_tipo_fec_idx"),
+        ]
         constraints = [
             models.UniqueConstraint(
                 fields=["usuario", "recurrente", "fecha"],
@@ -1020,6 +1023,29 @@ class MovimientoRecurrente(models.Model):
         return f"{self.get_tipo_display()}: {self.concepto}"
 
 
+class PlantillaMovimiento(models.Model):
+    usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="plantillas_movimiento")
+    nombre = models.CharField(max_length=80)
+    tipo = models.CharField(max_length=20, choices=MovimientoFinanciero.Tipo.choices, default=MovimientoFinanciero.Tipo.GASTO)
+    categoria = models.ForeignKey(Categoria, on_delete=models.SET_NULL, null=True, blank=True)
+    cuenta = models.ForeignKey(CuentaFinanciera, on_delete=models.SET_NULL, null=True, blank=True)
+    metodo_pago = models.ForeignKey(MetodoPago, on_delete=models.SET_NULL, null=True, blank=True)
+    etiquetas = models.ManyToManyField(Etiqueta, blank=True, related_name="plantillas_movimiento")
+    concepto = models.CharField(max_length=160)
+    monto = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    nota = models.TextField(blank=True)
+    activo = models.BooleanField(default=True)
+    veces_usado = models.PositiveIntegerField(default=0)
+    creado = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = '"finanzas"."plantilla_movimiento"'
+        ordering = ["-veces_usado", "nombre"]
+
+    def __str__(self):
+        return f"{self.nombre} ({self.get_tipo_display()})"
+
+
 class Acreedor(models.Model):
     usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="acreedores")
     nombre = models.CharField(max_length=120)
@@ -1090,6 +1116,9 @@ class Deuda(models.Model):
     class Meta:
         db_table = '"deudas"."deuda"'
         ordering = ["estado", "-creado"]
+        indexes = [
+            models.Index(fields=["usuario", "estado", "-creado"], name="deuda_usr_est_cre_idx"),
+        ]
 
     def __str__(self):
         return f"{self.acreedor}: {self.concepto}"
@@ -1123,6 +1152,9 @@ class PagoDeuda(models.Model):
     class Meta:
         db_table = '"pagos_deudas"."pago_deuda"'
         ordering = ["-fecha", "-creado"]
+        indexes = [
+            models.Index(fields=["estado", "fecha"], name="pago_est_fec_idx"),
+        ]
         constraints = [
             models.UniqueConstraint(
                 fields=["deuda", "cuota_numero"],

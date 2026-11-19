@@ -1929,6 +1929,7 @@
           <li><a class="nav-link {% if 'deuda' in request.resolver_match.url_name or 'pago' in request.resolver_match.url_name or 'importacion_amortizacion' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'deuda_list' %}" data-tour-target="debts"><span class="material-symbols-outlined">receipt_long</span> Deudas y cuotas</a></li>
           <li><a class="nav-link {% if 'presupuesto' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'presupuesto_list' %}"><span class="material-symbols-outlined">price_check</span> Presupuestos</a></li>
           <li><a class="nav-link {% if 'recurrente' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'recurrente_list' %}" data-tour-target="recurring"><span class="material-symbols-outlined">event_repeat</span> Gastos e ingresos recurrentes</a></li>
+          <li><a class="nav-link {% if 'plantilla' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'plantilla_list' %}"><span class="material-symbols-outlined">bolt</span> Atajos frecuentes</a></li>
         </ul>
         <div class="nav-section">Organizar</div>
         <ul class="nav-list">

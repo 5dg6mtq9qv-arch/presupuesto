@@ -27,6 +27,7 @@ from .models import (
     ObjetivoFinanciero,
     PagoDeuda,
     PerfilUsuario,
+    PlantillaMovimiento,
     PresupuestoMensual,
     Tarea,
     TransferenciaCuenta,
@@ -833,6 +834,17 @@ class MovimientoFinancieroForm(UserScopedModelForm):
         required=False,
         help_text="Ej.: Visa Pichincha, Mastercard Pacífico o la tienda que te dio el crédito.",
     )
+    guardar_como_atajo = forms.BooleanField(
+        label="Guardar como atajo frecuente",
+        required=False,
+        help_text="Guárdalo para precargarlo en 1 clic la próxima vez.",
+    )
+    nombre_atajo = forms.CharField(
+        label="Nombre del atajo",
+        max_length=80,
+        required=False,
+        help_text="Opcional: ej. Pasaje bus. Si lo dejas vacío se usa la descripción.",
+    )
 
     class Meta:
         model = MovimientoFinanciero
@@ -900,6 +912,9 @@ class MovimientoFinancieroForm(UserScopedModelForm):
         if not self.is_bound and not self.instance.pk:
             self.fields["fecha"].initial = timezone.localdate().isoformat()
             self.fields["cuenta"].initial = get_general_account(user)
+        if self.instance.pk:
+            self.fields.pop("guardar_como_atajo", None)
+            self.fields.pop("nombre_atajo", None)
 
     def clean(self):
         cleaned_data = super().clean()
@@ -1236,6 +1251,46 @@ class MovimientoRecurrenteForm(UserScopedModelForm):
             instance.save()
             self.save_m2m()
         return instance
+
+
+class PlantillaMovimientoForm(UserScopedModelForm):
+    class Meta:
+        model = PlantillaMovimiento
+        fields = ["nombre", "tipo", "categoria", "cuenta", "metodo_pago", "etiquetas", "concepto", "monto", "nota", "activo"]
+        labels = {
+            "nombre": "Nombre del atajo",
+            "tipo": "Tipo",
+            "categoria": "Categoría",
+            "cuenta": "Cuenta",
+            "metodo_pago": "Método de pago",
+            "etiquetas": "Etiquetas",
+            "concepto": "Descripción por defecto",
+            "monto": "Monto sugerido (opcional)",
+            "nota": "Nota",
+            "activo": "Activo",
+        }
+        widgets = {
+            "monto": forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
+            "etiquetas": EtiquetaSelectMultiple(attrs={"size": "1", "data-compact-multiple": "true"}),
+            "nota": forms.Textarea(attrs={"rows": 2}),
+        }
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, user=user, **kwargs)
+        self.fields["categoria"].queryset = Categoria.objects.filter(
+            usuario=user,
+            tipo__in=FINANCIAL_CATEGORY_TYPES,
+        ).select_related("parent").order_by("parent__nombre", "nombre")
+        self.fields["categoria"].label_from_instance = lambda obj: (
+            f"{obj.parent.nombre} > {obj.nombre}" if obj.parent_id else obj.nombre
+        )
+        self.fields["categoria"].empty_label = "Selecciona una categoría"
+        self.fields["cuenta"].queryset = CuentaFinanciera.objects.filter(usuario=user, activa=True).order_by("nombre")
+        self.fields["cuenta"].empty_label = "Sin cuenta"
+        self.fields["metodo_pago"].queryset = MetodoPago.objects.filter(usuario=user, activo=True).order_by("nombre")
+        self.fields["metodo_pago"].empty_label = "Sin método"
+        self.fields["etiquetas"].queryset = Etiqueta.objects.filter(usuario=user).order_by("nombre")
+        self.fields["monto"].required = False
 
 
 class DeudaForm(UserScopedModelForm):

@@ -5,6 +5,8 @@
 
 {% block content %}
 {{ categorias_principales|json_script:"movement-category-parents" }}
+{{ plantillas_rapidas|json_script:"movement-quick-templates" }}
+{{ sugerencias_concepto|json_script:"movement-concept-suggestions" }}
 {% if not tiene_categorias %}
   <section class="panel">
     <div class="panel-heading">
@@ -20,8 +22,41 @@
 {% endif %}
 
 <section class="panel form-panel">
-  <form class="expense-flow-form" id="expense-flow-form" data-movement-type="{{ tipo }}" method="post" enctype="multipart/form-data">
+  {% if plantillas_rapidas %}
+    <div class="quick-templates-bar" style="margin-bottom: 1rem; padding-bottom: 0.85rem; border-bottom: 1px solid var(--line);">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:.5rem; margin-bottom:.5rem; flex-wrap:wrap;">
+        <span class="muted" style="font-size:0.85rem; font-weight:600; display:inline-flex; align-items:center; gap:.3rem;">
+          <span class="material-symbols-outlined" style="font-size:1.1rem; color:var(--primary);">bolt</span>
+          Atajos frecuentes (1 clic para precargar)
+        </span>
+        <a href="{% url 'plantilla_list' %}" class="muted" style="font-size:0.82rem; text-decoration:none;">Gestionar atajos</a>
+      </div>
+      <div style="display:flex; flex-wrap:wrap; gap:.45rem;">
+        {% for item in plantillas_rapidas %}
+          <button
+            type="button"
+            class="btn btn-sm {% if plantilla_activa_id == item.id|stringformat:'s' %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+            data-quick-template-id="{{ item.id }}"
+            style="border-radius: 999px; display:inline-flex; align-items:center; gap:.35rem;"
+          >
+            <span>{{ item.nombre }}</span>
+            {% if item.monto %}<small style="opacity:.8;">${{ item.monto }}</small>{% endif %}
+          </button>
+        {% endfor %}
+      </div>
+    </div>
+  {% elif not form.instance.pk %}
+    <div style="display:flex; justify-content:flex-end; margin-bottom:.5rem;">
+      <a href="{% url 'plantilla_list' %}" class="muted" style="font-size:0.82rem; text-decoration:none; display:inline-flex; align-items:center; gap:.25rem;">
+        <span class="material-symbols-outlined" style="font-size:1rem;">bolt</span>
+        Configurar atajos frecuentes
+      </a>
+    </div>
+  {% endif %}
+  <form class="expense-flow-form" id="expense-flow-form" data-movement-type="{{ tipo }}" data-preloaded="{% if modo_precargado %}1{% else %}0{% endif %}" method="post" enctype="multipart/form-data">
     {% csrf_token %}
+    <input type="hidden" name="plantilla_usada" id="id_plantilla_usada" value="{{ plantilla_activa_id }}">
+    <datalist id="movement-concept-datalist"></datalist>
       <nav class="expense-steps" aria-label="Pasos para registrar el {{ tipo }}">
         <button class="expense-step-tab is-active" type="button" data-expense-go="1"><span>1</span><strong>{% if tipo == "gasto" %}Qué compraste{% else %}Origen del ingreso{% endif %}</strong></button>
         <span class="expense-step-line"></span>
@@ -132,6 +167,8 @@
       monto: 3,
       fecha: 3,
       comprobante: 3,
+      guardar_como_atajo: 3,
+      nombre_atajo: 3,
     };
     const panels = [...form.querySelectorAll("[data-expense-panel]")];
     const tabs = [...form.querySelectorAll("[data-expense-go]")];
@@ -251,7 +288,13 @@
     });
 
     const errorPanel = panels.find(panel => panel.querySelector(".has-error"));
-    showStep(errorPanel ? Number(errorPanel.dataset.expensePanel) : 1);
+    if (errorPanel) {
+      showStep(Number(errorPanel.dataset.expensePanel));
+    } else if (form.dataset.preloaded === "1" && !missingField(1) && !missingField(2)) {
+      showStep(3);
+    } else {
+      showStep(1);
+    }
   })();
 
   (() => {
@@ -546,6 +589,92 @@
       if (window.jQuery) window.jQuery(creditor).val(String(data.id)).trigger("change");
       else creditor.dispatchEvent(new Event("change", { bubbles: true }));
     });
+  })();
+
+  (() => {
+    const form = document.getElementById("expense-flow-form");
+    if (!form) return;
+
+    const setFieldValue = (el, value) => {
+      if (!el) return;
+      if (el.tagName === "SELECT" && el.multiple && Array.isArray(value)) {
+        const values = new Set(value.map(String));
+        [...el.options].forEach(opt => { opt.selected = values.has(String(opt.value)); });
+        if (window.jQuery) window.jQuery(el).val(value.map(String)).trigger("change");
+        else el.dispatchEvent(new Event("change", { bubbles: true }));
+        return;
+      }
+      el.value = value ?? "";
+      if (el.tagName === "SELECT" && window.jQuery) {
+        window.jQuery(el).val(String(value ?? "")).trigger("change");
+      } else {
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    };
+
+    const templatesNode = document.getElementById("movement-quick-templates");
+    const templates = templatesNode ? JSON.parse(templatesNode.textContent) : [];
+    const templatesById = new Map(templates.map(t => [String(t.id), t]));
+    const plantillaUsada = document.getElementById("id_plantilla_usada");
+
+    document.querySelectorAll("[data-quick-template-id]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const tpl = templatesById.get(String(btn.dataset.quickTemplateId));
+        if (!tpl) return;
+        document.querySelectorAll("[data-quick-template-id]").forEach(other => {
+          const isCurrent = other === btn;
+          other.classList.toggle("btn-primary", isCurrent);
+          other.classList.toggle("btn-outline-secondary", !isCurrent);
+        });
+        if (plantillaUsada) plantillaUsada.value = String(tpl.id);
+        setFieldValue(document.getElementById("id_concepto"), tpl.concepto);
+        if (tpl.monto) setFieldValue(document.getElementById("id_monto"), tpl.monto);
+        if (tpl.categoria_id) setFieldValue(document.getElementById("id_categoria"), tpl.categoria_id);
+        if (tpl.metodo_pago_id) setFieldValue(document.getElementById("id_metodo_pago"), tpl.metodo_pago_id);
+        if (tpl.cuenta_id) setFieldValue(document.getElementById("id_cuenta"), tpl.cuenta_id);
+        if (tpl.etiquetas) setFieldValue(document.getElementById("id_etiquetas"), tpl.etiquetas);
+        form.dispatchEvent(new Event("input", { bubbles: true }));
+        const step3Tab = form.querySelector('[data-expense-go="3"]');
+        if (step3Tab) step3Tab.click();
+      });
+    });
+
+    const suggestionsNode = document.getElementById("movement-concept-suggestions");
+    const suggestions = suggestionsNode ? JSON.parse(suggestionsNode.textContent) : [];
+    const conceptoInput = document.getElementById("id_concepto");
+    const datalist = document.getElementById("movement-concept-datalist");
+    if (conceptoInput && datalist && suggestions.length) {
+      conceptoInput.setAttribute("list", "movement-concept-datalist");
+      suggestions.forEach(item => {
+        const opt = document.createElement("option");
+        opt.value = item.concepto;
+        datalist.appendChild(opt);
+      });
+      const suggestionsByKey = new Map(suggestions.map(s => [s.concepto.trim().toLowerCase(), s]));
+      const applyConceptSuggestion = () => {
+        const match = suggestionsByKey.get(conceptoInput.value.trim().toLowerCase());
+        if (!match) return;
+        const cat = document.getElementById("id_categoria");
+        const met = document.getElementById("id_metodo_pago");
+        const cta = document.getElementById("id_cuenta");
+        const mto = document.getElementById("id_monto");
+        if (cat && !cat.value && match.categoria_id) setFieldValue(cat, match.categoria_id);
+        if (met && !met.value && match.metodo_pago_id) setFieldValue(met, match.metodo_pago_id);
+        if (cta && !cta.value && match.cuenta_id) setFieldValue(cta, match.cuenta_id);
+        if (mto && !mto.value && match.monto) setFieldValue(mto, match.monto);
+      };
+      conceptoInput.addEventListener("change", applyConceptSuggestion);
+    }
+
+    const saveShortcutCheck = document.getElementById("id_guardar_como_atajo");
+    const shortcutNameField = document.querySelector(".field-nombre_atajo");
+    if (saveShortcutCheck && shortcutNameField) {
+      const toggleShortcutName = () => {
+        shortcutNameField.hidden = !saveShortcutCheck.checked;
+      };
+      saveShortcutCheck.addEventListener("change", toggleShortcutName);
+      toggleShortcutName();
+    }
   })();
 </script>
 {% endblock %}

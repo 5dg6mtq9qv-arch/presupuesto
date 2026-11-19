@@ -24,7 +24,7 @@ from django.core.cache import cache
 from django.core.mail import EmailMessage, EmailMultiAlternatives
 from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseForbidden, JsonResponse
 from django.db import transaction
-from django.db.models import Count, Max, Min, OuterRef, Prefetch, Q, Subquery, Sum
+from django.db.models import Count, F, Max, Min, OuterRef, Prefetch, Q, Subquery, Sum
 from django.db.models.functions import TruncMonth
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -64,6 +64,7 @@ from .forms import (
     PagoAgrupadoDeudaForm,
     PerfilCuentaForm,
     PerfilUsuarioForm,
+    PlantillaMovimientoForm,
     PresupuestoMensualForm,
     RegistroUsuarioForm,
     CategoriaPrincipalForm,
@@ -108,6 +109,7 @@ from .models import (
     ObjetivoFinanciero,
     PagoDeuda,
     PerfilUsuario,
+    PlantillaMovimiento,
     PresupuestoMensual,
     RegistroAuditoria,
     RecomendacionFinanciera,
@@ -1981,6 +1983,32 @@ def recurrente_list(request):
 
 
 @login_required
+def plantilla_list(request):
+    form = PlantillaMovimientoForm(user=request.user)
+    if request.method == "POST":
+        form = PlantillaMovimientoForm(request.POST, user=request.user)
+        if form.is_valid():
+            plantilla = assign_user_and_save(form, request.user)
+            registrar_auditoria(request, RegistroAuditoria.Accion.CREAR, plantilla)
+            messages.success(request, "Atajo frecuente creado.")
+            return redirect("plantilla_list")
+    plantillas = PlantillaMovimiento.objects.filter(usuario=request.user).select_related(
+        "categoria__parent", "cuenta", "metodo_pago"
+    ).prefetch_related("etiquetas")
+    q = request.GET.get("q", "").strip()
+    if q:
+        plantillas = plantillas.filter(
+            Q(nombre__icontains=q) | Q(concepto__icontains=q) | Q(categoria__nombre__icontains=q)
+        )
+    page_obj, list_querystring = paginate_queryset(request, plantillas)
+    return render(
+        request,
+        "core/plantilla_list.html",
+        {"form": form, "plantillas": page_obj, "page_obj": page_obj, "list_querystring": list_querystring, "filters": {"q": q}},
+    )
+
+
+@login_required
 @transaction.atomic
 def finance_object_update(request, kind, pk):
     config = {
@@ -1989,6 +2017,7 @@ def finance_object_update(request, kind, pk):
         "etiqueta": (Etiqueta, EtiquetaForm, "etiqueta", "etiqueta_list"),
         "presupuesto": (PresupuestoMensual, PresupuestoMensualForm, "presupuesto", "presupuesto_list"),
         "recurrente": (MovimientoRecurrente, MovimientoRecurrenteForm, "movimiento recurrente", "recurrente_list"),
+        "plantilla": (PlantillaMovimiento, PlantillaMovimientoForm, "atajo frecuente", "plantilla_list"),
     }
     if kind not in config:
         return HttpResponseBadRequest("Tipo inválido.")
@@ -2016,6 +2045,7 @@ def finance_object_delete(request, kind, pk):
         "etiqueta": (Etiqueta, "etiqueta_list", "Etiqueta eliminada."),
         "presupuesto": (PresupuestoMensual, "presupuesto_list", "Presupuesto eliminado."),
         "recurrente": (MovimientoRecurrente, "recurrente_list", "Recurrente eliminado."),
+        "plantilla": (PlantillaMovimiento, "plantilla_list", "Atajo frecuente eliminado."),
     }
     if kind not in config:
         return HttpResponseBadRequest("Tipo inválido.")
@@ -2893,7 +2923,10 @@ def usuario_password(request, pk):
 
 @login_required
 def dashboard(request):
-    ensure_user_finance_setup(request.user)
+    setup_session_key = f"finance_setup_ok_{request.user.pk}"
+    if not request.session.get(setup_session_key):
+        ensure_user_finance_setup(request.user)
+        request.session[setup_session_key] = True
     perfil, _ = PerfilUsuario.objects.get_or_create(usuario=request.user)
     hoy = timezone.localdate()
     inicio_mes = hoy.replace(day=1)
@@ -3267,6 +3300,13 @@ def dashboard(request):
         "core/dashboard.html",
         {
             "hoy": hoy,
+            "atajos_gasto": list(
+                PlantillaMovimiento.objects.filter(
+                    usuario=request.user,
+                    tipo=MovimientoFinanciero.Tipo.GASTO,
+                    activo=True,
+                )[:6]
+            ),
             "periodos_reporte": periodos_reporte,
             "tareas_hoy": tareas_hoy,
             "ingresos": ingresos,
@@ -4418,7 +4458,10 @@ def movimiento_create(request):
 
 
 def movimiento_form_context(request, tipo, movimiento=None):
-    ensure_financial_categories_consistency(request.user)
+    cat_session_key = f"categories_consistent_{request.user.pk}"
+    if not request.session.get(cat_session_key):
+        ensure_financial_categories_consistency(request.user)
+        request.session[cat_session_key] = True
     tiene_categorias = Categoria.objects.filter(
         usuario=request.user,
         tipo__in=FINANCIAL_CATEGORY_TYPES,
@@ -4438,27 +4481,145 @@ def movimiento_form_context(request, tipo, movimiento=None):
     return tiene_categorias, title, back_tipo, categorias_principales
 
 
-def movimiento_initial_from_query(request):
-    """Permite abrir el formulario con una etiqueta/proyecto ya seleccionado."""
+def movimiento_form_extras(request, tipo):
+    plantillas = [
+        {
+            "id": p.pk,
+            "nombre": p.nombre,
+            "concepto": p.concepto,
+            "monto": f"{p.monto:.2f}" if p.monto is not None else "",
+            "categoria_id": str(p.categoria_id or ""),
+            "cuenta_id": str(p.cuenta_id or ""),
+            "metodo_pago_id": str(p.metodo_pago_id or ""),
+            "etiquetas": [str(e_id) for e_id in p.etiquetas.values_list("id", flat=True)],
+        }
+        for p in PlantillaMovimiento.objects.filter(
+            usuario=request.user,
+            tipo=tipo,
+            activo=True,
+        ).prefetch_related("etiquetas")[:12]
+    ]
+    sugerencias = []
+    vistos = set()
+    recientes = (
+        MovimientoFinanciero.objects.filter(usuario=request.user, tipo=tipo)
+        .exclude(estado=MovimientoFinanciero.Estado.ELIMINADO)
+        .order_by("-fecha", "-creado")
+        .values("concepto", "monto", "categoria_id", "cuenta_id", "metodo_pago_id")[:60]
+    )
+    for item in recientes:
+        clave = (item["concepto"] or "").strip().lower()
+        if not clave or clave in vistos:
+            continue
+        vistos.add(clave)
+        sugerencias.append(
+            {
+                "concepto": item["concepto"],
+                "monto": f"{item['monto']:.2f}" if item["monto"] is not None else "",
+                "categoria_id": str(item["categoria_id"] or ""),
+                "cuenta_id": str(item["cuenta_id"] or ""),
+                "metodo_pago_id": str(item["metodo_pago_id"] or ""),
+            }
+        )
+        if len(sugerencias) >= 20:
+            break
+    return {
+        "plantillas_rapidas": plantillas,
+        "sugerencias_concepto": sugerencias,
+    }
+
+
+def movimiento_initial_from_query(request, tipo=None):
+    """Permite abrir el formulario precargado desde etiqueta, atajo frecuente o movimiento previo."""
+    plantilla_id = request.GET.get("plantilla", "")
+    if plantilla_id.isdigit():
+        plantilla_qs = PlantillaMovimiento.objects.filter(pk=plantilla_id, usuario=request.user, activo=True)
+        if tipo:
+            plantilla_qs = plantilla_qs.filter(tipo=tipo)
+        plantilla = plantilla_qs.prefetch_related("etiquetas").first()
+        if plantilla:
+            initial = {
+                "concepto": plantilla.concepto,
+                "fecha": timezone.localdate().isoformat(),
+                "etiquetas": list(plantilla.etiquetas.values_list("id", flat=True)),
+            }
+            if plantilla.monto is not None:
+                initial["monto"] = plantilla.monto
+            if plantilla.categoria_id:
+                initial["categoria"] = plantilla.categoria_id
+            if plantilla.cuenta_id:
+                initial["cuenta"] = plantilla.cuenta_id
+            if plantilla.metodo_pago_id:
+                initial["metodo_pago"] = plantilla.metodo_pago_id
+            return initial
+
+    repetir_id = request.GET.get("repetir", "")
+    if repetir_id.isdigit():
+        origen_qs = MovimientoFinanciero.objects.filter(pk=repetir_id, usuario=request.user).exclude(
+            estado=MovimientoFinanciero.Estado.ELIMINADO
+        )
+        if tipo:
+            origen_qs = origen_qs.filter(tipo=tipo)
+        origen = origen_qs.prefetch_related("etiquetas").first()
+        if origen:
+            initial = {
+                "concepto": origen.concepto,
+                "monto": origen.monto,
+                "fecha": timezone.localdate().isoformat(),
+                "etiquetas": list(origen.etiquetas.values_list("id", flat=True)),
+            }
+            if origen.categoria_id:
+                initial["categoria"] = origen.categoria_id
+            if origen.cuenta_id:
+                initial["cuenta"] = origen.cuenta_id
+            if origen.metodo_pago_id:
+                initial["metodo_pago"] = origen.metodo_pago_id
+            if origen.acreedor_credito_id:
+                initial["acreedor_credito"] = origen.acreedor_credito_id
+                initial["numero_cuotas_credito"] = origen.numero_cuotas_credito
+            return initial
+
     tag_id = request.GET.get("etiqueta", "")
     if tag_id.isdigit() and Etiqueta.objects.filter(pk=tag_id, usuario=request.user).exists():
         return {"etiquetas": [int(tag_id)]}
     return None
 
 
-@login_required
-def movimiento_ingreso_create(request):
-    tipo = MovimientoFinanciero.Tipo.INGRESO
+def _handle_movimiento_create(request, tipo):
     tiene_categorias, title, back_tipo, categorias_principales = movimiento_form_context(request, tipo)
+    extras = movimiento_form_extras(request, tipo)
     if request.method == "POST":
         form = MovimientoFinancieroForm(request.POST, request.FILES, user=request.user, tipo=tipo)
         if form.is_valid():
             movimiento = assign_user_and_save(form, request.user)
+            plantilla_usada = request.POST.get("plantilla_usada", "").strip()
+            if plantilla_usada.isdigit():
+                PlantillaMovimiento.objects.filter(
+                    pk=plantilla_usada,
+                    usuario=request.user,
+                ).update(veces_usado=F("veces_usado") + 1)
+            if form.cleaned_data.get("guardar_como_atajo"):
+                nombre_atajo = (form.cleaned_data.get("nombre_atajo") or movimiento.concepto).strip()[:80]
+                if nombre_atajo:
+                    plantilla, _ = PlantillaMovimiento.objects.update_or_create(
+                        usuario=request.user,
+                        tipo=tipo,
+                        nombre=nombre_atajo,
+                        defaults={
+                            "concepto": movimiento.concepto,
+                            "monto": movimiento.monto,
+                            "categoria": movimiento.categoria,
+                            "cuenta": movimiento.cuenta,
+                            "metodo_pago": movimiento.metodo_pago,
+                            "activo": True,
+                        },
+                    )
+                    plantilla.etiquetas.set(movimiento.etiquetas.all())
             registrar_auditoria(request, RegistroAuditoria.Accion.CREAR, movimiento, cambios={"monto": str(movimiento.monto)})
-            messages.success(request, "Ingreso creado.")
+            messages.success(request, "Ingreso creado." if tipo == MovimientoFinanciero.Tipo.INGRESO else "Gasto creado.")
             return redirect(f"{reverse('movimiento_list')}?tipo={tipo}")
     else:
-        form = MovimientoFinancieroForm(user=request.user, tipo=tipo, initial=movimiento_initial_from_query(request))
+        form = MovimientoFinancieroForm(user=request.user, tipo=tipo, initial=movimiento_initial_from_query(request, tipo=tipo))
     return render(
         request,
         "core/movimiento_form.html",
@@ -4469,35 +4630,21 @@ def movimiento_ingreso_create(request):
             "back_tipo": back_tipo,
             "tiene_categorias": tiene_categorias,
             "categorias_principales": categorias_principales,
+            "plantilla_activa_id": request.GET.get("plantilla", "") if request.GET.get("plantilla", "").isdigit() else "",
+            "modo_precargado": bool(request.GET.get("plantilla") or request.GET.get("repetir")),
+            **extras,
         },
     )
+
+
+@login_required
+def movimiento_ingreso_create(request):
+    return _handle_movimiento_create(request, MovimientoFinanciero.Tipo.INGRESO)
 
 
 @login_required
 def movimiento_gasto_create(request):
-    tipo = MovimientoFinanciero.Tipo.GASTO
-    tiene_categorias, title, back_tipo, categorias_principales = movimiento_form_context(request, tipo)
-    if request.method == "POST":
-        form = MovimientoFinancieroForm(request.POST, request.FILES, user=request.user, tipo=tipo)
-        if form.is_valid():
-            movimiento = assign_user_and_save(form, request.user)
-            registrar_auditoria(request, RegistroAuditoria.Accion.CREAR, movimiento, cambios={"monto": str(movimiento.monto)})
-            messages.success(request, "Gasto creado.")
-            return redirect(f"{reverse('movimiento_list')}?tipo={tipo}")
-    else:
-        form = MovimientoFinancieroForm(user=request.user, tipo=tipo, initial=movimiento_initial_from_query(request))
-    return render(
-        request,
-        "core/movimiento_form.html",
-        {
-            "form": form,
-            "title": title,
-            "tipo": tipo,
-            "back_tipo": back_tipo,
-            "tiene_categorias": tiene_categorias,
-            "categorias_principales": categorias_principales,
-        },
-    )
+    return _handle_movimiento_create(request, MovimientoFinanciero.Tipo.GASTO)
 
 
 @login_required

@@ -60,6 +60,7 @@ urlpatterns = [
     path("presupuestos/copiar-anterior/", views.presupuesto_copiar_anterior, name="presupuesto_copiar_anterior"),
     path("presupuestos/sugerencia/", views.presupuesto_sugerencia, name="presupuesto_sugerencia"),
     path("recurrentes/", views.recurrente_list, name="recurrente_list"),
+    path("atajos/", views.plantilla_list, name="plantilla_list"),
     path("finanzas/<str:kind>/<int:pk>/editar/", views.finance_object_update, name="finance_object_update"),
     path("finanzas/<str:kind>/<int:pk>/eliminar/", views.finance_object_delete, name="finance_object_delete"),
     path("usuarios/", views.usuario_list, name="usuario_list"),
