@@ -266,8 +266,15 @@ def extract_statement(user, files, statement_month=None, *, summary_only=False):
 
 def _payment_month(draft):
     raw = draft.get("fecha_pago") or next((item.get("fecha_pago") for item in draft["cargos"] if item.get("fecha_pago")), None)
-    day = date.fromisoformat(raw) if raw else date.fromisoformat(draft["mes"] + "-01")
-    return day.replace(day=1)
+    if raw:
+        return date.fromisoformat(raw).replace(day=1)
+    if draft.get("es_captura_movimientos") and draft.get("hasta"):
+        end_month = date.fromisoformat(draft["hasta"]).replace(day=1)
+        return end_month.replace(
+            year=end_month.year + (end_month.month == 12),
+            month=end_month.month % 12 + 1,
+        )
+    return date.fromisoformat(draft["mes"] + "-01").replace(day=1)
 
 
 def _normalize_concept(text):
@@ -304,12 +311,13 @@ def compare_charges(user, creditor, draft):
         Q(acreedor_credito=creditor) | Q(acreedor_credito__isnull=True),
     ).exclude(deuda_generada__isnull=False).order_by("fecha", "pk"))
 
-    payment_window = (
-        Q(fecha__year=statement_month.year, fecha__month=statement_month.month)
-        | Q(fecha__range=(start - timedelta(days=15), end + timedelta(days=55)))
-    )
-    if not draft.get("fecha_pago"):
-        payment_window = payment_window | Q(fecha__year=next_month.year, fecha__month=next_month.month)
+    if draft.get("es_captura_movimientos"):
+        payment_window = Q(fecha__year=statement_month.year, fecha__month=statement_month.month)
+    else:
+        payment_window = (
+            Q(fecha__year=statement_month.year, fecha__month=statement_month.month)
+            | Q(fecha__range=(start - timedelta(days=15), end + timedelta(days=15)))
+        )
     due_payments = list(
         PagoDeuda.objects.filter(deuda__usuario=user)
         .filter(payment_window)
