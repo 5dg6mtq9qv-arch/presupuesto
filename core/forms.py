@@ -1534,6 +1534,18 @@ class MultipleFileInput(forms.ClearableFileInput):
     allow_multiple_selected = True
 
 
+class MultipleFileField(forms.FileField):
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("widget", MultipleFileInput())
+        super().__init__(*args, **kwargs)
+
+    def clean(self, data, initial=None):
+        single_file_clean = super().clean
+        if isinstance(data, (list, tuple)):
+            return [single_file_clean(d, initial) for d in data if d]
+        return [single_file_clean(data, initial)] if data else []
+
+
 class ConciliacionTarjetaForm(forms.Form):
     acreedor = forms.ModelChoiceField(queryset=Acreedor.objects.none(), label="Tarjeta o acreedor")
     mes = forms.DateField(
@@ -1541,7 +1553,7 @@ class ConciliacionTarjetaForm(forms.Form):
         input_formats=["%Y-%m"],
         widget=forms.DateInput(attrs={"type": "month", "class": "form-control"}, format="%Y-%m"),
     )
-    archivo = forms.FileField(
+    archivo = MultipleFileField(
         label="Capturas de movimientos o estado PDF",
         required=False,
         help_text="Sube 1 o varias capturas de tu app bancaria (JPG, PNG, WebP) o el estado en PDF. Máximo 10 MB por archivo.",
@@ -1565,7 +1577,9 @@ class ConciliacionTarjetaForm(forms.Form):
     def clean(self):
         data = super().clean()
         uploaded, amount = data.get("archivo"), data.get("monto_total")
-        files = self.files.getlist("archivo") if self.files else ([uploaded] if uploaded else [])
+        files = uploaded if isinstance(uploaded, list) else ([uploaded] if uploaded else [])
+        if not files and self.files:
+            files = self.files.getlist("archivo")
         data["archivos"] = files
         if files and amount is not None:
             self.add_error("monto_total", "Sube archivos o escribe un total, no ambos.")
