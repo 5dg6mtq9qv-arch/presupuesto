@@ -1582,14 +1582,14 @@ class ConciliacionTarjetaForm(forms.Form):
             files = self.files.getlist("archivo")
         data["archivos"] = files
         if files and amount is not None:
-            self.add_error("monto_total", "Sube archivos o escribe un total, no ambos.")
+            self.add_error("monto_total", "Sube un archivo o escribe un total, no ambos.")
         elif amount is not None:
             data["tipo_entrada"] = "total_monto"
             if not data.get("mes"):
                 self.add_error("mes", "Selecciona el mes del total escrito.")
         elif files:
-            if len(files) > 6:
-                self.add_error("archivo", "Puedes subir máximo 6 imágenes a la vez.")
+            if len(files) > 20:
+                self.add_error("archivo", "Puedes subir máximo 20 imágenes a la vez.")
             has_pdf = any(f.name.lower().endswith(".pdf") for f in files)
             if has_pdf and len(files) > 1:
                 self.add_error("archivo", "Si subes un PDF, selecciona solo ese archivo.")

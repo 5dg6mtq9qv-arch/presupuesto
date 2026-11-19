@@ -54,25 +54,65 @@
       {% for fila in filas %}<tr>
         <td><input class="form-control form-control-sm" type="date" name="fecha_{{ fila.index }}" value="{{ fila.fecha }}" aria-label="Fecha de {{ fila.concepto }}"></td>
         <td>{{ fila.fecha_pago|default:"No identificada" }}</td>
-        <td><input class="form-control form-control-sm" type="text" name="concepto_{{ fila.index }}" value="{{ fila.concepto }}" maxlength="160" aria-label="Concepto de {{ fila.concepto }}"></td>
+        <td>
+          <input class="form-control form-control-sm" type="text" name="concepto_{{ fila.index }}" value="{{ fila.concepto }}" maxlength="160" aria-label="Concepto de {{ fila.concepto }}">
+          <div class="mt-1">
+            {% if fila.es_diferido or fila.payment and fila.payment.deuda.numero_cuotas > 1 %}
+              <span class="badge text-bg-primary">Diferido{% if fila.payment and fila.payment.deuda.numero_cuotas > 1 %} · Cuota {{ fila.payment.cuota_numero }}/{{ fila.payment.deuda.numero_cuotas }}{% endif %}</span>
+            {% else %}
+              <span class="badge text-bg-secondary">Corriente (1 cuota)</span>
+            {% endif %}
+          </div>
+        </td>
         <td class="amount"><input class="form-control form-control-sm" type="number" step="0.01" min="0.01" name="monto_{{ fila.index }}" value="{{ fila.monto }}" style="max-width:110px;" aria-label="Monto de {{ fila.concepto }}"></td>
         <td>
         {% if fila.match %}<strong>{{ fila.match.concepto }}</strong><br><small>Consumo {{ fila.match.fecha|date:"d/m/Y" }} · Pago {{ fila.match.fecha_pago|date:"d/m/Y"|default:"Sin fecha" }} · ${{ fila.match.monto|floatformat:2 }}</small><br>{% if fila.status == 'existe' %}<span class="badge text-bg-success">Ya existe</span>{% elif fila.status == 'posible' %}<span class="badge text-bg-warning">Posible coincidencia sin acreedor</span>{% else %}<span class="badge text-bg-warning">Importe distinto</span>{% endif %}
         {% elif fila.payment %}<strong>{{ fila.payment.deuda.concepto }}</strong><br><small>Cuota {{ fila.payment.fecha|date:"d/m/Y" }} · ${{ fila.payment.monto|floatformat:2 }}</small><br><span class="badge text-bg-info">Cuota de deuda</span>
         {% else %}<span class="badge text-bg-danger">Falta registrar</span>{% endif %}
       </td><td>
-        <select class="form-select" name="accion_{{ fila.index }}" aria-label="Acción para {{ fila.concepto }}">
-          <option value="omitir"{% if fila.seleccion == 'omitir' or not fila.seleccion and borrador.modo != 'movimientos' and fila.status in 'nuevo,posible,diferencia' or not fila.seleccion and borrador.modo == 'movimientos' and fila.status in 'posible,diferencia' %} selected{% endif %}>No seleccionar</option>
-          {% if fila.payment %}<option value="cuota"{% if fila.seleccion == 'cuota' or not fila.seleccion %} selected{% endif %}>Cuota registrada, dejar igual</option>{% endif %}
-          {% if fila.match %}{% if fila.status == 'posible' %}<option value="vincular"{% if fila.seleccion == 'vincular' %} selected{% endif %}>Vincular gasto al acreedor</option>{% else %}<option value="existe"{% if fila.seleccion == 'existe' or fila.status == 'existe' and not fila.seleccion %} selected{% endif %}>Ya existe, dejar igual</option>{% endif %}<option value="ajustar"{% if fila.seleccion == 'ajustar' %} selected{% endif %}>{% if fila.status == 'posible' %}Ajustar y vincular{% else %}Ajustar importe existente{% endif %}</option>{% endif %}
-          <option value="crear"{% if fila.seleccion == 'crear' or not fila.seleccion and borrador.modo == 'movimientos' and fila.status == 'nuevo' %} selected{% endif %}>Crear gasto nuevo</option>
-        </select>
-        {% if categorias %}
-          <select class="form-select form-select-sm mt-1" name="categoria_{{ fila.index }}" aria-label="Categoría para {{ fila.concepto }}" data-row-category="{{ fila.index }}">
-            {% for cat in categorias %}
-              <option value="{{ cat.pk }}"{% if cat.pk == categoria_default_id %} selected{% endif %}>{% if cat.parent %}{{ cat.parent.nombre }} &gt; {% endif %}{{ cat.nombre }}</option>
-            {% endfor %}
+        {% if borrador.modo == 'movimientos' %}
+          {% if fila.status == 'existe' %}
+            <input type="hidden" name="accion_{{ fila.index }}" value="existe">
+            <span class="muted">Sin cambios</span>
+          {% elif fila.status == 'cuota' %}
+            <input type="hidden" name="accion_{{ fila.index }}" value="cuota">
+            <span class="muted">Ya en tus cuotas</span>
+          {% else %}
+            <label class="form-check" style="display:flex; align-items:center; gap:.45rem; cursor:pointer;">
+              <input class="form-check-input" type="checkbox" data-toggle-crear="{{ fila.index }}"
+                     {% if fila.seleccion == 'crear' or not fila.seleccion and fila.status == 'nuevo' %}checked{% endif %}>
+              <span class="form-check-label"><strong>Guardar gasto</strong></span>
+            </label>
+            <input type="hidden" name="accion_{{ fila.index }}"
+                   value="{% if fila.seleccion == 'crear' or not fila.seleccion and fila.status == 'nuevo' %}crear{% else %}omitir{% endif %}">
+            {% if categorias %}
+              <div class="mt-1" data-row-category-wrap="{{ fila.index }}"{% if not fila.seleccion and fila.status != 'nuevo' or fila.seleccion == 'omitir' %} style="display:none;"{% endif %}>
+                <small class="muted d-block" style="font-size:0.75rem;">Categoría del gasto:</small>
+                <select class="form-select form-select-sm" name="categoria_{{ fila.index }}" aria-label="Categoría para {{ fila.concepto }}">
+                  {% for cat in categorias %}
+                    <option value="{{ cat.pk }}"{% if cat.pk == categoria_default_id %} selected{% endif %}>{% if cat.parent %}{{ cat.parent.nombre }} &gt; {% endif %}{{ cat.nombre }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            {% endif %}
+          {% endif %}
+        {% else %}
+          <select class="form-select" name="accion_{{ fila.index }}" aria-label="Acción para {{ fila.concepto }}">
+            <option value="omitir"{% if fila.seleccion == 'omitir' or fila.status == 'nuevo' and not fila.seleccion or fila.status == 'posible' and not fila.seleccion or fila.status == 'diferencia' and not fila.seleccion %} selected{% endif %}>No seleccionar</option>
+            {% if fila.payment %}<option value="cuota"{% if fila.seleccion == 'cuota' or not fila.seleccion %} selected{% endif %}>Cuota registrada, dejar igual</option>{% endif %}
+            {% if fila.match %}{% if fila.status == 'posible' %}<option value="vincular"{% if fila.seleccion == 'vincular' %} selected{% endif %}>Vincular gasto al acreedor</option>{% else %}<option value="existe"{% if fila.seleccion == 'existe' or fila.status == 'existe' and not fila.seleccion %} selected{% endif %}>Ya existe, dejar igual</option>{% endif %}<option value="ajustar"{% if fila.seleccion == 'ajustar' %} selected{% endif %}>{% if fila.status == 'posible' %}Ajustar y vincular{% else %}Ajustar importe existente{% endif %}</option>{% endif %}
+            <option value="crear"{% if fila.seleccion == 'crear' %} selected{% endif %}>Crear gasto nuevo</option>
           </select>
+          {% if categorias %}
+            <div class="mt-1" data-row-category-wrap="{{ fila.index }}"{% if fila.seleccion != 'crear' %} style="display:none;"{% endif %}>
+              <small class="muted d-block" style="font-size:0.75rem;">Categoría del gasto:</small>
+              <select class="form-select form-select-sm" name="categoria_{{ fila.index }}" aria-label="Categoría para {{ fila.concepto }}">
+                {% for cat in categorias %}
+                  <option value="{{ cat.pk }}"{% if cat.pk == categoria_default_id %} selected{% endif %}>{% if cat.parent %}{{ cat.parent.nombre }} &gt; {% endif %}{{ cat.nombre }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          {% endif %}
         {% endif %}
       </td></tr>{% endfor %}
     </tbody></table></div>
@@ -94,18 +134,28 @@
 <script>
 (() => {
   const data = JSON.parse(document.getElementById('datos-proyeccion-conciliacion').textContent);
-  const selects = [...document.querySelectorAll('select[name^="accion_"]')];
+  const actions = [...document.querySelectorAll('[name^="accion_"]')];
+  const toggles = [...document.querySelectorAll('input[data-toggle-crear]')];
   const extras = [...document.querySelectorAll('select[name^="sobrante_"]')];
   const quota = document.querySelector('input[name="crear_cuota"]');
   const cents = value => Math.round(Number(value) * 100);
   const format = value => '$' + (value / 100).toFixed(2);
   function update() {
+    toggles.forEach(toggle => {
+      const idx = toggle.dataset.toggleCrear;
+      const hiddenInput = document.querySelector(`input[name="accion_${idx}"]`);
+      if (hiddenInput) hiddenInput.value = toggle.checked ? 'crear' : 'omitir';
+    });
     let total = cents(data.registrado);
-    selects.forEach((select, index) => {
+    actions.forEach((field, index) => {
       const row = data.filas[index];
-      if (select.value === 'crear' && row.sumable) total += cents(row.monto);
-      if (select.value === 'ajustar') total += row.incluido ? cents(row.monto) - cents(row.existente) : row.sumable ? cents(row.monto) : 0;
-      if (select.value === 'vincular' && row.sumable) total += cents(row.existente);
+      if (!row) return;
+      if (field.value === 'crear' && row.sumable) total += cents(row.monto);
+      if (field.value === 'ajustar') total += row.incluido ? cents(row.monto) - cents(row.existente) : row.sumable ? cents(row.monto) : 0;
+      if (field.value === 'vincular' && row.sumable) total += cents(row.existente);
+      const idx = field.name.replace('accion_', '');
+      const catWrap = document.querySelector(`[data-row-category-wrap="${idx}"]`);
+      if (catWrap) catWrap.style.display = field.value === 'crear' ? '' : 'none';
     });
     extras.forEach((select, index) => {
       if (select.value !== 'conservar') total -= cents(data.sobrantes[index].monto);
@@ -119,13 +169,8 @@
     if (document.getElementById('cuota-proyectada')) document.getElementById('cuota-proyectada').textContent = format(quotaCents);
     const diffEl = document.getElementById('diferencia-proyectada');
     if (diffEl && data.objetivo !== null) diffEl.textContent = format(cents(data.objetivo) - total);
-    selects.forEach(select => {
-      const idx = select.name.replace('accion_', '');
-      const catSelect = document.querySelector(`select[data-row-category="${idx}"]`);
-      if (catSelect) catSelect.hidden = select.value !== 'crear';
-    });
   }
-  [...selects, ...extras, quota].filter(Boolean).forEach(element => element.addEventListener('change', update));
+  [...actions, ...toggles, ...extras, quota].filter(Boolean).forEach(element => element.addEventListener('change', update));
   update();
 })();
 </script>

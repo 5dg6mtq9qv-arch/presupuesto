@@ -40,7 +40,7 @@
       <h2 id="debt-filter-title">Buscar y filtrar</h2>
       <p class="muted mb-0">Filtra por la fecha de generación de la deuda o por la fecha de pago de sus cuotas.</p>
     </div>
-    {% if filters.q or filters.categoria or filters.acreedor or filters.orden or filters.estado or filters.pago_desde or filters.pago_hasta or filters.generacion_desde or filters.generacion_hasta %}
+    {% if filters.q or filters.categoria or filters.acreedor or filters.orden or filters.estado or filters.modalidad or filters.pago_desde or filters.pago_hasta or filters.generacion_desde or filters.generacion_hasta %}
       <a class="btn btn-sm btn-light" href="{% url 'deuda_list' %}">
         <span class="material-symbols-outlined">filter_alt_off</span><span>Limpiar filtros</span>
       </a>
@@ -89,6 +89,14 @@
         <option value="activa"{% if filters.estado == "activa" %} selected{% endif %}>Activa</option>
         <option value="pagada"{% if filters.estado == "pagada" %} selected{% endif %}>Pagada</option>
         <option value="cancelada"{% if filters.estado == "cancelada" %} selected{% endif %}>Cancelada</option>
+      </select>
+    </div>
+    <div>
+      <label for="modalidad">Modalidad</label>
+      <select class="form-select" id="modalidad" name="modalidad">
+        <option value="">Corriente y diferido</option>
+        <option value="corriente"{% if filters.modalidad == "corriente" %} selected{% endif %}>Corriente (1 cuota)</option>
+        <option value="diferido"{% if filters.modalidad == "diferido" %} selected{% endif %}>Diferido (en cuotas)</option>
       </select>
     </div>
     <div>
@@ -143,6 +151,11 @@
           </div>
         </div>
         <div class="debt-card-tools">
+          {% if deuda.numero_cuotas > 1 %}
+            <span class="badge rounded-pill text-bg-primary">Diferido · {{ deuda.numero_cuotas }} cuotas</span>
+          {% else %}
+            <span class="badge rounded-pill text-bg-secondary">Corriente · 1 cuota</span>
+          {% endif %}
           <span class="badge rounded-pill {% if deuda.estado == 'pagada' %}text-bg-success{% elif deuda.estado == 'cancelada' %}text-bg-danger{% else %}text-bg-warning{% endif %}">
             {{ deuda.get_estado_display }}
           </span>

@@ -320,7 +320,7 @@ class CardStatementTests(TestCase):
         self.assertContains(preview, "Revisión de capturas bancarias")
         confirm = self.client.post(
             reverse("conciliacion_tarjeta_confirmar"),
-            {"accion_0": "crear", "categoria_0": self.category.pk},
+            {"accion_0": "crear"},
         )
         self.assertRedirects(confirm, reverse("actividad_financiera"))
         self.assertTrue(

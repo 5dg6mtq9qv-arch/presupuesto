@@ -4885,6 +4885,7 @@ def deuda_list(request):
     )
     q = request.GET.get("q", "").strip()
     estado = request.GET.get("estado", "")
+    modalidad = request.GET.get("modalidad", "")
     categoria_id = request.GET.get("categoria", "")
     acreedor_id = request.GET.get("acreedor", "")
     orden = request.GET.get("orden", "")
@@ -4905,6 +4906,10 @@ def deuda_list(request):
         )
     if estado in {Deuda.Estado.ACTIVA, Deuda.Estado.PAGADA, Deuda.Estado.CANCELADA}:
         deudas = deudas.filter(estado=estado)
+    if modalidad == "corriente":
+        deudas = deudas.filter(numero_cuotas=1)
+    elif modalidad == "diferido":
+        deudas = deudas.filter(numero_cuotas__gt=1)
     if categoria_id.isdigit():
         deudas = deudas.filter(categoria_id=categoria_id)
     if acreedor_id.isdigit():
@@ -5004,6 +5009,7 @@ def deuda_list(request):
             "filters": {
                 "q": q,
                 "estado": estado,
+                "modalidad": modalidad,
                 "categoria": categoria_id,
                 "acreedor": acreedor_id,
                 "orden": orden,

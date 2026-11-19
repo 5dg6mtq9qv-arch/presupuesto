@@ -57,11 +57,36 @@ def _image(raw):
         raise StatementError("Una de las imágenes no se pudo leer.") from exc
 
 
+MAX_STATEMENT_IMAGES = 20
+STATEMENT_IMAGE_BATCH_SIZE = 4
+
+
+def _call_statement_ai(user, instruction, document_text, batch_images):
+    content = [{"type": "text", "text": instruction + "\n\nTexto extraído:\n" + document_text[:90000]}]
+    for raw in batch_images:
+        content.append({"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(raw).decode("ascii")}})
+    try:
+        message = _provider_message(
+            [{"role": "user", "content": content}], get_ai_runtime_config(),
+            max_tokens=10000,
+            usage_context={"user": user, "interaction_id": uuid.uuid4(), "operation": "conciliacion_tarjeta"},
+            transient_retries=0, timeout_seconds=90,
+        )
+        response = str(message.get("content") or "").strip()
+        response = re.sub(r"^```(?:json)?\s*|\s*```$", "", response, flags=re.I)
+        data = json.loads(response)
+    except (AIAssistantError, ValueError, TypeError) as exc:
+        raise StatementError("No se pudo interpretar el estado. Prueba fotos más nítidas o vuelve a intentar.") from exc
+    if not isinstance(data, dict) or not isinstance(data.get("cargos"), list):
+        raise StatementError("La IA no devolvió una lista de cargos válida.")
+    return data
+
+
 def extract_statement(user, files, statement_month=None, *, summary_only=False):
     if not user_can_use_ai(user) or not get_ai_runtime_config().configured:
         raise StatementError("La lectura de estados requiere que la IA esté habilitada y configurada.")
-    if not files or len(files) > 6:
-        raise StatementError("Selecciona entre 1 y 6 imágenes, o un solo PDF.")
+    if not files or len(files) > MAX_STATEMENT_IMAGES:
+        raise StatementError(f"Selecciona entre 1 y {MAX_STATEMENT_IMAGES} imágenes, o un solo PDF.")
     if len(files) > 1 and any(f.name.lower().endswith(".pdf") for f in files):
         raise StatementError("Si subes un PDF, selecciona solo ese archivo.")
     text_parts, images = [], []
@@ -118,23 +143,41 @@ def extract_statement(user, files, statement_month=None, *, summary_only=False):
     )
     if summary_only:
         instruction += " Esta imagen es solo para conciliar un total: devuelve cargos vacíos y lee con especial cuidado total_pagar y cargos_debitos."
-    content = [{"type": "text", "text": instruction + "\n\nTexto extraído:\n" + document_text[:90000]}]
-    for raw in images:
-        content.append({"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(raw).decode("ascii")}})
-    try:
-        message = _provider_message(
-            [{"role": "user", "content": content}], get_ai_runtime_config(),
-            max_tokens=10000,
-            usage_context={"user": user, "interaction_id": uuid.uuid4(), "operation": "conciliacion_tarjeta"},
-            transient_retries=0, timeout_seconds=90,
-        )
-        response = str(message.get("content") or "").strip()
-        response = re.sub(r"^```(?:json)?\s*|\s*```$", "", response, flags=re.I)
-        data = json.loads(response)
-    except (AIAssistantError, ValueError, TypeError) as exc:
-        raise StatementError("No se pudo interpretar el estado. Prueba fotos más nítidas o vuelve a intentar.") from exc
-    if not isinstance(data, dict) or not isinstance(data.get("cargos"), list):
-        raise StatementError("La IA no devolvió una lista de cargos válida.")
+    if len(images) <= STATEMENT_IMAGE_BATCH_SIZE:
+        data = _call_statement_ai(user, instruction, document_text, images)
+    else:
+        data = {
+            "mes_estado": None,
+            "periodo_desde": None,
+            "periodo_hasta": None,
+            "fecha_pago": None,
+            "saldo_anterior": None,
+            "pagos_creditos": None,
+            "cargos_debitos": None,
+            "total_pagar": None,
+            "consumos_periodo": None,
+            "cargos": [],
+        }
+        step = max(1, STATEMENT_IMAGE_BATCH_SIZE - 1)
+        for start_idx in range(0, len(images), step):
+            batch = images[start_idx : start_idx + STATEMENT_IMAGE_BATCH_SIZE]
+            batch_data = _call_statement_ai(user, instruction, document_text, batch)
+            data["cargos"].extend(batch_data.get("cargos") or [])
+            for key in (
+                "mes_estado",
+                "periodo_desde",
+                "periodo_hasta",
+                "fecha_pago",
+                "saldo_anterior",
+                "pagos_creditos",
+                "cargos_debitos",
+                "total_pagar",
+                "consumos_periodo",
+            ):
+                if data[key] in (None, "") and batch_data.get(key) not in (None, ""):
+                    data[key] = batch_data[key]
+            if start_idx + STATEMENT_IMAGE_BATCH_SIZE >= len(images):
+                break
     if len(data["cargos"]) > 300:
         raise StatementError("El estado supera 300 cargos.")
     if data.get("pagos_creditos") not in (None, ""):
@@ -296,7 +339,8 @@ def compare_charges(user, creditor, draft):
                 continue
             similarity = _concept_similarity(charge["concepto"], movement.concepto)
             exact_amount = movement.monto == amount
-            if (exact_amount and similarity >= .35) or (similarity >= .68 and abs((movement.fecha - day).days) <= 3):
+            same_day_creditor = movement.acreedor_credito_id == creditor.pk and exact_amount and abs((movement.fecha - day).days) <= 1
+            if (exact_amount and similarity >= .35) or (similarity >= .68 and abs((movement.fecha - day).days) <= 3) or same_day_creditor:
                 ranked.append((movement.acreedor_credito_id == creditor.pk, exact_amount, similarity,
                                -abs((movement.fecha - day).days), movement))
         ranked.sort(key=lambda x: x[:4], reverse=True)
@@ -314,10 +358,14 @@ def compare_charges(user, creditor, draft):
                     or installment.deuda.acreedor.strip().casefold() == creditor.nombre.strip().casefold()
                 )
                 similarity = _concept_similarity(charge["concepto"], installment.deuda.concepto)
-                if (same_creditor and similarity >= .35) or (not same_creditor and similarity >= .60):
-                    payment_candidates.append((same_creditor, similarity, installment))
-            payment_candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
-            payment = payment_candidates[0][2] if payment_candidates else None
+                same_purchase_date = abs((installment.deuda.fecha_inicio - day).days) <= 2
+                if (
+                    (same_creditor and (similarity >= .35 or same_purchase_date))
+                    or (not same_creditor and similarity >= .60)
+                ):
+                    payment_candidates.append((same_creditor, similarity >= .35, same_purchase_date, similarity, installment))
+            payment_candidates.sort(key=lambda item: (item[0], item[1], item[2], item[3]), reverse=True)
+            payment = payment_candidates[0][4] if payment_candidates else None
             if payment:
                 used_payments.add(payment.pk)
         rows.append({"index": index, **charge, "match": match, "payment": payment,
