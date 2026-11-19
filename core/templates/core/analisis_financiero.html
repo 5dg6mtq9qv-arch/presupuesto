@@ -90,13 +90,17 @@
   <div>
     <span class="badge rounded-pill {% if posicion_neta >= 0 %}text-bg-success{% else %}text-bg-warning{% endif %} mb-2">{{ estado }}</span>
     <h2>{% if vista == "caja" %}Resultado de caja{% else %}Resultado de consumo{% endif %}: <span class="{% if posicion_neta >= 0 %}text-success{% else %}text-warning{% endif %}">{{ posicion_neta }}</span></h2>
-    <p class="mb-0 text-muted">
+    <p class="mb-2 text-muted">
       {% if vista == "caja" %}
         Dinero efectivamente recibido y pagado; las compras a crédito se reflejan al pagar sus cuotas.
       {% else %}
         Ingresos menos todas las compras realizadas; los pagos de deuda se muestran, pero no se descuentan otra vez.
       {% endif %}
     </p>
+    <div class="tabs" role="group" aria-label="Modo de lectura">
+      <a class="tab {% if vista == 'caja' %}active{% endif %}" href="?anio={{ anio_seleccionado }}{% if mes_seleccionado %}&amp;mes={{ mes_seleccionado }}{% endif %}{% if dia_seleccionado %}&amp;dia={{ dia_seleccionado }}{% endif %}{% if categoria_id %}&amp;categoria={{ categoria_id }}{% endif %}{% if subcategoria_id %}&amp;subcategoria={{ subcategoria_id }}{% endif %}{% for eid in etiqueta_ids %}&amp;etiquetas={{ eid }}{% endfor %}&amp;vista=caja">Flujo de caja</a>
+      <a class="tab {% if vista == 'consumo' %}active{% endif %}" href="?anio={{ anio_seleccionado }}{% if mes_seleccionado %}&amp;mes={{ mes_seleccionado }}{% endif %}{% if dia_seleccionado %}&amp;dia={{ dia_seleccionado }}{% endif %}{% if categoria_id %}&amp;categoria={{ categoria_id }}{% endif %}{% if subcategoria_id %}&amp;subcategoria={{ subcategoria_id }}{% endif %}{% for eid in etiqueta_ids %}&amp;etiquetas={{ eid }}{% endfor %}&amp;vista=consumo">Consumo</a>
+    </div>
   </div>
 </div>
 
@@ -118,6 +122,21 @@
     <div class="metric-value">{{ pagos_total }}</div>
   </section>
 </div>
+
+<section class="panel">
+  <div class="panel-heading">
+    <div>
+      <h2>Capital y solvencia actual</h2>
+      <p class="muted mb-0">Posición patrimonial hoy y proyección de capital a 3 meses según compromisos registrados (sin ajustes de saldo como ingresos o gastos).</p>
+    </div>
+  </div>
+  <div class="status-list">
+    <span><strong class="amount">{{ capital_resumen.saldo_disponible }}</strong> capital líquido en cuentas</span>
+    <span><strong class="amount">{{ capital_resumen.saldo_deudas }}</strong> saldo total en deudas activas</span>
+    <span><strong class="amount {% if capital_resumen.patrimonio_neto >= 0 %}text-success{% else %}text-warning{% endif %}">{{ capital_resumen.patrimonio_neto }}</strong> patrimonio neto</span>
+    <span><strong class="amount {% if capital_resumen.saldo_proyectado_3m >= 0 %}text-success{% else %}text-danger{% endif %}">{{ capital_resumen.saldo_proyectado_3m }}</strong> capital proyectado en 3 meses</span>
+  </div>
+</section>
 
 <section class="panel">
   <div class="panel-heading">
@@ -244,6 +263,13 @@
           <td>Resultado real + ingresos recurrentes pendientes {{ calculo_balance.ingresos_programados }} - gastos recurrentes pendientes {{ calculo_balance.gastos_programados }} - {{ calculo_balance.cuotas_deuda_count }} cuotas pendientes por {{ calculo_balance.obligaciones }}.</td>
           <td class="amount">{{ calculo_balance.posicion_neta }}</td>
         </tr>
+        {% if calculo_balance.ajustes_ingreso or calculo_balance.ajustes_gasto %}
+          <tr>
+            <td>Ajustes de saldo (excluidos)</td>
+            <td>Correcciones contables de saldo registradas en el periodo (no cuentan como ingresos ni gastos reales).</td>
+            <td class="amount">+{{ calculo_balance.ajustes_ingreso }} / -{{ calculo_balance.ajustes_gasto }}</td>
+          </tr>
+        {% endif %}
       </tbody>
     </table>
   </div>
@@ -471,6 +497,7 @@
           { label: "Gastos", data: data.proyeccion.gastos, type: "bar", borderColor: "#fb8500", backgroundColor: "#fb8500", borderRadius: 7 },
           { label: "Cuotas pendientes", data: data.proyeccion.deudas, type: "bar", borderColor: "#64748b", backgroundColor: "#64748b", borderRadius: 7 },
           { label: "Resultado previsto", data: data.proyeccion.margen, type: "line", borderColor: "#5e35b1", backgroundColor: "#5e35b1", tension: .2, borderWidth: 3 },
+          { label: "Capital proyectado", data: data.proyeccion.saldo, type: "line", borderColor: "#159a8c", backgroundColor: "rgba(21, 154, 140, .12)", borderDash: [5, 4], tension: .25, borderWidth: 2 },
         ],
       },
       options: moneyOptions,

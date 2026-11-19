@@ -49,8 +49,16 @@
 </section>
 
 <section class="panel">
+  <div class="summary-grid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:12px; margin-bottom:12px;">
+    <div><span class="muted small">Ingresos activos / mes</span><div><strong class="amount text-success">{{ resumen_recurrentes.ingresos }}</strong></div></div>
+    <div><span class="muted small">Gastos activos / mes</span><div><strong class="amount text-warning">{{ resumen_recurrentes.gastos }}</strong></div></div>
+    <div><span class="muted small">Balance mensual programado</span><div><strong class="amount">{{ resumen_recurrentes.balance }}</strong></div></div>
+  </div>
   <p class="muted mb-2">Al llegar el día programado se crea un movimiento. Si el gasto es con tarjeta de crédito, al confirmarlo se crea una cuota para el acreedor y la cuenta solo cambia cuando pagas esa cuota.</p>
-  <a href="{% url 'movimiento_list' %}?tipo=gasto&amp;estado=pendiente">Ver gastos pendientes</a>
+  <div style="display:flex; flex-wrap:wrap; gap:12px;">
+    <a href="{% url 'movimiento_list' %}?tipo=gasto&amp;estado=pendiente">Ver gastos pendientes{% if resumen_recurrentes.pendientes_gastos %} ({{ resumen_recurrentes.pendientes_gastos }}){% endif %}</a>
+    <a href="{% url 'movimiento_list' %}?tipo=ingreso&amp;estado=pendiente">Ver ingresos pendientes{% if resumen_recurrentes.pendientes_ingresos %} ({{ resumen_recurrentes.pendientes_ingresos }}){% endif %}</a>
+  </div>
 </section>
 
 <section class="panel">
@@ -68,17 +76,17 @@
         {% for recurrente in recurrentes %}
           <tr>
             <td><span class="badge rounded-pill {% if recurrente.tipo == 'ingreso' %}text-bg-success{% else %}text-bg-warning{% endif %}">{{ recurrente.get_tipo_display }}</span></td>
-            <td><strong>{{ recurrente.concepto }}</strong>{% if recurrente.acreedor_credito %}<div class="small text-muted">{{ recurrente.acreedor_credito }} · una cuota, día {{ recurrente.dia_pago_credito }}{% if recurrente.pago_mes_siguiente %} del mes siguiente{% endif %}</div>{% endif %}</td>
+            <td><strong>{{ recurrente.concepto }}</strong>{% if recurrente.acreedor_credito %}<div class="small text-muted">{{ recurrente.acreedor_credito }} · una cuota, día {{ recurrente.dia_pago_credito }}{% if recurrente.pago_mes_siguiente %} del mes siguiente{% endif %}</div>{% endif %}{% if recurrente.pendiente_id and recurrente.pendiente_fecha %}<div class="small"><a class="badge rounded-pill text-bg-warning text-decoration-none" href="{% url 'movimiento_list' %}?tipo={{ recurrente.tipo }}&amp;estado=pendiente">Pendiente del {{ recurrente.pendiente_fecha|date:"d/m/Y" }}{% if recurrente.pendientes_count > 1 %} (+{{ recurrente.pendientes_count|add:"-1" }} más){% endif %}</a></div>{% endif %}</td>
             <td>{% if recurrente.categoria %}{% if recurrente.categoria.parent %}{{ recurrente.categoria.parent.nombre }} > {% endif %}{{ recurrente.categoria.nombre }}{% else %}<span class="muted">Sin categoría</span>{% endif %}</td>
             <td class="amount">{{ recurrente.monto }}</td>
             <td>{{ recurrente.dia_mes }}</td>
-            <td>{{ recurrente.cuenta|default:"" }}</td>
+            <td>{% if recurrente.cuenta %}{{ recurrente.cuenta }}{% elif recurrente.acreedor_credito %}<span class="text-muted small">Crédito · {{ recurrente.acreedor_credito }}</span>{% elif recurrente.metodo_pago %}<span class="text-muted small">{{ recurrente.metodo_pago }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
             <td>{% if recurrente.aplicar_automaticamente %}<span class="badge rounded-pill text-bg-info">Automática</span>{% else %}<span class="badge rounded-pill text-bg-light border">Confirmación manual</span>{% endif %}</td>
             <td><span class="badge rounded-pill {% if recurrente.activo %}text-bg-success{% else %}text-bg-secondary{% endif %}">{% if recurrente.activo %}Activo{% else %}Inactivo{% endif %}</span></td>
             <td class="text-nowrap">
               <span class="action-icons">
                 {% if recurrente.pendiente_id %}
-                  <a class="btn btn-sm btn-primary btn-icon" href="{% url 'movimiento_confirmar' recurrente.pendiente_id %}" title="{% if recurrente.tipo == 'gasto' %}Confirmar pago pendiente{% else %}Confirmar ingreso pendiente{% endif %}" aria-label="{% if recurrente.tipo == 'gasto' %}Confirmar pago pendiente{% else %}Confirmar ingreso pendiente{% endif %}"><span class="material-symbols-outlined">check</span></a>
+                  <a class="btn btn-sm btn-primary btn-icon" href="{% url 'movimiento_confirmar' recurrente.pendiente_id %}" title="{% if recurrente.tipo == 'gasto' %}Confirmar pago pendiente{% else %}Confirmar ingreso pendiente{% endif %}{% if recurrente.pendiente_fecha %} del {{ recurrente.pendiente_fecha|date:'d/m/Y' }}{% endif %}{% if recurrente.pendientes_count > 1 %} (+{{ recurrente.pendientes_count|add:'-1' }} más){% endif %}" aria-label="{% if recurrente.tipo == 'gasto' %}Confirmar pago pendiente{% else %}Confirmar ingreso pendiente{% endif %}{% if recurrente.pendiente_fecha %} del {{ recurrente.pendiente_fecha|date:'d/m/Y' }}{% endif %}"><span class="material-symbols-outlined">check</span></a>
                 {% endif %}
                 <a class="btn btn-sm btn-outline-primary btn-icon" href="{% url 'finance_object_update' 'recurrente' recurrente.pk %}" title="Editar" aria-label="Editar"><span class="material-symbols-outlined">edit</span></a>
                 <button class="btn btn-sm btn-outline-danger btn-icon" type="button" title="Eliminar" aria-label="Eliminar" data-delete-trigger="delete-recurrente-{{ recurrente.pk }}"><span class="material-symbols-outlined">delete</span></button>

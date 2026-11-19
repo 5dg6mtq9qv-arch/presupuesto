@@ -7,8 +7,9 @@
 {{ cuentas_confirmacion|json_script:"movement-confirmation-accounts" }}
 <div class="actions">
   <div class="tabs">
-    <a class="tab {% if active_tipo == 'ingreso' %}active{% endif %}" href="{% url 'movimiento_list' %}?tipo=ingreso">Ingresos</a>
-    <a class="tab {% if active_tipo == 'gasto' %}active{% endif %}" href="{% url 'movimiento_list' %}?tipo=gasto">Gastos</a>
+    <a class="tab {% if active_tipo == 'ingreso' and filters.estado != 'pendiente' %}active{% endif %}" href="{% url 'movimiento_list' %}?tipo=ingreso">Ingresos</a>
+    <a class="tab {% if active_tipo == 'gasto' and filters.estado != 'pendiente' %}active{% endif %}" href="{% url 'movimiento_list' %}?tipo=gasto">Gastos</a>
+    <a class="tab {% if filters.estado == 'pendiente' %}active{% endif %}" href="{% url 'movimiento_list' %}?tipo={{ active_tipo }}&amp;estado=pendiente">Pendientes{% if pendientes_tipo_count %} ({{ pendientes_tipo_count }}){% endif %}</a>
   </div>
   <div style="display:flex; gap:.45rem; align-items:center;">
     <a class="btn btn-outline-secondary btn-icon shadow-sm" href="{% url 'plantilla_list' %}" title="Atajos frecuentes" aria-label="Atajos frecuentes">
