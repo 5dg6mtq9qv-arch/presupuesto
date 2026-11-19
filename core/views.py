@@ -5690,6 +5690,8 @@ def _conciliacion_context(request):
         item.nueva_fecha_pago = next_month.replace(day=min(due_day, calendar.monthrange(next_month.year, next_month.month)[1]))
     quota_date = parse_date(draft.get("fecha_pago") or "") or payment_month.replace(
         day=calendar.monthrange(payment_month.year, payment_month.month)[1])
+    matched_payment_ids = {row["payment"].pk for row in rows if row.get("payment")}
+    cuotas_sobrantes = [p for p in totals["cuotas_detalle"] if p.pk not in matched_payment_ids]
     projection_data = {
         "registrado": str(totals["registrado"]),
         "objetivo": str(totals["cargos_estado"]) if totals["cargos_estado"] is not None else None,
@@ -5697,6 +5699,7 @@ def _conciliacion_context(request):
                    "incluido": row["incluido_total"], "sumable": row["sumable"]}
                   for row in rows],
         "sobrantes": [{"id": item.pk, "monto": str(item.monto)} for item in removable],
+        "cuotas_sobrantes": [{"id": item.pk, "monto": str(item.monto)} for item in cuotas_sobrantes],
         "modo": draft.get("modo", "pdf"),
     }
     categorias_finanzas = list(
@@ -5714,6 +5717,7 @@ def _conciliacion_context(request):
     }
     return {"borrador": draft, "acreedor": creditor, "filas": rows, "extras": extras,
             "totales": totals, "proyeccion_datos": projection_data, "sobrantes": removable,
+            "cuotas_sobrantes": cuotas_sobrantes, "matched_payment_ids": matched_payment_ids,
             "fecha_cuota": quota_date, "categorias": categorias_finanzas,
             "categoria_default_id": default_cat.pk if default_cat else None,
             "resumen_conteo": resumen_conteo}
@@ -5757,9 +5761,18 @@ def conciliacion_tarjeta_confirmar(request):
         extra_actions[expense.pk] = action
         expense.seleccion = action
     removed_ids = {pk for pk, action in extra_actions.items() if action in {"eliminar", "desplazar"}}
+    quota_extra_actions = {}
+    for cuota in context.get("cuotas_sobrantes", []):
+        action = request.POST.get(f"cuota_sobrante_{cuota.pk}", "conservar")
+        if action not in {"conservar", "eliminar"}:
+            return HttpResponseBadRequest("Acción de cuota sobrante no válida.")
+        quota_extra_actions[cuota.pk] = action
+        cuota.seleccion = action
+    removed_payment_ids = {pk for pk, action in quota_extra_actions.items() if action == "eliminar"}
     create_quota = context["borrador"].get("modo") == "total" and request.POST.get("crear_cuota") == "1"
     totals = reconciliation_totals(request.user, context["acreedor"], context["borrador"], rows, actions,
-                                   delete_ids=removed_ids, create_quota=create_quota)
+                                   delete_ids=removed_ids, delete_payment_ids=removed_payment_ids,
+                                   create_quota=create_quota)
     modo = context["borrador"].get("modo", "pdf")
     if modo != "movimientos":
         if modo == "pdf" and not rows:
@@ -5847,6 +5860,28 @@ def conciliacion_tarjeta_confirmar(request):
             movement.fecha_pago = expense.nueva_fecha_pago
             movement.save(update_fields=["fecha_pago"])
             moved += 1
+    deleted_quotas = 0
+    for cuota in context.get("cuotas_sobrantes", []):
+        if quota_extra_actions.get(cuota.pk) != "eliminar":
+            continue
+        pago = PagoDeuda.objects.select_for_update().select_related("deuda").filter(
+            pk=cuota.pk, deuda__usuario=request.user
+        ).first()
+        if not pago:
+            continue
+        deuda = pago.deuda
+        if deuda.numero_cuotas == 1 and deuda.cuotas_pagadas_previas == 0 and deuda.pagos.count() <= 1:
+            registrar_eliminacion(request, deuda)
+            deuda.delete()
+        else:
+            registrar_eliminacion(request, pago)
+            if pago.estado == PagoDeuda.Estado.CONFIRMADO:
+                deuda.saldo_actual = min(deuda.monto_inicial, deuda.saldo_actual + pago.monto)
+                if deuda.estado == Deuda.Estado.PAGADA and deuda.saldo_actual > 0:
+                    deuda.estado = Deuda.Estado.ACTIVA
+                deuda.save(update_fields=["saldo_actual", "estado"])
+            pago.delete()
+        deleted_quotas += 1
     quota_amount = totals["cuota_ajuste"]
     if create_quota and quota_amount > 0:
         due = context["fecha_cuota"]
@@ -5861,7 +5896,7 @@ def conciliacion_tarjeta_confirmar(request):
                                  cuota_numero=1, estado=PagoDeuda.Estado.PENDIENTE)
     request.session.pop("borrador_conciliacion_tarjeta", None)
     messages.success(request, f"Conciliación completada: {created} gastos creados, {adjusted} ajustados, "
-                     f"{deleted} eliminados, {moved} desplazados y "
+                     f"{deleted} gastos eliminados, {deleted_quotas} cuotas eliminadas, {moved} desplazados y "
                      f"{'1 cuota de ajuste creada' if quota_amount > 0 else 'sin cuota de ajuste'}.")
     return redirect("actividad_financiera")
 

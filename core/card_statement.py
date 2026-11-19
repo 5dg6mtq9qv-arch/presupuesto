@@ -283,6 +283,13 @@ def _normalize_concept(text):
     return cleaned
 
 
+def _parse_installment_fraction(text):
+    match = re.search(r"\bdiferido\s+(\d+)\s*/\s*(\d+)", str(text or ""), flags=re.I)
+    if not match:
+        return None
+    return int(match.group(1)), int(match.group(2))
+
+
 def _concept_similarity(a, b):
     raw_ratio = SequenceMatcher(None, str(a or "").casefold(), str(b or "").casefold()).ratio()
     na, nb = _normalize_concept(a), _normalize_concept(b)
@@ -358,22 +365,31 @@ def compare_charges(user, creditor, draft):
         payment = None
         if not match:
             payment_candidates = []
+            fraction = _parse_installment_fraction(charge["concepto"])
             for installment in due_payments:
-                if installment.pk in used_payments or installment.monto != amount:
+                if installment.pk in used_payments:
                     continue
                 same_creditor = (
                     installment.deuda.acreedor_entidad_id == creditor.pk
                     or installment.deuda.acreedor.strip().casefold() == creditor.nombre.strip().casefold()
                 )
+                exact_amount = installment.monto == amount
+                close_amount = abs(installment.monto - amount) <= Decimal("0.15")
+                same_installment_plan = bool(
+                    fraction
+                    and installment.cuota_numero == fraction[0]
+                    and installment.deuda.numero_cuotas == fraction[1]
+                )
                 similarity = _concept_similarity(charge["concepto"], installment.deuda.concepto)
                 same_purchase_date = abs((installment.deuda.fecha_inicio - day).days) <= 2
                 if (
-                    (same_creditor and (similarity >= .35 or same_purchase_date))
-                    or (not same_creditor and similarity >= .60)
+                    (exact_amount and same_creditor and (similarity >= .35 or same_purchase_date or same_installment_plan))
+                    or (same_creditor and same_installment_plan and close_amount)
+                    or (exact_amount and not same_creditor and similarity >= .60)
                 ):
-                    payment_candidates.append((same_creditor, similarity >= .35, same_purchase_date, similarity, installment))
-            payment_candidates.sort(key=lambda item: (item[0], item[1], item[2], item[3]), reverse=True)
-            payment = payment_candidates[0][4] if payment_candidates else None
+                    payment_candidates.append((same_creditor, exact_amount, similarity >= .35, same_installment_plan, same_purchase_date, similarity, installment))
+            payment_candidates.sort(key=lambda item: (item[0], item[1], item[2], item[3], item[4], item[5]), reverse=True)
+            payment = payment_candidates[0][6] if payment_candidates else None
             if payment:
                 used_payments.add(payment.pk)
         rows.append({"index": index, **charge, "match": match, "payment": payment,
@@ -384,7 +400,7 @@ def compare_charges(user, creditor, draft):
     return rows, extras
 
 
-def reconciliation_totals(user, creditor, draft, rows, actions=None, *, delete_ids=None, create_quota=False):
+def reconciliation_totals(user, creditor, draft, rows, actions=None, *, delete_ids=None, delete_payment_ids=None, create_quota=False):
     """Compare billed charges with this creditor's expenses and scheduled installments."""
     start, end = date.fromisoformat(draft["desde"]), date.fromisoformat(draft["hasta"])
     month = _payment_month(draft)
@@ -432,7 +448,9 @@ def reconciliation_totals(user, creditor, draft, rows, actions=None, *, delete_i
             if row["sumable"]:
                 projected += match.monto
     delete_ids = set(delete_ids or ())
+    delete_payment_ids = set(delete_payment_ids or ())
     projected -= sum((expense.monto for expense in expenses if expense.pk in delete_ids), Decimal("0.00"))
+    projected -= sum((payment.monto for payment in payments if payment.pk in delete_payment_ids), Decimal("0.00"))
     quota_amount = max(Decimal("0.00"), charges_total - projected) if create_quota and charges_total is not None else Decimal("0.00")
     projected += quota_amount
     return {

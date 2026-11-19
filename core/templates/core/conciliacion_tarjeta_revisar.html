@@ -126,6 +126,33 @@
           <option value="desplazar"{% if gasto.seleccion == 'desplazar' %} selected{% endif %}>Desplazar pago al {{ gasto.nueva_fecha_pago|date:"d/m/Y" }}</option>
         </select></td>
       </tr>{% endfor %}</tbody></table></div>{% endif %}
+    {% if cuotas_sobrantes %}
+      <h3 class="mt-4">Cuotas registradas en {{ totales.mes_pago|date:"m/Y" }} que no constan en estas capturas ({{ cuotas_sobrantes|length }})</h3>
+      <p class="muted">Revisa si alguna de estas cuotas ya no aplica o fue registrada por error para poder eliminarla.</p>
+      <div class="table-wrap"><table class="table"><thead><tr><th>Fecha cuota</th><th>Deuda</th><th>Modalidad</th><th>Estado</th><th>Importe</th><th>Acción</th></tr></thead><tbody>
+        {% for cuota in cuotas_sobrantes %}
+          <tr>
+            <td>{{ cuota.fecha|date:"d/m/Y" }}</td>
+            <td>{{ cuota.deuda.concepto }}</td>
+            <td>
+              {% if cuota.deuda.numero_cuotas > 1 %}
+                <span class="badge text-bg-primary">Diferido · {{ cuota.cuota_numero }}/{{ cuota.deuda.numero_cuotas }}</span>
+              {% else %}
+                <span class="badge text-bg-secondary">Corriente (1 cuota)</span>
+              {% endif %}
+            </td>
+            <td>{{ cuota.get_estado_display }}</td>
+            <td>${{ cuota.monto|floatformat:2 }}</td>
+            <td>
+              <select class="form-select" name="cuota_sobrante_{{ cuota.pk }}" aria-label="Acción para cuota {{ cuota.deuda.concepto }}">
+                <option value="conservar"{% if not cuota.seleccion or cuota.seleccion == 'conservar' %} selected{% endif %}>Conservar</option>
+                <option value="eliminar"{% if cuota.seleccion == 'eliminar' %} selected{% endif %}>{% if cuota.deuda.numero_cuotas == 1 %}Eliminar deuda{% else %}Eliminar cuota{% endif %}</option>
+              </select>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody></table></div>
+    {% endif %}
     {% if borrador.modo == 'total' %}<label class="form-check mt-3"><input class="form-check-input" type="checkbox" name="crear_cuota" value="1"{% if request.POST.crear_cuota == '1' or not request.POST and totales.diferencia_registrado > 0 %} checked{% endif %}> <span class="form-check-label">Crear una cuota única por la diferencia que falte</span></label>{% endif %}
     <div class="form-actions"><a class="btn btn-outline-secondary" href="{% url 'conciliacion_tarjeta_nueva' %}">Elegir otros archivos</a><button class="btn btn-primary" type="submit">Confirmar acciones</button></div>
   </form>
@@ -137,6 +164,7 @@
   const actions = [...document.querySelectorAll('[name^="accion_"]')];
   const toggles = [...document.querySelectorAll('input[data-toggle-crear]')];
   const extras = [...document.querySelectorAll('select[name^="sobrante_"]')];
+  const quotaExtras = [...document.querySelectorAll('select[name^="cuota_sobrante_"]')];
   const quota = document.querySelector('input[name="crear_cuota"]');
   const cents = value => Math.round(Number(value) * 100);
   const format = value => '$' + (value / 100).toFixed(2);
@@ -160,6 +188,9 @@
     extras.forEach((select, index) => {
       if (select.value !== 'conservar') total -= cents(data.sobrantes[index].monto);
     });
+    quotaExtras.forEach((select, index) => {
+      if (select.value === 'eliminar' && data.cuotas_sobrantes?.[index]) total -= cents(data.cuotas_sobrantes[index].monto);
+    });
     let quotaCents = 0;
     if (quota?.checked && data.objetivo !== null) {
       quotaCents = Math.max(0, cents(data.objetivo) - total);
@@ -170,7 +201,7 @@
     const diffEl = document.getElementById('diferencia-proyectada');
     if (diffEl && data.objetivo !== null) diffEl.textContent = format(cents(data.objetivo) - total);
   }
-  [...actions, ...toggles, ...extras, quota].filter(Boolean).forEach(element => element.addEventListener('change', update));
+  [...actions, ...toggles, ...extras, ...quotaExtras, quota].filter(Boolean).forEach(element => element.addEventListener('change', update));
   update();
 })();
 </script>
