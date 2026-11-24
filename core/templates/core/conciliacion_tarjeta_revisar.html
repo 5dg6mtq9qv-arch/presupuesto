@@ -50,10 +50,19 @@
   {% if totales.cargos_estado is None and borrador.modo != 'movimientos' %}<div class="alert alert-warning">No se encontró el total de cargos/débitos. El total a pagar, por sí solo, no permite cuadrar los gastos porque puede incluir saldos anteriores y pagos.</div>{% endif %}
   {% if totales.cuotas_detalle %}<details><summary>Ver cuotas registradas incluidas en el total</summary><ul>{% for cuota in totales.cuotas_detalle %}<li>{{ cuota.fecha|date:"d/m/Y" }} · {{ cuota.deuda.concepto }} · ${{ cuota.monto|floatformat:2 }}</li>{% endfor %}</ul></details>{% endif %}
   <form method="post" action="{% url 'conciliacion_tarjeta_confirmar' %}">{% csrf_token %}
+    {% if filas %}
+      <div class="d-flex flex-wrap align-items-end gap-2 mb-3">
+        <div>
+          <label class="form-label mb-1" for="fecha-pago-global">Fecha máxima de pago para todos</label>
+          <input class="form-control form-control-sm" type="date" id="fecha-pago-global" value="{{ fecha_pago_default }}" style="max-width:180px;">
+        </div>
+        <button class="btn btn-sm btn-outline-primary" type="button" id="aplicar-fecha-pago-todos">Aplicar a todos</button>
+      </div>
+    {% endif %}
     <div class="table-wrap"><table class="table"><thead><tr><th>Fecha de consumo</th><th>Fecha máxima de pago</th><th>Cargo del estado</th><th>Importe</th><th>En tus gastos</th><th>Acción / Categoría</th></tr></thead><tbody>
       {% for fila in filas %}<tr>
         <td><input class="form-control form-control-sm" type="date" name="fecha_{{ fila.index }}" value="{{ fila.fecha }}" aria-label="Fecha de {{ fila.concepto }}"></td>
-        <td>{{ fila.fecha_pago|default:"No identificada" }}</td>
+        <td><input class="form-control form-control-sm" type="date" name="fecha_pago_{{ fila.index }}" value="{{ fila.fecha_pago|default:fecha_pago_default }}" aria-label="Fecha máxima de pago de {{ fila.concepto }}"></td>
         <td>
           <input class="form-control form-control-sm" type="text" name="concepto_{{ fila.index }}" value="{{ fila.concepto }}" maxlength="160" aria-label="Concepto de {{ fila.concepto }}">
           <div class="mt-1">
@@ -202,6 +211,16 @@
     if (diffEl && data.objetivo !== null) diffEl.textContent = format(cents(data.objetivo) - total);
   }
   [...actions, ...toggles, ...extras, ...quotaExtras, quota].filter(Boolean).forEach(element => element.addEventListener('change', update));
+  const globalDueInput = document.getElementById('fecha-pago-global');
+  const applyAllDueBtn = document.getElementById('aplicar-fecha-pago-todos');
+  if (globalDueInput && applyAllDueBtn) {
+    applyAllDueBtn.addEventListener('click', () => {
+      if (!globalDueInput.value) return;
+      document.querySelectorAll('input[name^="fecha_pago_"]').forEach(input => {
+        input.value = globalDueInput.value;
+      });
+    });
+  }
   update();
 })();
 </script>

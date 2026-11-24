@@ -5807,6 +5807,32 @@ def _conciliacion_context(request):
         item.nueva_fecha_pago = next_month.replace(day=min(due_day, calendar.monthrange(next_month.year, next_month.month)[1]))
     quota_date = parse_date(draft.get("fecha_pago") or "") or payment_month.replace(
         day=calendar.monthrange(payment_month.year, payment_month.month)[1])
+    known_due_date = (
+        MovimientoFinanciero.objects.filter(
+            usuario=request.user,
+            acreedor_credito=creditor,
+            fecha_pago__isnull=False,
+        )
+        .order_by("-fecha_pago")
+        .values_list("fecha_pago", flat=True)
+        .first()
+        or PagoDeuda.objects.filter(
+            deuda__usuario=request.user,
+            deuda__acreedor__iexact=creditor.nombre,
+        )
+        .order_by("-fecha")
+        .values_list("fecha", flat=True)
+        .first()
+    )
+    if parse_date(draft.get("fecha_pago") or ""):
+        fecha_pago_default = parse_date(draft.get("fecha_pago") or "")
+    elif known_due_date:
+        target_month = next_month if draft.get("modo") == "movimientos" else payment_month
+        fecha_pago_default = target_month.replace(
+            day=min(known_due_date.day, calendar.monthrange(target_month.year, target_month.month)[1])
+        )
+    else:
+        fecha_pago_default = quota_date
     matched_payment_ids = {row["payment"].pk for row in rows if row.get("payment")}
     cuotas_sobrantes = [p for p in totals["cuotas_detalle"] if p.pk not in matched_payment_ids]
     projection_data = {
@@ -5835,7 +5861,8 @@ def _conciliacion_context(request):
     return {"borrador": draft, "acreedor": creditor, "filas": rows, "extras": extras,
             "totales": totals, "proyeccion_datos": projection_data, "sobrantes": removable,
             "cuotas_sobrantes": cuotas_sobrantes, "matched_payment_ids": matched_payment_ids,
-            "fecha_cuota": quota_date, "categorias": categorias_finanzas,
+            "fecha_cuota": quota_date, "fecha_pago_default": fecha_pago_default.isoformat(),
+            "categorias": categorias_finanzas,
             "categoria_default_id": default_cat.pk if default_cat else None,
             "resumen_conteo": resumen_conteo}
 
@@ -5919,6 +5946,7 @@ def conciliacion_tarjeta_confirmar(request):
             row_cat = categorias_por_id.get(int(cat_id_raw)) if cat_id_raw.isdigit() else None
             concepto_final = (request.POST.get(f"concepto_{row['index']}", "") or row["concepto"]).strip()[:160] or row["concepto"]
             fecha_final = parse_date(request.POST.get(f"fecha_{row['index']}", "").strip()) or parse_date(row["fecha"])
+            fecha_pago_final = parse_date(request.POST.get(f"fecha_pago_{row['index']}", "").strip()) or parse_date(row.get("fecha_pago") or "")
             monto_raw = request.POST.get(f"monto_{row['index']}", "").strip().replace(",", ".")
             try:
                 monto_final = Decimal(monto_raw).quantize(Decimal("0.01")) if monto_raw else Decimal(row["monto"])
@@ -5926,16 +5954,17 @@ def conciliacion_tarjeta_confirmar(request):
                     monto_final = Decimal(row["monto"])
             except Exception:
                 monto_final = Decimal(row["monto"])
-            MovimientoFinanciero.objects.create(
+            movement = MovimientoFinanciero.objects.create(
                 usuario=request.user, categoria=row_cat or category,
                 acreedor_credito=context["acreedor"],
                 metodo_pago=metodo_credito,
                 tipo=MovimientoFinanciero.Tipo.GASTO,
                 estado=MovimientoFinanciero.Estado.CONFIRMADO,
                 concepto=concepto_final, monto=monto_final, fecha=fecha_final,
-                fecha_pago=parse_date(row.get("fecha_pago") or ""),
+                fecha_pago=fecha_pago_final,
                 nota=f"Estado de tarjeta {context['borrador']['mes']}; acreedor: {context['acreedor'].nombre}. Revisado por el usuario.",
             )
+            sincronizar_deuda_compra_credito(movement)
             created += 1
         elif action == "ajustar" and row["match"]:
             movement = MovimientoFinanciero.objects.select_for_update().get(
@@ -5945,12 +5974,14 @@ def conciliacion_tarjeta_confirmar(request):
             movement.monto = Decimal(row["monto"])
             if movement.acreedor_credito_id is None:
                 movement.acreedor_credito = context["acreedor"]
-            if row.get("fecha_pago"):
-                movement.fecha_pago = parse_date(row["fecha_pago"])
+            fecha_pago_final = parse_date(request.POST.get(f"fecha_pago_{row['index']}", "").strip()) or parse_date(row.get("fecha_pago") or "")
+            if fecha_pago_final:
+                movement.fecha_pago = fecha_pago_final
             movement.nota = (movement.nota + "\n" if movement.nota else "") + (
                 f"Monto ajustado según estado de tarjeta {context['borrador']['mes']}; acreedor: {context['acreedor'].nombre}."
             )
             movement.save(update_fields=["monto", "fecha_pago", "acreedor_credito", "nota"])
+            sincronizar_deuda_compra_credito(movement)
             adjusted += 1
         elif action == "vincular" and row["match"]:
             movement = MovimientoFinanciero.objects.select_for_update().get(
@@ -5958,9 +5989,11 @@ def conciliacion_tarjeta_confirmar(request):
                 tipo=MovimientoFinanciero.Tipo.GASTO,
             )
             movement.acreedor_credito = context["acreedor"]
-            if row.get("fecha_pago"):
-                movement.fecha_pago = parse_date(row["fecha_pago"])
+            fecha_pago_final = parse_date(request.POST.get(f"fecha_pago_{row['index']}", "").strip()) or parse_date(row.get("fecha_pago") or "")
+            if fecha_pago_final:
+                movement.fecha_pago = fecha_pago_final
             movement.save(update_fields=["acreedor_credito", "fecha_pago"])
+            sincronizar_deuda_compra_credito(movement)
     for expense in context["sobrantes"]:
         action = extra_actions[expense.pk]
         if action == "conservar":

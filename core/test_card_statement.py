@@ -10,7 +10,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from .card_statement import compare_charges, extract_statement, reconciliation_totals
-from .models import Acreedor, CuentaFinanciera, Deuda, MovimientoFinanciero, PagoDeuda
+from .models import Acreedor, CuentaFinanciera, Deuda, MetodoPago, MovimientoFinanciero, PagoDeuda
 
 
 class CardStatementTests(TestCase):
@@ -366,3 +366,47 @@ class CardStatementTests(TestCase):
         rows, _ = compare_charges(self.user, self.creditor, draft)
         self.assertEqual(rows[0]["status"], "cuota")
         self.assertEqual(rows[0]["payment"], cuota_dic)
+
+    def test_movimientos_photo_mode_allows_setting_fecha_pago_and_creates_debt(self):
+        MetodoPago.objects.create(usuario=self.user, nombre="Tarjeta de crédito", tipo=MetodoPago.Tipo.CREDITO)
+        session = self.client.session
+        session["borrador_conciliacion_tarjeta"] = {
+            "modo": "movimientos",
+            "es_captura_movimientos": True,
+            "acreedor_id": self.creditor.pk,
+            "mes": "2026-11",
+            "desde": "2026-11-01",
+            "hasta": "2026-11-24",
+            "fecha_pago": None,
+            "periodo_detectado": True,
+            "cargos": [
+                {"fecha": "2026-11-20", "fecha_pago": "", "concepto": "Apple", "monto": "19.99"},
+            ],
+            "resumen": {},
+        }
+        session.save()
+
+        preview = self.client.get(reverse("conciliacion_tarjeta_revisar"))
+        self.assertContains(preview, 'name="fecha_pago_0"')
+        self.assertContains(preview, 'id="fecha-pago-global"')
+
+        confirm = self.client.post(
+            reverse("conciliacion_tarjeta_confirmar"),
+            {"accion_0": "crear", "fecha_pago_0": "2026-12-18"},
+        )
+        self.assertRedirects(confirm, reverse("actividad_financiera"))
+        movement = MovimientoFinanciero.objects.get(
+            usuario=self.user,
+            acreedor_credito=self.creditor,
+            concepto="Apple",
+            monto=Decimal("19.99"),
+        )
+        self.assertEqual(movement.fecha_pago, date(2026, 12, 18))
+        self.assertTrue(
+            PagoDeuda.objects.filter(
+                deuda__movimiento_origen=movement,
+                fecha=date(2026, 12, 18),
+                monto=Decimal("19.99"),
+                estado=PagoDeuda.Estado.PENDIENTE,
+            ).exists()
+        )
