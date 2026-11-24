@@ -237,17 +237,20 @@ def extract_statement(user, files, statement_month=None, *, summary_only=False):
                     except ValueError:
                         continue
         if day is None:
-            day = last_valid_day or statement_month
+            day = last_valid_day or statement_month or date.today().replace(day=1)
             fecha_incierta = True
         else:
             last_valid_day = day
+        concept = " ".join(str(item.get("concepto") or "").split())[:160]
+        if not concept:
+            continue
         try:
-            concept = " ".join(str(item["concepto"]).split())[:160]
-            amount = _money(item["monto"])
-        except (KeyError, TypeError, ValueError) as exc:
-            raise StatementError("La IA devolvió un cargo incompleto o con fecha inválida.") from exc
-        if not concept or day > statement_month + timedelta(days=75) or day < statement_month - timedelta(days=365 * 5):
-            raise StatementError("El estado contiene cargos con concepto o fecha fuera del período esperado.")
+            amount = _money(item.get("monto"))
+        except StatementError:
+            # Skip non-positive/refund/empty-amount rows (e.g. credits or headers) instead of failing the batch.
+            continue
+        if statement_month and (day > statement_month + timedelta(days=75) or day < statement_month - timedelta(days=365 * 5)):
+            continue
         dedup_key = (day.isoformat(), concept.casefold(), str(amount))
         if dedup_key in seen_charges:
             continue

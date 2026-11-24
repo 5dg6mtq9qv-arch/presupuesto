@@ -421,6 +421,7 @@ class CardStatementTests(TestCase):
             '"saldo_anterior":null,"pagos_creditos":null,"cargos_debitos":null,"total_pagar":null,'
             '"consumos_periodo":null,'
             '"cargos":[{"fecha":null,"concepto":"Netflix","monto":11.99,"es_diferido":false},'
+            '{"fecha":"2026-11-18","concepto":"Nc Incoming","monto":-3.99,"es_diferido":false},'
             '{"fecha":"2026-11-12","concepto":"Mercado Pago - Brisamarina","monto":6.86,"es_diferido":false}]}'
         }
         buf = BytesIO()
