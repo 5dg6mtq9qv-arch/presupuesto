@@ -5827,9 +5827,8 @@ def _conciliacion_context(request):
     if parse_date(draft.get("fecha_pago") or ""):
         fecha_pago_default = parse_date(draft.get("fecha_pago") or "")
     elif known_due_date:
-        target_month = next_month if draft.get("modo") == "movimientos" else payment_month
-        fecha_pago_default = target_month.replace(
-            day=min(known_due_date.day, calendar.monthrange(target_month.year, target_month.month)[1])
+        fecha_pago_default = payment_month.replace(
+            day=min(known_due_date.day, calendar.monthrange(payment_month.year, payment_month.month)[1])
         )
     else:
         fecha_pago_default = quota_date

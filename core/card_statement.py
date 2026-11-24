@@ -14,7 +14,7 @@ from django.db.models import Q
 
 from .ai_assistant import AIAssistantError, _provider_message, user_can_use_ai
 from .ai_config import get_ai_runtime_config
-from .models import MovimientoFinanciero, PagoDeuda
+from .models import Deuda, MovimientoFinanciero, PagoDeuda
 
 
 class StatementError(ValueError):
@@ -345,18 +345,20 @@ def compare_charges(user, creditor, draft):
             Q(fecha__year=statement_month.year, fecha__month=statement_month.month)
             | Q(fecha__range=(start - timedelta(days=15), end + timedelta(days=15)))
         )
-    due_payments = list(
-        PagoDeuda.objects.filter(deuda__usuario=user)
-        .filter(payment_window)
-        .select_related("deuda")
-        .distinct()
-    )
+    due_payments_qs = PagoDeuda.objects.filter(deuda__usuario=user).filter(payment_window)
+    if draft.get("es_captura_movimientos"):
+        due_payments_qs = due_payments_qs.filter(
+            deuda__estado=Deuda.Estado.ACTIVA,
+            estado=PagoDeuda.Estado.PENDIENTE,
+        )
+    due_payments = list(due_payments_qs.select_related("deuda").distinct())
     used = set()
     used_payments = set()
     rows = []
     for index, charge in enumerate(draft["cargos"]):
         day = date.fromisoformat(charge["fecha"])
         amount = Decimal(charge["monto"])
+        uncertain_day = bool(charge.get("fecha_incierta"))
         ranked = []
         for movement in candidates:
             in_due_months = bool(
@@ -370,12 +372,18 @@ def compare_charges(user, creditor, draft):
                     )
                 )
             )
-            if movement.pk in used or (abs((movement.fecha - day).days) > 7 and not in_due_months):
+            if movement.pk in used or (not uncertain_day and abs((movement.fecha - day).days) > 7 and not in_due_months):
                 continue
             similarity = _concept_similarity(charge["concepto"], movement.concepto)
             exact_amount = movement.monto == amount
             same_day_creditor = movement.acreedor_credito_id == creditor.pk and exact_amount and abs((movement.fecha - day).days) <= 1
-            if (exact_amount and similarity >= .35) or (similarity >= .68 and abs((movement.fecha - day).days) <= 3) or same_day_creditor:
+            same_creditor_amount = movement.acreedor_credito_id == creditor.pk and exact_amount and abs((movement.fecha - day).days) <= 3
+            if (
+                (exact_amount and similarity >= .35)
+                or (similarity >= .68 and (uncertain_day or abs((movement.fecha - day).days) <= 3))
+                or same_day_creditor
+                or same_creditor_amount
+            ):
                 ranked.append((movement.acreedor_credito_id == creditor.pk, exact_amount, similarity,
                                -abs((movement.fecha - day).days), movement))
         ranked.sort(key=lambda x: x[:4], reverse=True)
@@ -403,7 +411,7 @@ def compare_charges(user, creditor, draft):
                 similarity = _concept_similarity(charge["concepto"], installment.deuda.concepto)
                 same_purchase_date = abs((installment.deuda.fecha_inicio - day).days) <= 2
                 if (
-                    (exact_amount and same_creditor and (similarity >= .35 or same_purchase_date or same_installment_plan))
+                    (exact_amount and same_creditor)
                     or (same_creditor and same_installment_plan and close_amount)
                     or (exact_amount and not same_creditor and similarity >= .60)
                 ):
@@ -424,10 +432,21 @@ def reconciliation_totals(user, creditor, draft, rows, actions=None, *, delete_i
     """Compare billed charges with this creditor's expenses and scheduled installments."""
     start, end = date.fromisoformat(draft["desde"]), date.fromisoformat(draft["hasta"])
     month = _payment_month(draft)
-    payments = list(PagoDeuda.objects.filter(
-        deuda__usuario=user, fecha__year=month.year, fecha__month=month.month,
-    ).filter(Q(deuda__acreedor_entidad=creditor) | Q(deuda__acreedor__iexact=creditor.nombre))
-        .select_related("deuda").distinct())
+    payments_qs = PagoDeuda.objects.filter(
+        deuda__usuario=user,
+        fecha__year=month.year,
+        fecha__month=month.month,
+    )
+    if draft.get("es_captura_movimientos"):
+        payments_qs = payments_qs.filter(
+            deuda__estado=Deuda.Estado.ACTIVA,
+            estado=PagoDeuda.Estado.PENDIENTE,
+        )
+    payments = list(
+        payments_qs.filter(Q(deuda__acreedor_entidad=creditor) | Q(deuda__acreedor__iexact=creditor.nombre))
+        .select_related("deuda")
+        .distinct()
+    )
     expenses = list(MovimientoFinanciero.objects.filter(
         usuario=user, tipo=MovimientoFinanciero.Tipo.GASTO, acreedor_credito=creditor,
     ).exclude(estado=MovimientoFinanciero.Estado.ELIMINADO).filter(

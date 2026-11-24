@@ -432,3 +432,57 @@ class CardStatementTests(TestCase):
         self.assertTrue(result["cargos"][0]["fecha_incierta"])
         self.assertEqual(result["cargos"][0]["fecha"], "2026-11-01")
         self.assertFalse(result["cargos"][1]["fecha_incierta"])
+
+    def test_compare_only_unpaid_installments_and_matches_same_amount_different_concept(self):
+        paid_debt = Deuda.objects.create(
+            usuario=self.user,
+            acreedor=self.creditor.nombre,
+            acreedor_entidad=self.creditor,
+            concepto="Cuota ya pagada",
+            monto_inicial=Decimal("50.00"),
+            saldo_actual=Decimal("0.00"),
+            numero_cuotas=1,
+            fecha_inicio=date(2026, 10, 5),
+            estado=Deuda.Estado.PAGADA,
+        )
+        PagoDeuda.objects.create(
+            deuda=paid_debt,
+            monto=Decimal("50.00"),
+            fecha=date(2026, 12, 18),
+            cuota_numero=1,
+            estado=PagoDeuda.Estado.CONFIRMADO,
+        )
+        pending_debt = Deuda.objects.create(
+            usuario=self.user,
+            acreedor=self.creditor.nombre,
+            acreedor_entidad=self.creditor,
+            concepto="Cuota maestría 4ta",
+            monto_inicial=Decimal("172.96"),
+            saldo_actual=Decimal("172.96"),
+            numero_cuotas=1,
+            fecha_inicio=date(2026, 10, 5),
+            estado=Deuda.Estado.ACTIVA,
+        )
+        cuota = PagoDeuda.objects.create(
+            deuda=pending_debt,
+            monto=Decimal("172.96"),
+            fecha=date(2026, 12, 18),
+            cuota_numero=1,
+            estado=PagoDeuda.Estado.PENDIENTE,
+        )
+        draft = {
+            "mes": "2026-11",
+            "desde": "2026-11-01",
+            "hasta": "2026-11-24",
+            "fecha_pago": None,
+            "es_captura_movimientos": True,
+            "cargos": [
+                {"fecha": "2026-11-05", "fecha_pago": "", "concepto": "Unir", "monto": "172.96"},
+                {"fecha": "2026-11-06", "fecha_pago": "", "concepto": "Cuota ya pagada", "monto": "50.00"},
+            ],
+            "resumen": {},
+        }
+        rows, _ = compare_charges(self.user, self.creditor, draft)
+        self.assertEqual(rows[0]["status"], "cuota")
+        self.assertEqual(rows[0]["payment"], cuota)
+        self.assertEqual(rows[1]["status"], "nuevo")
