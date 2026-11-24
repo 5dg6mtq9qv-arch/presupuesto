@@ -61,7 +61,10 @@
     {% endif %}
     <div class="table-wrap"><table class="table"><thead><tr><th>Fecha de consumo</th><th>Fecha máxima de pago</th><th>Cargo del estado</th><th>Importe</th><th>En tus gastos</th><th>Acción / Categoría</th></tr></thead><tbody>
       {% for fila in filas %}<tr>
-        <td><input class="form-control form-control-sm" type="date" name="fecha_{{ fila.index }}" value="{{ fila.fecha }}" aria-label="Fecha de {{ fila.concepto }}"></td>
+        <td>
+          <input class="form-control form-control-sm" type="date" name="fecha_{{ fila.index }}" value="{{ fila.fecha }}" aria-label="Fecha de {{ fila.concepto }}">
+          {% if fila.fecha_incierta %}<span class="badge text-bg-warning mt-1">Verificar fecha</span>{% endif %}
+        </td>
         <td><input class="form-control form-control-sm" type="date" name="fecha_pago_{{ fila.index }}" value="{{ fila.fecha_pago|default:fecha_pago_default }}" aria-label="Fecha máxima de pago de {{ fila.concepto }}"></td>
         <td>
           <input class="form-control form-control-sm" type="text" name="concepto_{{ fila.index }}" value="{{ fila.concepto }}" maxlength="160" aria-label="Concepto de {{ fila.concepto }}">

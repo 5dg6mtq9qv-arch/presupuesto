@@ -218,11 +218,30 @@ def extract_statement(user, files, statement_month=None, *, summary_only=False):
         raise StatementError("La fecha de pago detectada está fuera del período esperado.")
     charges = []
     seen_charges = set()
+    last_valid_day = None
     for item in data["cargos"]:
         if not isinstance(item, dict):
             raise StatementError("La IA devolvió un cargo incompleto.")
+        raw_fecha = str(item.get("fecha") or "").strip()
+        day = None
+        fecha_incierta = False
+        if raw_fecha:
+            try:
+                day = date.fromisoformat(raw_fecha[:10])
+            except ValueError:
+                from datetime import datetime as _dt
+                for fmt in ("%d/%m/%Y", "%d-%m-%Y"):
+                    try:
+                        day = _dt.strptime(raw_fecha[:10], fmt).date()
+                        break
+                    except ValueError:
+                        continue
+        if day is None:
+            day = last_valid_day or statement_month
+            fecha_incierta = True
+        else:
+            last_valid_day = day
         try:
-            day = date.fromisoformat(str(item["fecha"]))
             concept = " ".join(str(item["concepto"]).split())[:160]
             amount = _money(item["monto"])
         except (KeyError, TypeError, ValueError) as exc:
@@ -236,6 +255,7 @@ def extract_statement(user, files, statement_month=None, *, summary_only=False):
         charges.append({
             "fecha": day.isoformat(),
             "fecha_pago": payment_date.isoformat() if payment_date else "",
+            "fecha_incierta": fecha_incierta,
             "concepto": concept,
             "monto": str(amount),
             "es_diferido": bool(item.get("es_diferido")),

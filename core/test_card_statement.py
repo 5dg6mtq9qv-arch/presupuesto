@@ -410,3 +410,25 @@ class CardStatementTests(TestCase):
                 estado=PagoDeuda.Estado.PENDIENTE,
             ).exists()
         )
+
+    @patch("core.card_statement._provider_message")
+    @patch("core.card_statement.get_ai_runtime_config")
+    @patch("core.card_statement.user_can_use_ai", return_value=True)
+    def test_extracts_cropped_top_charge_without_date_header(self, can_use, config, provider):
+        config.return_value.configured = True
+        provider.return_value = {
+            "content": '{"mes_estado":null,"periodo_desde":null,"periodo_hasta":null,"fecha_pago":null,'
+            '"saldo_anterior":null,"pagos_creditos":null,"cargos_debitos":null,"total_pagar":null,'
+            '"consumos_periodo":null,'
+            '"cargos":[{"fecha":null,"concepto":"Netflix","monto":11.99,"es_diferido":false},'
+            '{"fecha":"2026-11-12","concepto":"Mercado Pago - Brisamarina","monto":6.86,"es_diferido":false}]}'
+        }
+        buf = BytesIO()
+        Image.new("RGB", (20, 20), color="white").save(buf, format="PNG")
+        shot = SimpleUploadedFile("shot.png", buf.getvalue(), content_type="image/png")
+
+        result = extract_statement(self.user, [shot], date(2026, 11, 1))
+        self.assertEqual(len(result["cargos"]), 2)
+        self.assertTrue(result["cargos"][0]["fecha_incierta"])
+        self.assertEqual(result["cargos"][0]["fecha"], "2026-11-01")
+        self.assertFalse(result["cargos"][1]["fecha_incierta"])
